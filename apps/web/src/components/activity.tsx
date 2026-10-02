@@ -1,5 +1,6 @@
 import { ArrowRight, ArrowUp, Check, ChevronRight, CircleAlert, ExternalLink, GitPullRequest, Loader2, Workflow, Wrench, X } from "lucide-react";
 import { Children, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import hljs from "highlight.js/lib/common";
 import Markdown from "react-markdown";
 import type { Editor } from "@tiptap/react";
 import { MdEditor } from "@/components/md-editor";
@@ -75,6 +76,13 @@ export const md = (text: string) => (
         img: ({ src, alt }) => <MdImage src={typeof src === "string" ? src : undefined} alt={alt} />,
         p: ({ children }) => <p>{hl(children)}</p>,
         li: ({ children }) => <li>{hl(children)}</li>,
+        code: ({ className, children }) => {
+          const text = String(children);
+          const lang = /language-(\S+)/.exec(className ?? "")?.[1];
+          if (!lang && !text.includes("\n")) return <code>{children}</code>; // inline
+          const html = lang && hljs.getLanguage(lang) ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value : hljs.highlightAuto(text).value;
+          return <code className="hljs" dangerouslySetInnerHTML={{ __html: html }} />;
+        },
       }}
     >
       {text}

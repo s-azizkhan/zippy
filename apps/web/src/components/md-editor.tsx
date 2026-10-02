@@ -10,7 +10,11 @@ import { TableKit } from "@tiptap/extension-table";
 import Image from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extensions";
 import StarterKit from "@tiptap/starter-kit";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { common, createLowlight } from "lowlight";
 import { cn } from "@/lib/utils";
+
+const lowlight = createLowlight(common);
 
 type Cmd = { title: string; hint: string; keywords: string; icon: ComponentType<{ className?: string }>; run: (e: Editor) => void };
 const heading = (level: 1 | 2 | 3 | 4) => (e: Editor) => e.chain().focus().setHeading({ level }).run();
@@ -85,7 +89,7 @@ export function MdEditor({ value, onChange, onBlur, onKeyDown, onEditor, placeho
         ];
       },
     });
-    return [StarterKit, Markdown, Image, TableKit, TaskList, TaskItem.configure({ nested: true }), Placeholder.configure({ placeholder }), SlashMenu];
+    return [StarterKit.configure({ codeBlock: false }), CodeBlockLowlight.configure({ lowlight }), Markdown, Image, TableKit, TaskList, TaskItem.configure({ nested: true }), Placeholder.configure({ placeholder }), SlashMenu];
   }, [placeholder]);
   const editor = useEditor({
     extensions,

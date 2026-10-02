@@ -200,3 +200,14 @@
 .md ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
 .md .tableWrapper { overflow-x: auto; }
 .md .selectedCell { background: var(--accent); }
+
+/* highlight.js tokens for the diff view */
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag { color: #c678dd; }
+.hljs-string, .hljs-regexp, .hljs-addition { color: #98c379; }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta { color: #d19a66; }
+.hljs-title, .hljs-section, .hljs-selector-id, .hljs-selector-class { color: #61afef; }
+.hljs-type, .hljs-class .hljs-title, .hljs-built_in, .hljs-attr, .hljs-attribute { color: #e5c07b; }
+.hljs-variable, .hljs-name, .hljs-tag, .hljs-template-variable, .hljs-params { color: #e06c75; }
+.hljs-comment, .hljs-quote { color: #7f848e; font-style: italic; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }

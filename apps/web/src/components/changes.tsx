@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlaskConical, FolderGit2, MessageSquarePlus, RefreshCw, ShieldAlert, X } from "lucide-react";
+import hljs from "highlight.js/lib/common";
 import type { Agent, Comment, DiffFile, TestPayload, Ticket } from "@zippy/shared";
 import { MentionInput } from "@/components/activity";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,15 @@ function newLineNumbers(lines: string[]) {
     else if (!l.startsWith("-")) n++;
     return n;
   });
+}
+
+const LANG: Record<string, string> = { tsx: "typescript", jsx: "javascript", mjs: "javascript", cjs: "javascript", vue: "xml", svelte: "xml", php: "php", tf: "ini", env: "ini" };
+
+/** Highlighter language from file extension; undefined = plain. Per-line, so multi-line strings/comments won't carry across lines. */
+function langOf(path: string) {
+  const ext = path.split(".").pop()!.toLowerCase();
+  const l = LANG[ext] ?? ext;
+  return hljs.getLanguage(l) ? l : undefined;
 }
 
 type Ctx = { ticketId: string; agents: Agent[]; folder: string; branch: string | null };
@@ -67,8 +77,10 @@ function Patch({ patch, path, ctx }: { patch: string; path: string; ctx: Ctx }) 
     window.addEventListener("mouseup", stop);
     return () => window.removeEventListener("mouseup", stop);
   }, [dragging]);
+  const lang = langOf(path);
+  const lines = useMemo(() => patch.split("\n").filter((l) => !HEADER.test(l)), [patch]);
+  const html = useMemo(() => lines.map((l) => (lang && !HUNK.test(l) && l.length > 1 ? hljs.highlight(l.slice(1), { language: lang, ignoreIllegals: true }).value : null)), [lines, lang]);
   if (!patch) return <p className="text-muted-foreground px-3 py-2 text-xs">New untracked file, or binary. No text diff.</p>;
-  const lines = patch.split("\n").filter((l) => !HEADER.test(l));
   const nums = newLineNumbers(lines);
   const lo = sel ? Math.min(sel.from, sel.to) : -1;
   const hi = sel ? Math.max(sel.from, sel.to) : -1;
@@ -92,7 +104,14 @@ function Patch({ patch, path, ctx }: { patch: string; path: string; ctx: Ctx }) 
               )}
             >
               <span className="sr-only">{l.startsWith("+") ? "added: " : l.startsWith("-") ? "removed: " : ""}</span>
-              {l || " "}
+              {html[i] != null ? (
+                <>
+                  {l[0]}
+                  <span dangerouslySetInnerHTML={{ __html: html[i] }} />
+                </>
+              ) : (
+                l || " "
+              )}
               {!hunk && (
                 <button
                   type="button"
