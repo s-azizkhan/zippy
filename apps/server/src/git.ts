@@ -6,7 +6,7 @@ import { basename, join, matchesGlob } from "node:path";
 import { promisify } from "node:util";
 import { and, eq } from "drizzle-orm";
 import type { DiffFile, FolderDiff, TestPayload } from "@zippy/shared";
-import { db, ticketFolders, type tickets, type workspaces } from "./db/index.ts";
+import { db, orgs, ticketFolders, type tickets, type workspaces } from "./db/index.ts";
 
 const exec = promisify(execFile);
 const git = (cwd: string, ...args: string[]) => exec("git", args, { cwd }).then((r) => r.stdout.trim());
@@ -22,8 +22,11 @@ export async function ensureWorktree(ticket: Ticket, folder: Folder, ws: Workspa
   if (!existsSync(ws.path)) throw new Error(`Working folder ${ws.name} not found at ${ws.path}. Fix its path in Settings.`);
   if (!(await ok(git(ws.path, "rev-parse", "--is-inside-work-tree")))) return { cwd: ws.path, branch: null };
 
-  const branch = `zippy/${ticket.identifier.toLowerCase()}`;
-  const dir = join(homedir(), ".zippy", "worktrees", basename(ws.path), ticket.identifier);
+  // Identifiers repeat across orgs (Linear keys), so scope by org key unless it already prefixes the id.
+  const [{ key }] = await db.select({ key: orgs.key }).from(orgs).where(eq(orgs.id, ticket.orgId));
+  const slug = ticket.identifier.startsWith(`${key}-`) ? ticket.identifier : `${key}-${ticket.identifier}`;
+  const branch = `zippy/${slug.toLowerCase()}`;
+  const dir = join(homedir(), ".zippy", "worktrees", basename(ws.path), slug);
   const save = () =>
     db.update(ticketFolders).set({ worktreePath: dir, branch }).where(and(eq(ticketFolders.ticketId, ticket.id), eq(ticketFolders.workspaceId, ws.id)));
   if (existsSync(dir)) {

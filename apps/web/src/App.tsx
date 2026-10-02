@@ -4,7 +4,7 @@ import { MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches, useNavigate } from "react-router";
+import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches, useNavigate, useSearchParams } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -247,8 +247,17 @@ function Layout() {
   useShortcuts();
   const { data: orgs, isLoading, error, refetch } = useOrgs();
   const { orgId, setOrgId } = useUI();
-  const org = orgs?.find((o) => o.id === orgId) ?? orgs?.[0];
+  const [params, setParams] = useSearchParams();
+  const linkOrg = params.get("org"); // deep links (Slack) name their org
+  const org = orgs?.find((o) => o.id === (linkOrg ?? orgId)) ?? orgs?.[0];
   const { data: system } = useSystem();
+
+  useEffect(() => {
+    if (linkOrg && org?.id === linkOrg) {
+      params.delete("org");
+      setParams(params, { replace: true });
+    }
+  }, [linkOrg, org, params, setParams]);
 
   useEffect(() => {
     if (org && org.id !== orgId) setOrgId(org.id);

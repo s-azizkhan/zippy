@@ -54,8 +54,10 @@ app.onError((e, c) => {
 const body = async <T extends z.ZodType>(c: { req: { json(): Promise<unknown> } }, schema: T) => schema.parse(await c.req.json()) as z.infer<T>;
 
 // Tickets are addressable by identifier (COM-768): resolve to the uuid and re-dispatch.
+// Identifiers are unique per org only; pass ?org=<orgId> to disambiguate.
 const byIdentifier = async (c: Context) => {
-  const [t] = await db.select({ id: tickets.id }).from(tickets).where(eq(tickets.identifier, c.req.param("id")!));
+  const org = c.req.query("org");
+  const [t] = await db.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.identifier, c.req.param("id")!), org ? eq(tickets.orgId, org) : undefined));
   if (!t) return c.notFound();
   const url = new URL(c.req.url);
   url.pathname = url.pathname.replace(`/tickets/${c.req.param("id")}`, `/tickets/${t.id}`);
@@ -406,7 +408,7 @@ app.post("/orgs/:orgId/linear/import", async (c) => {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, c.req.param("orgId")));
   if (!org?.linearAuth?.tokens) return c.json({ error: "Connect Linear in Settings first." }, 400);
   const issue = await fetchIssue(org, ref);
-  const [existing] = await db.select().from(tickets).where(eq(tickets.linearId, issue.uuid));
+  const [existing] = await db.select().from(tickets).where(and(eq(tickets.orgId, org.id), eq(tickets.linearId, issue.uuid)));
   if (existing) return c.json(existing);
   // Reuse org labels by name; create missing ones with Linear's color.
   const orgLabels = await db.select().from(labels).where(eq(labels.orgId, org.id));
@@ -487,9 +489,9 @@ app.post("/linear/webhook", async (c) => {
   };
   if (Math.abs(Date.now() - e.webhookTimestamp) > 60_000) return c.json({ error: "stale" }, 401);
   if (e.type !== "Comment" || e.action !== "create" || !e.data.issueId || ownCommentIds.has(e.data.id) || e.data.botActor) return c.body(null, 204);
-  const [ticket] = await db.select().from(tickets).where(eq(tickets.linearId, e.data.issueId));
+  const linked = await db.select().from(tickets).where(eq(tickets.linearId, e.data.issueId));
   const [parent] = e.data.parentId ? await db.select({ id: comments.id }).from(comments).where(eq(comments.linearCommentId, e.data.parentId)) : [];
-  if (ticket) await humanComment(ticket, e.data.body ?? "", { fromLinear: true, parentId: parent?.id, linearCommentId: e.data.id });
+  for (const ticket of linked) await humanComment(ticket, e.data.body ?? "", { fromLinear: true, parentId: parent?.id, linearCommentId: e.data.id });
   return c.body(null, 204);
 });
 

@@ -35,9 +35,11 @@ export async function createTicket(
 ) {
   const ticket = await db.transaction(async (tx) => {
     let identifier = extra.linear?.identifier;
-    if (!identifier) {
+    while (!identifier) {
       const [o] = await tx.update(orgs).set({ ticketSeq: sql`${orgs.ticketSeq} + 1` }).where(eq(orgs.id, orgId)).returning();
-      identifier = `${o!.key}-${o!.ticketSeq}`;
+      const next = `${o!.key}-${o!.ticketSeq}`;
+      // skip ids already taken in this org (e.g. a Linear ticket with the same key)
+      if (!(await tx.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.orgId, orgId), eq(tickets.identifier, next))).limit(1)).length) identifier = next;
     }
     const [t] = await tx.insert(tickets).values({ ...input, orgId, identifier, parentId: extra.parentId ?? null, linearId: extra.linear?.linearId, linearUrl: extra.linear?.linearUrl }).returning();
     return t!;

@@ -93,7 +93,7 @@ export const tickets = pgTable("tickets", {
   id: id(),
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
   assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id, { onDelete: "set null" }),
-  identifier: text("identifier").notNull().unique(),
+  identifier: text("identifier").notNull(),
   title: text("title").notNull(),
   body: text("body").notNull().default(""),
   status: text("status").notNull().default("todo"),
@@ -108,7 +108,7 @@ export const tickets = pgTable("tickets", {
   parentId: uuid("parent_id"), // sub-issue of
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [uniqueIndex("tickets_org_identifier").on(t.orgId, t.identifier)]);
 
 // Working folders on a ticket. Position 0 is the agent's cwd; the rest are extra dirs. Each gets its own worktree + PR.
 export const ticketFolders = pgTable(

@@ -14,7 +14,7 @@ export async function notify(org: typeof orgs.$inferSelect, ticket: typeof ticke
     const res = await fetch(org.slackWebhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: `*${title}*: <${WEB()}/t/${ticket.identifier}|${ticket.title.replace(/[<>|]/g, "")}>` }),
+      body: JSON.stringify({ text: `*${title}*: <${WEB()}/t/${ticket.identifier}?org=${org.id}|${ticket.title.replace(/[<>|]/g, "")}>` }),
     }).catch((e: Error) => ({ ok: false, statusText: e.message }));
     if (!res.ok) console.error("[notify] slack", res.statusText);
   }
