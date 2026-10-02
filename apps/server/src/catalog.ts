@@ -49,7 +49,7 @@ export function scanCatalog(): Omit<Catalog, "presets"> {
 }
 
 /** Org default, then agent override. */
-export const isOn = (item: CatalogItem, ...layers: Record<string, boolean>[]) =>
+export const isOn = (item: Pick<CatalogItem, "id" | "defaultOn">, ...layers: Record<string, boolean>[]) =>
   layers.reduce((on, l) => l[item.id] ?? on, item.defaultOn);
 
 // Fixed commands only; nothing from the request reaches a shell.

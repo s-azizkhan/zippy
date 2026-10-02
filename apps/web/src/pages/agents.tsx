@@ -241,7 +241,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
           <TabsList variant="line">
             {agent && <TabsTrigger value="work">Work{!!work?.length && <span className="text-muted-foreground ml-1 text-xs tabular-nums">{work.length}</span>}</TabsTrigger>}
             <TabsTrigger value="behavior">Behavior</TabsTrigger>
-            <TabsTrigger value="tools">Skills & MCP</TabsTrigger>
+            <TabsTrigger value="tools">Rules & tools</TabsTrigger>
             {agent && <TabsTrigger value="test">Test run</TabsTrigger>}
           </TabsList>
           {agent && (

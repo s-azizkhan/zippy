@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
-import type { ApprovalPayload, TicketStatus, ToolPayload } from "@zippy/shared";
+import { RULES, type ApprovalPayload, type TicketStatus, type ToolPayload } from "@zippy/shared";
 import { emit } from "./bus.ts";
 import { desktopMcps, isOn, scanCatalog } from "./catalog.ts";
 import { forAgent } from "./files.ts";
@@ -168,6 +168,9 @@ export async function setStatus(ticketId: string, to: TicketStatus) {
   if (ping) notify(org!, t!, ping).catch(console.error);
 }
 
+const activeRules = (org: { toggles: Record<string, boolean> } | undefined, agent: Agent) =>
+  RULES.filter((r) => isOn({ id: `rule:${r.id}`, defaultOn: r.defaultOn }, org?.toggles ?? {}, agent.toggles));
+
 async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, ticket.orgId));
   const team = await db.select({ handle: agents.handle, name: agents.name }).from(agents).where(eq(agents.orgId, ticket.orgId));
@@ -188,6 +191,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     `# Knowledge base\nOrg lessons from past tickets and the user. Follow them. When the user corrects you or states a preference, or you learn a durable gotcha, call \`kb_add\` (pass \`replaces\` to fix an outdated entry). \`kb_search\` finds more.${kb && `\n${kb}`}`,
     `# Your role: ${agent.name} (@${agent.handle})`,
     agent.rolePromptMd,
+    `# Rules\n${activeRules(org, agent).map((r) => `- ${r.text}`).join("\n")}`,
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",
     !agent.canWrite && "You are read-only. Do not edit files.",
     `# Team\nYou work on a shared ticket with: ${team.map((a) => `@${a.handle} (${a.name})`).join(", ")}. Your replies are posted as ticket comments.`,
@@ -352,7 +356,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const items = scanCatalog().items.map((i) => ({ i, on: isOn(i, org?.toggles ?? {}, agent.toggles) }));
   const offMcp = items.filter((x) => x.i.kind === "mcp" && !x.on && x.i.source === "Claude Code").map((x) => `mcp__${x.i.name}`);
   const offSkill = items.some((x) => x.i.kind === "skill" && !x.on);
-  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "mcp__zippy__open_pr"]), ...(agent.handle === "general" ? ["mcp__zippy__handoff", "mcp__zippy__create_subtickets", "mcp__claude_ai_Linear__save_issue"] : []), ...offMcp];
+  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "mcp__zippy__open_pr"]), ...activeRules(org, agent).flatMap((r) => r.blocks ?? []), ...offMcp];
   const meta = {
     systemPrompt: { append: await systemPrompt(ticket, agent, dirs) },
     claudeCode: {

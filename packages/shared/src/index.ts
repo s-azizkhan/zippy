@@ -14,6 +14,21 @@ const handle = z.string().regex(/^[a-z][a-z0-9-]{1,30}$/, "lowercase letters, di
 /** Skill/MCP on-off switches by catalog id (`skill:x`, `mcp:x`). Agent value overrides org value. */
 const toggles = z.record(z.string(), z.boolean()).default({});
 
+/** Prompt rules an agent can switch on/off (toggle key `rule:<id>`). `blocks` = tools denied while on. */
+export const RULES: { id: string; name: string; description: string; text: string; defaultOn: boolean; blocks?: string[] }[] = [
+  { id: "terse", name: "Terse replies", description: "Short, simple words. Lead with the answer.", defaultOn: true, text: "Everything you post is read by the user. Keep it terse. Use simple words (close to ASD-STE100). Lead with the answer. Do not narrate tool calls or your own thinking." },
+  { id: "never-assume", name: "Never assume", description: "Gather context with skills and MCP, then ask the human.", defaultOn: true, text: "Never assume. If something is unclear, first gather context with your skills and MCP tools. If that is not enough, ask the human. Give options and your recommendation." },
+  { id: "humanizer", name: "Humanize output", description: "Run the final text through the humanizer skill.", defaultOn: false, text: "Run your final text through the humanizer skill before you reply." },
+  {
+    id: "no-status-change",
+    name: "Never change status",
+    description: "Blocks handoff, sub-ticket creation and Linear issue updates.",
+    defaultOn: false,
+    text: "Do not change ticket status, issue state, or any other record.",
+    blocks: ["mcp__zippy__handoff", "mcp__zippy__create_subtickets", "mcp__claude_ai_Linear__save_issue"],
+  },
+];
+
 export const orgInput = z.object({
   name: z.string().min(1).max(80),
   key: z.string().regex(/^[A-Z]{2,6}$/, "2-6 uppercase letters"),
