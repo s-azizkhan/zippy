@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { and, asc, desc, eq, gte, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
+import { execFile } from "node:child_process";
 import { z, ZodError } from "zod";
 import {
   agentInput,
@@ -64,6 +65,14 @@ app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}", byIdentifier);
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
 app.get("/system", (c) => c.json({ claudePath, auth: claudeAuthStatus() }));
+// macOS-only native folder picker; server runs on the user's machine
+app.post("/system/pick-folder", (c) =>
+  new Promise<Response>((res) =>
+    execFile("osascript", ["-e", 'POSIX path of (choose folder with prompt "Select working folder")'], (err, out) =>
+      res(c.json({ path: err ? null : out.trim().replace(/\/$/, "") })),
+    ),
+  ),
+);
 app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));
 
 // Orgs

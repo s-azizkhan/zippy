@@ -1,17 +1,19 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftOpen, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Workflow } from "lucide-react";
+import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftOpen, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Trash2, Workflow } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
-import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches } from "react-router";
+import { toast } from "sonner";
+import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches, useNavigate } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NewTicketDialog } from "@/components/new-ticket-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { queryClient, useInbox, useOrgs, useSystem, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useSystem, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 import { AgentsPage } from "@/pages/agents";
@@ -19,7 +21,7 @@ import { InboxPage } from "@/pages/inbox";
 import { Onboarding } from "@/pages/onboarding";
 import { PipelinesPage } from "@/pages/pipelines";
 import { RoutinesPage } from "@/pages/routines";
-import { SettingsPage } from "@/pages/settings";
+import { ConfirmDialog, FolderForm, SettingsPage } from "@/pages/settings";
 import { TicketPage } from "@/pages/ticket";
 import { TicketsPage } from "@/pages/tickets";
 
@@ -64,17 +66,20 @@ function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: ty
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
     <div className="hidden wide:block">
-      <button
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className="text-muted-foreground hover:text-foreground flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium"
-      >
-        {title} <ChevronDown className={cn("size-3 transition-transform", !open && "-rotate-90")} aria-hidden />
-      </button>
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          className="text-muted-foreground hover:text-foreground flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium"
+        >
+          {title} <ChevronDown className={cn("size-3 transition-transform", !open && "-rotate-90")} aria-hidden />
+        </button>
+        {action}
+      </div>
       {open && <div className="grid gap-px">{children}</div>}
     </div>
   );
@@ -91,6 +96,10 @@ function Sidebar() {
   const view = params.get("view");
   const { data: inboxItems = [] } = useInbox(org.id);
   const inbox = inboxItems.length;
+  const navigate = useNavigate();
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
+  const remove = useApiMutation((id: string) => api.del(`/workspaces/${id}`), [keys.res(org.id, "workspaces")]);
 
   return (
     <aside className={cn("bg-sidebar flex w-14 shrink-0 flex-col gap-4 px-2 py-2 transition-[width] duration-150 wide:w-60 wide:px-3", !collapsed && "sb-wide")} aria-label="Sidebar">
@@ -162,16 +171,63 @@ function Sidebar() {
         <NavItem to="/routines" icon={Repeat} label="Routines" />
       </Section>
 
-      <Section title="Your folders">
+      <Section
+        title="Your folders"
+        action={
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button aria-label="Add folder" onClick={() => setAdding(true)} className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground flex size-6 items-center justify-center rounded-md">
+                <Plus className="size-3.5" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Add folder</TooltipContent>
+          </Tooltip>
+        }
+      >
         {workspaces.map((w) => (
-          <NavItem key={w.id} to={`/?folder=${w.id}`} icon={FolderGit2} label={w.name} match={pathname === "/" && folder === w.id} />
+          <div key={w.id} className="group relative">
+            <NavItem to={`/?folder=${w.id}`} icon={FolderGit2} label={w.name} match={pathname === "/" && folder === w.id} />
+            <button
+              aria-label={`Remove ${w.name}`}
+              onClick={() => setRemoving(w)}
+              className="text-muted-foreground hover:text-destructive absolute top-1 right-1 flex size-5 items-center justify-center rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+            </button>
+          </div>
         ))}
         {!workspaces.length && (
-          <Link to="/settings" className="text-muted-foreground px-2 text-xs hover:underline">
+          <button onClick={() => setAdding(true)} className="text-muted-foreground px-2 text-left text-xs hover:underline">
             Add a working folder
-          </Link>
+          </button>
         )}
       </Section>
+
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>New working folder</DialogTitle>
+          </DialogHeader>
+          <FolderForm onDone={() => setAdding(false)} />
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={`Remove ${removing?.name}?`}
+        desc="The folder is removed from Zippy. Files on disk are not touched."
+        action="Remove folder"
+        pending={remove.isPending}
+        onConfirm={() =>
+          remove.mutate(removing!.id, {
+            onSuccess: () => {
+              toast.success("Folder removed");
+              if (folder === removing!.id) navigate("/");
+              setRemoving(null);
+            },
+          })
+        }
+      />
 
       <nav className="grid gap-px wide:hidden" aria-label="Workspace">
         <NavItem to="/agents" icon={Bot} label="Agents" match={pathname.startsWith("/agents")} />

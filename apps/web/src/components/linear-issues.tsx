@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownToLine, ExternalLink, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, ExternalLink, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import Markdown from "react-markdown";
 import { useNavigate } from "react-router";
@@ -36,14 +36,20 @@ export function LinearIssues() {
   const [refreshing, setRefreshing] = useState(false);
   const listKey = keys.res(org.id, `linear-issues-${linearUser}`);
   const listPath = `/orgs/${org.id}/linear/issues?user=${encodeURIComponent(linearUser)}`;
-  const { data: all = { at: 0, issues: [] }, isLoading, error } = useQuery({
+  const {
+    data: all = { at: 0, issues: [] },
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: listKey,
     queryFn: () => api.get<{ at: number; issues: LinearIssue[] }>(listPath),
     enabled: !!linearUser,
     staleTime: 30 * 60_000,
   });
   const statuses = [...new Set(all.issues.map((i) => i.status))];
-  const issues = status ? all.issues.filter((i) => i.status === status) : all.issues;
+  const issues = status
+    ? all.issues.filter((i) => i.status === status)
+    : all.issues;
 
   async function refresh() {
     setRefreshing(true);
@@ -119,14 +125,32 @@ export function LinearIssues() {
           >
             change
           </button>
-          <select aria-label="Filter by status" value={status} onChange={(e) => setStatus(e.target.value)} className="bg-background ml-auto h-6 rounded-md border px-1">
+          <select
+            aria-label="Filter by status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="bg-background ml-auto h-6 rounded-md border px-1"
+          >
             <option value="">All statuses</option>
             {statuses.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
-          <button aria-label="Refresh from Linear" title={all.at ? `Cached ${new Date(all.at).toLocaleTimeString()}. Click to refetch.` : "Refetch"} onClick={refresh} disabled={refreshing} className="hover:text-foreground rounded p-1">
-            <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} aria-hidden />
+          <button
+            aria-label="Refresh from Linear"
+            title={
+              all.at
+                ? `Cached ${new Date(all.at).toLocaleTimeString()}. Click to refetch.`
+                : "Refetch"
+            }
+            onClick={refresh}
+            disabled={refreshing}
+            className="hover:text-foreground rounded p-1"
+          >
+            <RefreshCw
+              className={cn("size-3.5", refreshing && "animate-spin")}
+              aria-hidden
+            />
           </button>
         </div>
         {isLoading && (
@@ -186,6 +210,13 @@ export function LinearIssues() {
             >
               <ExternalLink className="size-3" />
             </a>
+            <button
+              aria-label="Close preview"
+              onClick={() => setSel(null)}
+              className="hover:text-foreground ml-auto rounded p-1"
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
           </div>
           <h2 className="mb-3 text-base font-medium">{current.title}</h2>
           <div className="md text-[13px]">
@@ -197,16 +228,16 @@ export function LinearIssues() {
           </div>
         </aside>
       )}
-      <Button
-        className="fixed right-6 bottom-6 z-20 rounded-full shadow-lg"
-        disabled={!current || imported(current.id) || busy}
-        onClick={bring}
-      >
-        <ArrowDownToLine className="size-4" aria-hidden />
-        {current && imported(current.id)
-          ? "Already in Zippy"
-          : "Bring to Zippy"}
-      </Button>
+      {current && (
+        <Button
+          className="fixed right-6 bottom-6 z-20 rounded-full shadow-lg"
+          disabled={imported(current.id) || busy}
+          onClick={bring}
+        >
+          <ArrowDownToLine className="size-4" aria-hidden />
+          {imported(current.id) ? "Already in Zippy" : "Bring to Zippy"}
+        </Button>
+      )}
     </div>
   );
 }

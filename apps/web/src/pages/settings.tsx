@@ -129,7 +129,7 @@ function EmptyState({ icon: Icon, title, desc, children }: { icon: LucideIcon; t
   );
 }
 
-function ConfirmDialog({ open, onOpenChange, title, desc, action, onConfirm, pending }: { open: boolean; onOpenChange: (o: boolean) => void; title: string; desc: string; action: string; onConfirm: () => void; pending?: boolean }) {
+export function ConfirmDialog({ open, onOpenChange, title, desc, action, onConfirm, pending }: { open: boolean; onOpenChange: (o: boolean) => void; title: string; desc: string; action: string; onConfirm: () => void; pending?: boolean }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -341,7 +341,7 @@ function Folders() {
   );
 }
 
-function FolderForm({ ws, onDone }: { ws?: Workspace; onDone?: () => void }) {
+export function FolderForm({ ws, onDone }: { ws?: Workspace; onDone?: () => void }) {
   const org = useOrg();
   const [form, setForm] = useState<WorkspaceInput>(ws ?? BLANK_WS);
   const [riskText, setRiskText] = useState(form.riskPaths.join("\n"));
@@ -365,7 +365,16 @@ function FolderForm({ ws, onDone }: { ws?: Workspace; onDone?: () => void }) {
         <Field label="Name" error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={set("name")} />}</Field>
         <Field label="Base branch">{(p) => <Input {...p} value={form.baseBranch} onChange={set("baseBranch")} className="font-mono" />}</Field>
       </div>
-      <Field label="Absolute path" error={errors.path}>{(p) => <Input {...p} value={form.path} onChange={set("path")} className="font-mono text-[13px]" />}</Field>
+      <Field label="Absolute path" error={errors.path}>
+        {(p) => (
+          <div className="flex gap-2">
+            <Input {...p} value={form.path} onChange={set("path")} className="font-mono text-[13px]" />
+            <Button type="button" variant="outline" className="max-md:min-h-11" onClick={async () => { const { path } = await api.post<{ path: string | null }>("/system/pick-folder"); if (path) setForm((f) => ({ ...f, path, name: f.name || path.split("/").pop()! })); }}>
+              <FolderGit2 aria-hidden /> Browse
+            </Button>
+          </div>
+        )}
+      </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Setup command">{(p) => <Input {...p} value={form.setupCmd} onChange={set("setupCmd")} placeholder="pnpm install" className="font-mono text-[13px]" />}</Field>
         <Field label="Test command">{(p) => <Input {...p} value={form.testCmd} onChange={set("testCmd")} placeholder="pnpm test" className="font-mono text-[13px]" />}</Field>
@@ -376,7 +385,7 @@ function FolderForm({ ws, onDone }: { ws?: Workspace; onDone?: () => void }) {
       <Field label="Folder context" hint="Markdown. Added after org context. The repo's CLAUDE.md is loaded too.">
         {(p) => <MdEditor id={p.id} value={form.contextMd} onChange={(contextMd) => setForm((f) => ({ ...f, contextMd }))} className="min-h-28" />}
       </Field>
-      <div className="flex gap-2">
+      <div className="bg-popover sticky -bottom-4 z-10 -mx-4 -mb-4 flex gap-2 border-t px-4 py-3">
         <Button type="submit" size="sm" className="max-md:min-h-11" disabled={save.isPending}>
           {ws ? "Save" : "Add folder"}
         </Button>
