@@ -8,6 +8,8 @@ type UI = {
   toggleCollapsed: () => void;
   split: boolean;
   toggleSplit: () => void;
+  favorites: string[];
+  toggleFavorite: (id: string) => void;
   paletteOpen: boolean;
   setPaletteOpen: (open: boolean) => void;
   newTicketOpen: boolean;
@@ -23,11 +25,13 @@ export const useUI = create<UI>()(
       toggleCollapsed: () => set((s) => ({ collapsed: !s.collapsed })),
       split: false,
       toggleSplit: () => set((s) => ({ split: !s.split })),
+      favorites: [],
+      toggleFavorite: (id) => set((s) => ({ favorites: s.favorites.includes(id) ? s.favorites.filter((f) => f !== id) : [...s.favorites, id] })),
       paletteOpen: false,
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       newTicketOpen: false,
       setNewTicketOpen: (newTicketOpen) => set({ newTicketOpen }),
     }),
-    { name: "zippy-ui", partialize: (s) => ({ orgId: s.orgId, collapsed: s.collapsed, split: s.split }) },
+    { name: "zippy-ui", partialize: (s) => ({ orgId: s.orgId, collapsed: s.collapsed, split: s.split, favorites: s.favorites }) },
   ),
 );

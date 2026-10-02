@@ -1,5 +1,5 @@
 import { ErrorPage } from "@/components/error-page";
-import { Check, ChevronDown, Columns2, ChevronRight, ChevronUp, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, Link2, MoreHorizontal, Play, RefreshCw, Square } from "lucide-react";
+import { Check, ChevronDown, Columns2, ChevronRight, ChevronUp, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, Link2, MoreHorizontal, Play, RefreshCw, Square, Star } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -22,6 +22,13 @@ import { useOrg } from "@/lib/org";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 import { useOrderedTickets } from "@/pages/tickets";
+
+const copy = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => toast.success(`${what} copied`));
+
+function useLinearSync(ticket: Ticket) {
+  const m = useApiMutation(() => api.post<{ added: number }>(`/tickets/${ticket.id}/linear/sync`), [keys.ticket(ticket.id)]);
+  return () => m.mutate(undefined, { onSuccess: ({ added }) => toast.success(added ? `${added} new Linear comment${added > 1 ? "s" : ""} synced` : "Already up to date"), onError: (e) => toast.error(e.message) });
+}
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
@@ -142,6 +149,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
           <span className="shrink-0 font-mono font-medium">{ticket.identifier}</span>
           <span className="truncate">{ticket.title}</span>
         </nav>
+        <FavoriteButton id={ticket.id} />
         <TicketMenu ticket={ticket} />
         <div className="ml-auto flex items-center gap-2">
           <RunControls ticket={ticket} agents={agents} running={running} />
@@ -216,9 +224,23 @@ function NavBtn({ label, disabled, onClick, icon: Icon }: { label: string; disab
   );
 }
 
+function FavoriteButton({ id }: { id: string }) {
+  const { favorites, toggleFavorite } = useUI();
+  const on = favorites.includes(id);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button aria-label={on ? "Remove from favorites" : "Add to favorites"} aria-pressed={on} onClick={() => toggleFavorite(id)} className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-7 items-center justify-center rounded-md">
+          <Star className={cn("size-4", on && "fill-yellow-400 text-yellow-400")} aria-hidden />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{on ? "Unfavorite" : "Favorite"}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function TicketMenu({ ticket }: { ticket: Ticket }) {
-  const copy = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => toast.success(`${what} copied`));
-  const sync = useApiMutation(() => api.post<{ added: number }>(`/tickets/${ticket.id}/linear/sync`), [keys.ticket(ticket.id)]);
+  const sync = useLinearSync(ticket);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger aria-label="Issue actions" className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-7 items-center justify-center rounded-md">
@@ -240,9 +262,7 @@ function TicketMenu({ ticket }: { ticket: Ticket }) {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() =>
-                sync.mutate(undefined, { onSuccess: ({ added }) => toast.success(added ? `${added} new Linear comment${added > 1 ? "s" : ""} synced` : "Already up to date"), onError: (e) => toast.error(e.message) })
-              }
+              onSelect={sync}
             >
               <RefreshCw aria-hidden /> Sync from Linear
             </DropdownMenuItem>
@@ -362,6 +382,19 @@ function TicketLinks({ title, items, search }: { title: string; items: RelatedTi
   );
 }
 
+function CopyBtn({ label, icon: Icon, onClick }: { label: string; icon: typeof Copy; onClick: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button aria-label={label} onClick={onClick} className="bg-accent/50 text-muted-foreground hover:bg-accent hover:text-foreground flex size-8 items-center justify-center rounded-full">
+          <Icon className="size-4" aria-hidden />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function Properties(props: {
   ticket: Ticket;
   agents: Agent[];
@@ -382,9 +415,16 @@ function Properties(props: {
   const patch = useApiMutation((v: Partial<Ticket> & { workspaceIds?: string[] }) => api.patch(`/tickets/${ticket.id}`, v), [keys.ticket(ticket.id), keys.res(org.id, "tickets")]);
   const ctl = (m: Exclude<Menu, null>) => ({ open: menu === m, onOpenChange: (o: boolean) => setMenu(o ? m : null) });
   const diffs = ticket.folders.filter((f) => f.branch || f.prUrl);
+  const sync = useLinearSync(ticket);
 
   return (
     <aside className="hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto border-l px-3 py-5 text-[13px] lg:flex" aria-label="Issue properties">
+      <div className="-mb-2 flex justify-end gap-2">
+        <CopyBtn label="Copy link" icon={Link2} onClick={() => copy(location.href, "Link")} />
+        <CopyBtn label="Copy ID" icon={Copy} onClick={() => copy(ticket.identifier, "ID")} />
+        {ticket.linearUrl && <CopyBtn label="Sync from Linear" icon={RefreshCw} onClick={sync} />}
+        {ticket.folders[0]?.branch && <CopyBtn label="Copy branch name" icon={GitBranch} onClick={() => copy(ticket.folders[0]!.branch!, "Branch name")} />}
+      </div>
       {diffs.length > 0 && (
         <PanelSection title="Diffs">
           <ul className="grid grid-cols-[minmax(0,1fr)]">
