@@ -3,7 +3,7 @@ import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { mcpServerInput, orgInput, patchOf, workspaceInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
+import { EFFORTS, MODELS, mcpServerInput, orgInput, patchOf, workspaceInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
 import { Field, fieldErrors, SettingRow } from "@/components/field";
 import { ToggleList } from "@/components/toggle-list";
 import { Button } from "@/components/ui/button";
@@ -177,7 +177,7 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, contextMd: org.contextMd, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop };
+  const base = { name: org.name, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -227,6 +227,21 @@ function OrgSettings({ active }: { active: boolean }) {
         <Field label="Name" error={errors.name}>
           {(p) => <Input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}
         </Field>
+      </Card>
+      <Card title="Agent defaults" desc="Used by agents whose model is set to default. Empty picks follow your Claude Code setting.">
+        {([["Model", "defaultModel", MODELS], ["Thinking level", "defaultEffort", EFFORTS]] as const).map(([label, k, opts]) => (
+          <Field key={k} label={label}>
+            {(p) => (
+              <select {...p} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
+                {(opts.includes(form[k]) ? opts : [...opts, form[k]]).map((m) => (
+                  <option key={m} value={m} className="bg-background">
+                    {m}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        ))}
       </Card>
       <Card title="Budget" desc="Agents stop and ask you when a ticket's total spend reaches this limit.">
         <Field label="Agent budget per ticket (USD)" hint="Empty = no limit." error={errors.budgetUsd}>

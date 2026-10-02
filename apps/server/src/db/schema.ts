@@ -9,6 +9,7 @@ export const orgs = pgTable("orgs", {
   key: text("key").notNull().unique(), // ticket prefix, e.g. ZIP
   contextMd: text("context_md").notNull().default(""),
   defaultModel: text("default_model").notNull().default("default"),
+  defaultEffort: text("default_effort").notNull().default("default"),
   ticketSeq: integer("ticket_seq").notNull().default(0),
   toggles: jsonb("toggles").$type<Record<string, boolean>>().notNull().default({}),
   budgetUsd: real("budget_usd"), // per-ticket agent spend cap; null = no cap

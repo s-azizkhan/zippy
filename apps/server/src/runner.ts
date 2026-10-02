@@ -336,7 +336,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
 
   await l.conn.initialize({ protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
   const mcp = await mcpFor(ticket, agent, token, dirs);
-  const [org] = await db.select({ toggles: orgs.toggles }).from(orgs).where(eq(orgs.id, ticket.orgId));
+  const [org] = await db.select({ toggles: orgs.toggles, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const items = scanCatalog().items.map((i) => ({ i, on: isOn(i, org?.toggles ?? {}, agent.toggles) }));
   const offMcp = items.filter((x) => x.i.kind === "mcp" && !x.on && x.i.source === "Claude Code").map((x) => `mcp__${x.i.name}`);
   const offSkill = items.some((x) => x.i.kind === "skill" && !x.on);
@@ -369,8 +369,10 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
     l.acpSessionId = s.sessionId;
     await db.update(agentSessions).set({ acpSessionId: s.sessionId }).where(eq(agentSessions.id, sessionRow.id));
   }
-  if (agent.model !== "default") {
-    await l.conn.setSessionConfigOption({ sessionId: l.acpSessionId, configId: "model", value: agent.model }).catch(() => {});
+  // Model first: effort levels depend on it. "default" = leave to Claude Code.
+  const model = agent.model !== "default" ? agent.model : (org?.defaultModel ?? "default");
+  for (const [configId, value] of [["model", model], ["effort", org?.defaultEffort ?? "default"]]) {
+    if (value !== "default") await l.conn.setSessionConfigOption({ sessionId: l.acpSessionId, configId, value }).catch(() => {});
   }
 
   live.set(sessionRow.id, l);

@@ -2,7 +2,7 @@ import { FlaskConical, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import type { Ticket } from "@zippy/shared";
-import { agentInput, type Agent, type AgentInput } from "@zippy/shared";
+import { agentInput, MODELS, type Agent, type AgentInput } from "@zippy/shared";
 import { Field, fieldErrors } from "@/components/field";
 import { AgentAvatar } from "@/components/status";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,6 @@ import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
 
 const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: "# Role\n\n", model: "default", canWrite: false, color: "#6366f1", toggles: {} };
-const MODELS = ["default", "opus", "sonnet", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"];
 
 export function AgentsPage() {
   const org = useOrg();
@@ -90,7 +89,7 @@ function AgentEditor({ agent, onSaved }: { agent: Agent | null | undefined; onSa
         <Field label="Handle" hint="Mention as @handle in comments." error={errors.handle}>
           {(p) => <Input {...p} value={form.handle} onChange={(e) => set("handle", e.target.value.toLowerCase())} className="font-mono" />}
         </Field>
-        <Field label="Model" hint="default uses your Claude Code setting.">
+        <Field label="Model" hint="default uses the org default (Settings).">
           {(p) => (
             <select {...p} value={form.model} onChange={(e) => set("model", e.target.value)} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
               {(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => (
