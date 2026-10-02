@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type { ApprovalPayload, TicketStatus, ToolPayload } from "@zippy/shared";
 import { emit } from "./bus.ts";
 import { desktopMcps, isOn, scanCatalog } from "./catalog.ts";
@@ -205,16 +205,9 @@ async function mcpFor(ticket: Ticket, agent: Agent, token: string, dirs: Dir[]):
   ];
   const linear = org && (await agentToken(org).catch((e) => void console.error("[linear]", e.message)));
   if (linear) builtIn.push({ type: "http", name: "linear", url: LINEAR_MCP_URL, headers: [{ name: "Authorization", value: `Bearer ${linear}` }] });
-  const rows = await db
-    .select()
-    .from(mcpServers)
-    .where(
-      and(
-        eq(mcpServers.orgId, ticket.orgId),
-        eq(mcpServers.enabled, true),
-        dirs.length ? or(isNull(mcpServers.workspaceId), inArray(mcpServers.workspaceId, dirs.map((d) => d.ws.id))) : isNull(mcpServers.workspaceId),
-      ),
-    );
+  const rows = (await db.select().from(mcpServers).where(and(eq(mcpServers.orgId, ticket.orgId), eq(mcpServers.enabled, true)))).filter(
+    (m) => !m.workspaceIds.length || m.workspaceIds.some((id) => dirs.some((d) => d.ws.id === id)),
+  );
   const desktop = scanCatalog().items.filter((i) => i.kind === "mcp" && i.source === "Claude Desktop" && isOn(i, org?.toggles ?? {}, agent.toggles));
   const fromDesktop = desktop.map((i) => {
     const m = desktopMcps()[i.name]!;

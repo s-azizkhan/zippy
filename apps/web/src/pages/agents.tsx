@@ -10,6 +10,7 @@ import { ToggleList } from "@/components/toggle-list";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { FoldersPicker } from "@/components/pickers";
 import { api, keys, useAgents, useApiMutation, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
@@ -133,10 +134,10 @@ function TestRun({ agent }: { agent: Agent }) {
   const org = useOrg();
   const navigate = useNavigate();
   const { data: workspaces = [] } = useWorkspaces(org.id);
-  const [workspaceId, setWorkspaceId] = useState("");
+  const [picked, setPicked] = useState<string[] | null>(null);
   const [prompt, setPrompt] = useState("");
-  const folder = workspaceId || workspaces[0]?.id;
-  const run = useApiMutation(() => api.post<Ticket>(`/agents/${agent.id}/test`, { workspaceId: folder, prompt }), [keys.res(org.id, "tickets")]);
+  const folders = picked ?? (workspaces[0] ? [workspaces[0].id] : []);
+  const run = useApiMutation(() => api.post<Ticket>(`/agents/${agent.id}/test`, { workspaceIds: folders, prompt }), [keys.res(org.id, "tickets")]);
   return (
     <form
       onSubmit={(e) => (e.preventDefault(), run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.id}`) }))}
@@ -151,17 +152,9 @@ function TestRun({ agent }: { agent: Agent }) {
         <Field label="Sample task">{(p) => <Textarea {...p} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Review the last commit for security issues." className="min-h-20 text-[13px]" />}</Field>
         <div className="flex items-end gap-2">
           <Field label="Folder">
-            {(p) => (
-              <select {...p} value={folder ?? ""} onChange={(e) => setWorkspaceId(e.target.value)} className="border-input bg-background h-8 rounded-md border px-2 text-[13px]">
-                {workspaces.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            {() => <FoldersPicker orgId={org.id} value={folders} onChange={setPicked} />}
           </Field>
-          <Button type="submit" size="sm" disabled={!prompt.trim() || !folder || run.isPending}>
+          <Button type="submit" size="sm" disabled={!prompt.trim() || !folders.length || run.isPending}>
             {run.isPending ? "Starting…" : "Run test"}
           </Button>
         </div>

@@ -1,10 +1,11 @@
-import { Building2, Check, ChevronRight, Copy, FolderGit2, Link2, Plug, Plus, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Braces, Building2, Check, ChevronRight, Copy, Download, FolderGit2, Link2, Plug, Plus, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { EFFORTS, MODELS, mcpServerInput, orgInput, patchOf, workspaceInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
 import { Field, fieldErrors, SettingRow } from "@/components/field";
+import { FoldersPicker } from "@/components/pickers";
 import { ToggleList } from "@/components/toggle-list";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -149,7 +150,7 @@ function ConfirmDialog({ open, onOpenChange, title, desc, action, onConfirm, pen
 function Disclosure({ title, meta, badges, trailing, defaultOpen = false, children }: { title: string; meta?: string; badges?: ReactNode; trailing?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className="bg-card rounded-xl border shadow-xs transition-shadow data-[state=open]:shadow-sm">
+    <Collapsible.Root open={open} onOpenChange={setOpen} className="bg-card min-w-0 rounded-xl border shadow-xs transition-shadow data-[state=open]:shadow-sm">
       <div className="flex items-center gap-3 pr-4">
         <Collapsible.Trigger className="group focus-visible:ring-ring/60 flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-xl px-4 py-3 text-left outline-none focus-visible:ring-[3px]">
           <ChevronRight aria-hidden className="text-muted-foreground size-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-90" />
@@ -398,21 +399,142 @@ function FolderForm({ ws, onDone }: { ws?: Workspace; onDone?: () => void }) {
   );
 }
 
-const BLANK_MCP: McpServerInput = { name: "", workspaceId: null, transport: "stdio", command: "", args: [], url: "", env: {}, enabled: true };
+const BLANK_MCP: McpServerInput = { name: "", workspaceIds: [], transport: "stdio", command: "", args: [], url: "", env: {}, enabled: true };
 const envToText = (env: Record<string, string>) => Object.entries(env).map(([k, v]) => `${k}=${v}`).join("\n");
 const textToEnv = (t: string) => Object.fromEntries(t.split("\n").filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
+
+const toMcpJson = (list: McpServer[]) =>
+  JSON.stringify({ mcpServers: Object.fromEntries(list.map((m) => [m.name, m.transport === "stdio" ? { command: m.command, args: m.args, env: m.env } : { url: m.url, headers: m.env }])) }, null, 2);
+
+/** .mcp.json entry -> input. Keeps scope/enabled of an existing server. */
+function parseMcp(name: string, c: any, cur?: McpServer) {
+  const r = mcpServerInput.safeParse({
+    name,
+    workspaceIds: cur?.workspaceIds ?? [],
+    transport: c.url ? "http" : "stdio",
+    command: c.command,
+    args: c.args,
+    url: c.url,
+    env: c.env ?? c.headers,
+    enabled: cur?.enabled ?? true,
+  });
+  if (!r.success) throw new Error(`${name}: ${r.error.issues[0]?.path.join(".")} ${r.error.issues[0]?.message}`);
+  return r.data;
+}
+
+function McpJsonEditor({ servers, onDone }: { servers: McpServer[]; onDone: () => void }) {
+  const org = useOrg();
+  const [text, setText] = useState(() => toMcpJson(servers));
+  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState<McpServerInput[] | null>(null);
+  const save = useApiMutation(
+    (list: McpServerInput[]) =>
+      Promise.all([
+        ...list.map((v) => {
+          const cur = servers.find((s) => s.name === v.name);
+          return cur ? api.patch(`/mcp/${cur.id}`, { ...v, enabled: undefined }) : api.post(`/orgs/${org.id}/mcp`, v);
+        }),
+        ...servers.filter((s) => !list.some((v) => v.name === s.name)).map((s) => api.del(`/mcp/${s.id}`)),
+      ]),
+    [keys.res(org.id, "mcp")],
+  );
+
+  async function importFrom() {
+    try {
+      const found = await api.get<Record<string, unknown>>("/catalog/mcp");
+      const cur = JSON.parse(text || "{}").mcpServers ?? {};
+      const fresh = Object.keys(found).filter((n) => !(n in cur));
+      setText(JSON.stringify({ mcpServers: { ...cur, ...Object.fromEntries(fresh.map((n) => [n, found[n]])) } }, null, 2));
+      setError("");
+      toast.success(fresh.length ? `Imported ${fresh.length} server(s). Review, then save.` : "Nothing new to import");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function apply() {
+    const list: McpServerInput[] = [];
+    try {
+      const map = JSON.parse(text).mcpServers;
+      if (!map || typeof map !== "object") throw new Error('Expected {"mcpServers": {…}}');
+      for (const [name, c] of Object.entries<any>(map)) list.push(parseMcp(name, c, servers.find((s) => s.name === name)));
+    } catch (e) {
+      return setError((e as Error).message);
+    }
+    setError("");
+    if (servers.some((s) => !list.some((v) => v.name === s.name))) return setConfirm(list);
+    commit(list);
+  }
+
+  const commit = (list: McpServerInput[]) => save.mutate(list, { onSuccess: () => (toast.success("MCP servers saved"), onDone()) });
+  const removed = confirm ? servers.filter((s) => !confirm.some((v) => v.name === s.name)).map((s) => s.name) : [];
+
+  return (
+    <div className="grid gap-3">
+      <Field label="MCP JSON" hint="Same format as .mcp.json. Existing names update, new names are added, missing names are removed." error={error}>
+        {(p) => <Textarea {...p} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} className="min-h-72 font-mono text-[13px]" />}
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" className="max-md:min-h-11" disabled={save.isPending} onClick={apply}>
+          Save JSON
+        </Button>
+        <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={importFrom}>
+          Import from Claude Code &amp; Desktop
+        </Button>
+        <Button size="sm" variant="ghost" className="max-md:min-h-11" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={`Remove ${removed.length} server(s)?`}
+        desc={`Not in the JSON: ${removed.join(", ")}. Agents will no longer get them.`}
+        action="Save and remove"
+        pending={save.isPending}
+        onConfirm={() => commit(confirm!)}
+      />
+    </div>
+  );
+}
 
 function McpServers() {
   const org = useOrg();
   const { data = [] } = useMcpServers(org.id);
   const [adding, setAdding] = useState(false);
+  const [json, setJson] = useState(false);
+  const add = useApiMutation((list: McpServerInput[]) => Promise.all(list.map((v) => api.post(`/orgs/${org.id}/mcp`, v))), [keys.res(org.id, "mcp")]);
+
+  async function importFrom() {
+    try {
+      const found = await api.get<Record<string, unknown>>("/catalog/mcp");
+      const fresh = Object.entries(found).filter(([n]) => !data.some((s) => s.name === n));
+      if (!fresh.length) return void toast.success("Nothing new to import");
+      add.mutate(fresh.map(([n, c]) => parseMcp(n, c)), { onSuccess: () => toast.success(`Imported ${fresh.length} server(s)`) });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
+  if (json) return <McpJsonEditor servers={data} onDone={() => setJson(false)} />;
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant={data.length ? "outline" : "default"} className="max-md:min-h-11" onClick={() => setAdding(true)}>
+        <Plus aria-hidden /> Add MCP server
+      </Button>
+      <Button variant="outline" className="max-md:min-h-11" disabled={add.isPending} onClick={importFrom}>
+        <Download aria-hidden /> Import from Claude Code &amp; Desktop
+      </Button>
+      <Button variant="ghost" className="max-md:min-h-11" onClick={() => setJson(true)}>
+        <Braces aria-hidden /> Edit as JSON
+      </Button>
+    </div>
+  );
   return (
     <div className="grid gap-3">
       {data.length === 0 && !adding && (
         <EmptyState icon={Server} title="No MCP servers yet" desc="MCP servers give agents extra tools, like databases, browsers or issue trackers.">
-          <Button onClick={() => setAdding(true)}>
-            <Plus aria-hidden /> Add MCP server
-          </Button>
+          {toolbar}
         </EmptyState>
       )}
       {data.map((m) => (
@@ -423,11 +545,7 @@ function McpServers() {
           <McpForm onDone={() => setAdding(false)} />
         </Disclosure>
       )}
-      {data.length > 0 && !adding && (
-        <Button variant="outline" className="justify-self-start max-md:min-h-11" onClick={() => setAdding(true)}>
-          <Plus aria-hidden /> Add MCP server
-        </Button>
-      )}
+      {data.length > 0 && !adding && toolbar}
     </div>
   );
 }
@@ -436,7 +554,8 @@ function McpItem({ server }: { server: McpServer }) {
   const org = useOrg();
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const toggle = useApiMutation((enabled: boolean) => api.patch(`/mcp/${server.id}`, { enabled }), [keys.res(org.id, "mcp")]);
-  const scope = server.workspaceId ? (workspaces.find((w) => w.id === server.workspaceId)?.name ?? "One folder") : "All folders";
+  const names = server.workspaceIds.map((id) => workspaces.find((w) => w.id === id)?.name).filter(Boolean);
+  const scope = names.length ? names.join(", ") : "All folders";
   return (
     <Disclosure
       title={server.name}
@@ -493,23 +612,7 @@ function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }
             </Select>
           )}
         </Field>
-        <Field label="Scope">
-          {(p) => (
-            <Select value={form.workspaceId ?? ALL} onValueChange={(v) => setForm({ ...form, workspaceId: v === ALL ? null : v })}>
-              <SelectTrigger {...p} className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All folders</SelectItem>
-                {workspaces.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </Field>
+        <Field label="Folders" hint="None = all folders.">{() => <FoldersPicker orgId={org.id} value={form.workspaceIds} onChange={(workspaceIds) => setForm({ ...form, workspaceIds })} />}</Field>
       </div>
       {form.transport === "stdio" ? (
         <div className="grid gap-4 sm:grid-cols-2">

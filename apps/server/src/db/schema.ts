@@ -36,7 +36,8 @@ export const workspaces = pgTable("workspaces", {
 export const mcpServers = pgTable("mcp_servers", {
   id: id(),
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
-  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  // empty = all folders
+  workspaceIds: jsonb("workspace_ids").$type<string[]>().notNull().default([]),
   name: text("name").notNull(),
   transport: text("transport").$type<"stdio" | "http">().notNull(),
   command: text("command").notNull().default(""),

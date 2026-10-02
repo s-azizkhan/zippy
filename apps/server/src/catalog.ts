@@ -33,6 +33,9 @@ const DESKTOP = join(HOME, "Library/Application Support/Claude/claude_desktop_co
 /** Desktop-only MCP servers, runnable as stdio. */
 export const desktopMcps = (): Record<string, { command: string; args?: string[]; env?: Record<string, string> }> => json(DESKTOP).mcpServers ?? {};
 
+/** Raw MCP configs from Claude Code and Desktop (Code wins on name clash). */
+export const importableMcps = (): Record<string, unknown> => ({ ...desktopMcps(), ...json(join(HOME, ".claude.json")).mcpServers });
+
 export function scanCatalog(): Omit<Catalog, "presets"> {
   const plugins = json(join(HOME, ".claude/plugins/installed_plugins.json")).plugins ?? {};
   const enabled = json(join(HOME, ".claude/settings.json")).enabledPlugins ?? {};

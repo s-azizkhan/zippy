@@ -38,7 +38,7 @@ export const workspaceInput = z.object({
 
 export const mcpServerInput = z.object({
   name: z.string().min(1).max(60),
-  workspaceId: z.string().uuid().nullable().default(null),
+  workspaceIds: z.array(z.string().uuid()).default([]),
   transport: z.enum(["stdio", "http"]),
   command: z.string().default(""),
   args: z.array(z.string()).default([]),

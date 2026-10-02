@@ -28,7 +28,7 @@ import {
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
 import { agentSessions, agents, comments, db, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, workspaces } from "./db/index.ts";
-import { installPreset, presets, scanCatalog } from "./catalog.ts";
+import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { localizeImages, readCached } from "./files.ts";
 import { folderDiff, prState, runTests } from "./git.ts";
@@ -74,6 +74,7 @@ app.patch("/orgs/:id", async (c) => {
 });
 
 app.get("/catalog", (c) => c.json({ ...scanCatalog(), presets: presets() }));
+app.get("/catalog/mcp", (c) => c.json(importableMcps()));
 app.post("/catalog/install/:id", async (c) => ((await installPreset(c.req.param("id"))) ? c.body(null, 204) : c.notFound()));
 
 // Org-scoped resources share the same CRUD shape.
@@ -333,10 +334,10 @@ setInterval(async () => {
 
 // Agent test run: a throwaway ticket with a sample prompt, worked by that agent.
 app.post("/agents/:id/test", async (c) => {
-  const { workspaceId, prompt } = await body(c, z.object({ workspaceId: z.string().uuid(), prompt: z.string().min(1) }));
+  const { workspaceIds, prompt } = await body(c, z.object({ workspaceIds: z.array(z.string().uuid()).min(1), prompt: z.string().min(1) }));
   const [a] = await db.select().from(agents).where(eq(agents.id, c.req.param("id")));
   if (!a) return c.notFound();
-  const t = await createTicket(a.orgId, { title: `Test run: @${a.handle}`, body: prompt, workspaceIds: [workspaceId], assigneeAgentId: a.id, priority: "none", labelIds: [], status: "todo" });
+  const t = await createTicket(a.orgId, { title: `Test run: @${a.handle}`, body: prompt, workspaceIds, assigneeAgentId: a.id, priority: "none", labelIds: [], status: "todo" });
   runAgent(t.id, a.id, prompt).catch(console.error);
   return c.json(t, 201);
 });
