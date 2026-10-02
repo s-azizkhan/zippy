@@ -697,6 +697,7 @@ function LinearSettings() {
   const org = useOrg();
   const [confirming, setConfirming] = useState(false);
   const [copied, setCopied] = useState(false);
+  const setPush = useApiMutation((linearPush: boolean) => api.patch(`/orgs/${org.id}`, { linearPush }), [keys.orgs]);
   const disconnect = useApiMutation(() => api.del(`/orgs/${org.id}/linear`), [keys.orgs]);
   const copy = () =>
     navigator.clipboard.writeText(WEBHOOK_PATH).then(() => {
@@ -722,6 +723,11 @@ function LinearSettings() {
             </Button>
           )}
         </div>
+      </Card>
+      <Card title="Sync to Linear" desc="Push Zippy activity to the linked Linear issue.">
+        <SettingRow label="Sync from Zippy to Linear" hint="Status changes, agent comments and PR links. Linear comments still come in either way.">
+          {(p) => <Switch {...p} checked={org.linearPush} disabled={!org.linearConnected || setPush.isPending} onCheckedChange={(v) => setPush.mutate(v)} />}
+        </SettingRow>
       </Card>
       <Card title="Webhook (optional)" desc="So Linear comments reach agents.">
         <ol className="text-muted-foreground grid list-decimal gap-1.5 pl-4 text-xs">

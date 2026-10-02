@@ -99,7 +99,7 @@ export async function agentToken(org: Org) {
   return ((await provider(org.id).tokens()) as { access_token: string } | undefined)?.access_token ?? null;
 }
 
-const connected = (org: Org, ticket: Ticket) => !!(org.linearAuth as LinearAuth | null)?.tokens && !!ticket.linearId;
+const connected = (org: Org, ticket: Ticket) => org.linearPush && !!(org.linearAuth as LinearAuth | null)?.tokens && !!ticket.linearId;
 
 type Issue = { uuid: string; id: string; title: string; description: string | null; url: string; labels: string[]; teamId: string };
 type LinearComment = { id: string; body: string; createdAt: string; parentId: string | null; author: { name: string } | null };

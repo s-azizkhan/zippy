@@ -23,6 +23,7 @@ export const orgInput = z.object({
   budgetUsd: z.number().positive().nullable().default(null),
   slackWebhookUrl: z.union([z.literal(""), z.string().startsWith("https://hooks.slack.com/", "a Slack incoming webhook URL")]).default(""),
   notifyDesktop: z.boolean().default(true),
+  linearPush: z.boolean().default(true), // push status/comments/PR links to Linear
   toggles,
 });
 

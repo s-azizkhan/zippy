@@ -15,6 +15,7 @@ export const orgs = pgTable("orgs", {
   budgetUsd: real("budget_usd"), // per-ticket agent spend cap; null = no cap
   linearAuth: jsonb("linear_auth").$type<import("../linear.ts").LinearAuth>(), // Linear MCP OAuth client + tokens
   linearWorkspace: text("linear_workspace"),
+  linearPush: boolean("linear_push").notNull().default(true),
   slackWebhookUrl: text("slack_webhook_url").notNull().default(""),
   notifyDesktop: boolean("notify_desktop").notNull().default(true),
   createdAt: createdAt(),
