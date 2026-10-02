@@ -1,8 +1,9 @@
-import { Bot, ListTodo, Plus, Settings, Workflow } from "lucide-react";
+import { Bot, ListTodo, Plus, Settings, SunMoon, Workflow } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { Org } from "@zippy/shared";
 import { StatusIcon } from "@/components/status";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { useThemeSwitch } from "@/components/theme-toggle";
 import { useTickets } from "@/lib/api";
 import { SETTINGS_TABS } from "@/lib/settings-tabs";
 import { useUI } from "@/lib/store";
@@ -11,6 +12,7 @@ export function CommandPalette({ org }: { org: Org }) {
   const { paletteOpen, setPaletteOpen, setNewTicketOpen } = useUI();
   const { data: tickets = [] } = useTickets(org.id);
   const navigate = useNavigate();
+  const { toggle } = useThemeSwitch();
   const run = (fn: () => void) => () => (setPaletteOpen(false), fn());
 
   return (
@@ -33,6 +35,9 @@ export function CommandPalette({ org }: { org: Org }) {
           </CommandItem>
           <CommandItem onSelect={run(() => navigate("/settings"))}>
             <Settings aria-hidden /> Go to settings
+          </CommandItem>
+          <CommandItem value="toggle theme dark light" onSelect={run(() => toggle())}>
+            <SunMoon aria-hidden /> Toggle theme
           </CommandItem>
           {SETTINGS_TABS.map((t) => (
             <CommandItem key={t.value} value={`settings ${t.label}`} onSelect={run(() => navigate(`/settings?tab=${t.value}`))}>

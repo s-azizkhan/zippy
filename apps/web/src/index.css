@@ -211,3 +211,8 @@
 .hljs-comment, .hljs-quote { color: #7f848e; font-style: italic; }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
+
+/* Theme switch: new snapshot is revealed by a JS-driven clip-path circle. */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { z-index: 0; }
+::view-transition-new(root) { z-index: 1; }

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { NewTicketDialog } from "@/components/new-ticket-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/sonner";
@@ -180,6 +181,7 @@ function Sidebar() {
 
       <nav className="mt-auto grid gap-px" aria-label="Settings">
         <NavItem to="/settings" icon={Settings} label="Settings" />
+        <ThemeToggle />
       </nav>
     </aside>
   );
