@@ -15,7 +15,7 @@ import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
 
 const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: "# Role\n\n", model: "default", canWrite: false, color: "#6366f1", toggles: {} };
-const MODELS = ["default", "sonnet", "opus", "haiku"];
+const MODELS = ["default", "opus", "sonnet", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"];
 
 export function AgentsPage() {
   const org = useOrg();
@@ -92,14 +92,13 @@ function AgentEditor({ agent, onSaved }: { agent: Agent | null | undefined; onSa
         </Field>
         <Field label="Model" hint="default uses your Claude Code setting.">
           {(p) => (
-            <>
-              <Input {...p} list="models" value={form.model} onChange={(e) => set("model", e.target.value)} />
-              <datalist id="models">
-                {MODELS.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            </>
+            <select {...p} value={form.model} onChange={(e) => set("model", e.target.value)} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
+              {(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => (
+                <option key={m} value={m} className="bg-background">
+                  {m}
+                </option>
+              ))}
+            </select>
           )}
         </Field>
         <Field label="Color">
