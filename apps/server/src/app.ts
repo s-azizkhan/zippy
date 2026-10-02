@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { and, asc, desc, eq, gte, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
@@ -49,6 +49,17 @@ app.onError((e, c) => {
 });
 
 const body = async <T extends z.ZodType>(c: { req: { json(): Promise<unknown> } }, schema: T) => schema.parse(await c.req.json()) as z.infer<T>;
+
+// Tickets are addressable by identifier (COM-768): resolve to the uuid and re-dispatch.
+const byIdentifier = async (c: Context) => {
+  const [t] = await db.select({ id: tickets.id }).from(tickets).where(eq(tickets.identifier, c.req.param("id")!));
+  if (!t) return c.notFound();
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.replace(`/tickets/${c.req.param("id")}`, `/tickets/${t.id}`);
+  return app.fetch(new Request(url, c.req.raw));
+};
+app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}", byIdentifier);
+app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
 app.get("/system", (c) => c.json({ claudePath, auth: claudeAuthStatus() }));
 app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));

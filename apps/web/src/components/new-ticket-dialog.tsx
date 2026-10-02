@@ -40,7 +40,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
       setLinearRef(null);
       if (!more) {
         setNewTicketOpen(false);
-        navigate(`/t/${t.id}`);
+        navigate(`/t/${t.identifier}`);
       }
     } finally {
       setBusy(false);

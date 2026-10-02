@@ -68,9 +68,10 @@ export const useTicket = (id?: string) => useApiQuery<TicketDetail>(keys.ticket(
 export const createOrg = (v: OrgInput) => api.post<Org>("/orgs", v);
 
 /** Live ticket updates: SSE events patch the cached TicketDetail in place. */
-export function useTicketEvents(ticketId: string, orgId: string) {
+export function useTicketEvents(ticketId: string | undefined, orgId: string) {
   const qc = useQueryClient();
   useEffect(() => {
+    if (!ticketId) return;
     const es = new EventSource(`/api/tickets/${ticketId}/events`);
     const patch = (fn: (d: TicketDetail) => TicketDetail) =>
       qc.setQueryData<TicketDetail>(keys.ticket(ticketId), (d) => (d ? fn(d) : d));

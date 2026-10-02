@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, useAgents, useApiMutation, usePipelines, useTicket, useTicketEvents, useWorkspaces } from "@/lib/api";
+import { api, keys, useAgents, useApiMutation, usePipelines, useTicket, useTicketEvents, useTickets, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { cn, isTyping } from "@/lib/utils";
 import { useOrderedTickets } from "@/pages/tickets";
@@ -25,8 +25,10 @@ const MENU_KEYS: Record<string, Menu> = { s: "status", p: "priority", a: "assign
 /** Full issue view. `ticketId` + `embedded` render it inside another page (the Inbox) without list navigation keys. */
 export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded?: boolean } = {}) {
   const params = useParams<{ id: string }>();
-  const id = ticketId ?? params.id;
+  const slug = ticketId ?? params.id;
   const org = useOrg();
+  const { data: all } = useTickets(org.id);
+  const id = all?.find((t) => t.identifier === slug || t.id === slug)?.id;
   const { data, isLoading } = useTicket(id);
   const { data: agents = [] } = useAgents(org.id);
   const { ordered } = useOrderedTickets();
@@ -34,7 +36,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const { search } = useLocation();
   const [menu, setMenu] = useState<Menu>(null);
   const [tab, setTab] = useState<"activity" | "changes">("activity");
-  useTicketEvents(id!, org.id);
+  useTicketEvents(id, org.id);
 
   // Pull fresh Linear comments and description when a linked issue opens.
   const linked = !!data?.ticket.linearId;
@@ -45,7 +47,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const index = ordered.findIndex((t) => t.id === id);
   const go = (d: 1 | -1) => {
     const t = ordered[index + d];
-    if (t) navigate(`/t/${t.id}${search}`);
+    if (t) navigate(`/t/${t.identifier}${search}`);
   };
 
   // Linear keys: S/P/A/L/F open property menus, J/K next/prev issue, Esc back to the list.
@@ -308,7 +310,7 @@ function TicketLinks({ title, items, search }: { title: string; items: RelatedTi
       <ul className="grid grid-cols-[minmax(0,1fr)]">
         {items.map((r) => (
           <li key={r.id}>
-            <Link to={`/t/${r.id}${search}`} className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2">
+            <Link to={`/t/${r.identifier}${search}`} className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2">
               <StatusIcon status={r.status} />
               <span className="text-muted-foreground shrink-0 tabular-nums">{r.identifier}</span>
               <span className="truncate">{r.title}</span>

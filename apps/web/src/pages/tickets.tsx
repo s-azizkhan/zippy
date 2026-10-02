@@ -140,7 +140,7 @@ function Row({ t, agent, orgId }: { t: Ticket; agent?: Agent; orgId: string }) {
   return (
     <li>
       <Link
-        to={`/t/${t.id}${location.search}`}
+        to={`/t/${t.identifier}${location.search}`}
         data-row
         className="hover:bg-accent/50 focus-visible:bg-accent border-border/60 flex h-11 items-center gap-3 border-b px-4 text-[13px] outline-none"
       >

@@ -42,7 +42,7 @@ export function CommandPalette({ org }: { org: Org }) {
         </CommandGroup>
         <CommandGroup heading="Tickets">
           {tickets.map((t) => (
-            <CommandItem key={t.id} value={`${t.identifier} ${t.title}`} onSelect={run(() => navigate(`/t/${t.id}`))}>
+            <CommandItem key={t.id} value={`${t.identifier} ${t.title}`} onSelect={run(() => navigate(`/t/${t.identifier}`))}>
               <StatusIcon status={t.status} />
               <span className="text-muted-foreground w-14 shrink-0 font-mono text-xs">{t.identifier}</span>
               <span className="truncate">{t.title}</span>

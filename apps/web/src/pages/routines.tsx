@@ -124,7 +124,7 @@ function RoutineForm({ routine, onDone }: { routine?: Routine; onDone?: () => vo
           </Button>
         )}
         {routine && (
-          <Button type="button" size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.id}`) })}>
+          <Button type="button" size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.identifier}`) })}>
             <Play aria-hidden /> Run now
           </Button>
         )}

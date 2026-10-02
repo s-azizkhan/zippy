@@ -156,7 +156,7 @@ export function InboxPage() {
                         </Button>
                       ))}
                       <Button size="xs" variant="ghost" asChild>
-                        <Link to={`/t/${item.ticket.id}`} onClick={(e) => e.stopPropagation()}>
+                        <Link to={`/t/${item.ticket.identifier}`} onClick={(e) => e.stopPropagation()}>
                           Open
                         </Link>
                       </Button>

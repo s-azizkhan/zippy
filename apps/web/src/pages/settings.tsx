@@ -181,7 +181,7 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop };
+  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -230,6 +230,9 @@ function OrgSettings({ active }: { active: boolean }) {
       <Card title="Identity">
         <Field label="Name" error={errors.name}>
           {(p) => <Input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}
+        </Field>
+        <Field label="Ticket prefix" hint="2-6 uppercase letters. Used in new ticket IDs and links, e.g. COM-768. Existing tickets keep their ID." error={errors.key}>
+          {(p) => <Input {...p} value={form.key} maxLength={6} onChange={(e) => setForm({ ...form, key: e.target.value.toUpperCase() })} className="w-32 font-mono" />}
         </Field>
       </Card>
       <Card title="Agent defaults" desc="Used by agents whose model is set to default. Empty picks follow your Claude Code setting.">

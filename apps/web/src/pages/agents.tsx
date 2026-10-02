@@ -140,7 +140,7 @@ function TestRun({ agent }: { agent: Agent }) {
   const run = useApiMutation(() => api.post<Ticket>(`/agents/${agent.id}/test`, { workspaceIds: folders, prompt }), [keys.res(org.id, "tickets")]);
   return (
     <form
-      onSubmit={(e) => (e.preventDefault(), run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.id}`) }))}
+      onSubmit={(e) => (e.preventDefault(), run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.identifier}`) }))}
       className="mx-auto mb-10 grid max-w-3xl gap-3 px-6"
       aria-label={`Test run ${agent.name}`}
     >
