@@ -4,8 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { z } from "zod";
-import type { LearningPayload, QuestionPayload } from "@zippy/shared";
-import { agents, db, orgs, ticketFolders, tickets } from "./db/index.ts";
+import { KB_KINDS, httpUrl, type QuestionPayload } from "@zippy/shared";
+import { agents, db, knowledge, orgs, ticketFolders, tickets } from "./db/index.ts";
+import { addKnowledge, byShortId, render, search } from "./kb.ts";
 import { commitsAhead, folderDiff, openPr } from "./git.ts";
 import { attachPr, createSubIssue } from "./linear.ts";
 import { createTicket } from "./tickets.ts";
@@ -26,6 +27,8 @@ export const revokeToken = (token: string) => tokens.delete(token);
 const MAX_AGENT_HOPS = 6;
 const hops = new Map<string, number>();
 export const resetHops = (ticketId: string) => hops.delete(ticketId);
+
+const MAX_KB_PER_TICKET = 8;
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 
@@ -122,18 +125,44 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean) {
   );
 
   server.registerTool(
-    "propose_learning",
+    "kb_add",
     {
-      description: "Propose a durable lesson (convention, gotcha, command) for future tickets. The user accepts it into org or folder context. Use rarely: only facts not obvious from the code.",
+      description:
+        "Save a durable lesson to the org knowledge base, used on future tickets. Use when the user corrects you or states a preference, or you hit a non-obvious gotcha, command or useful link. Not for facts obvious from the code. Near-duplicates are merged.",
       inputSchema: {
-        text: z.string().min(1).max(500).describe("One or two sentences, imperative, self-contained"),
+        kind: z.enum(KB_KINDS),
+        text: z.string().min(1).max(300).describe("One sentence, imperative, self-contained"),
+        url: httpUrl.optional(),
         folder: z.string().optional().describe("Working folder name if it only applies there; omit for the whole org"),
+        replaces: z.string().optional().describe("Short id of an outdated entry this corrects"),
       },
     },
-    async ({ text: lesson, folder }) => {
+    async ({ kind, text: lesson, url, folder, replaces }) => {
+      const [t] = await db.select({ orgId: tickets.orgId }).from(tickets).where(eq(tickets.id, ticketId));
+      const added = await db.$count(knowledge, and(eq(knowledge.ticketId, ticketId), eq(knowledge.source, "agent")));
+      if (added >= MAX_KB_PER_TICKET) return text("Knowledge limit for this ticket reached. Keep only what matters most.");
+      if (replaces) {
+        const old = await byShortId(t!.orgId, replaces);
+        if (!old) return text(`No entry ${replaces}.`);
+        if (old.source === "user") return text("That entry was written by the user. Use ask_user to suggest the change.");
+        await db.delete(knowledge).where(eq(knowledge.id, old.id));
+      }
       const ws = folder ? (await foldersOf(ticketId)).find((f) => f.ws.name === folder)?.ws : undefined;
-      await addComment(ticketId, agentId, "learning", { text: lesson, workspaceId: ws?.id ?? null } satisfies LearningPayload);
-      return text("Proposed. The user will accept or dismiss it.");
+      const { row, created } = await addKnowledge(t!.orgId, { kind, text: lesson, url: url ?? "", workspaceId: ws?.id ?? null, pinned: false }, { source: "agent", agentId, ticketId });
+      return text(created ? `Saved [${row.id.slice(0, 8)}].` : `Already known as [${row.id.slice(0, 8)}]; reinforced.`);
+    },
+  );
+
+  server.registerTool(
+    "kb_search",
+    {
+      description: "Search the org knowledge base beyond the entries already in your prompt.",
+      inputSchema: { query: z.string().min(2) },
+    },
+    async ({ query }) => {
+      const [t] = await db.select({ orgId: tickets.orgId }).from(tickets).where(eq(tickets.id, ticketId));
+      const rows = await search(t!.orgId, (await foldersOf(ticketId)).map((f) => f.ws.id), query);
+      return text(rows.length ? render(rows) : "No matches.");
     },
   );
 

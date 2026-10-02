@@ -113,7 +113,18 @@ export const routineInput = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const approvalDecision = z.object({ optionId: z.string().nullable() });
+export const httpUrl = z.string().url().refine((u) => /^https?:\/\//i.test(u), "http(s) URL");
+export const KB_KINDS = ["do", "dont", "prefer", "fact", "command", "link"] as const;
+export const KB_LABELS: Record<(typeof KB_KINDS)[number], string> = { do: "Do", dont: "Don't", prefer: "Prefer", fact: "Fact", command: "Command", link: "Link" };
+export const knowledgeInput = z.object({
+  kind: z.enum(KB_KINDS),
+  text: z.string().trim().min(1).max(500),
+  url: z.union([z.literal(""), httpUrl]).default(""),
+  workspaceId: z.string().uuid().nullable().default(null), // null = whole org
+  pinned: z.boolean().default(false), // always injected into prompts
+});
+
+export const approvalDecision =z.object({ optionId: z.string().nullable() });
 
 export type CatalogItem = { id: string; kind: "skill" | "mcp"; name: string; description: string; source: string; defaultOn: boolean };
 export type Preset = { id: string; name: string; description: string; installed: boolean };
@@ -207,6 +218,8 @@ export type Ticket = Row &
   };
 export type Routine = Row & RoutineInput & { orgId: string; lastRunAt: string | null };
 export type Label = Row & z.infer<typeof labelInput> & { orgId: string };
+export type KnowledgeInput = z.infer<typeof knowledgeInput>;
+export type Knowledge = Row & KnowledgeInput & { orgId: string; source: "user" | "agent"; agentId: string | null; ticketId: string | null; uses: number; lastUsedAt: string | null };
 export type RelatedTicket = Pick<Ticket, "id" | "identifier" | "title" | "status">;
 export type Stage = StageInput & { id: string; pipelineId: string; position: number };
 export type Pipeline = Row & Omit<PipelineInput, "stages"> & { orgId: string; stages: Stage[] };

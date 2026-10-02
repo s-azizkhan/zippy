@@ -11,6 +11,7 @@ import { forAgent } from "./files.ts";
 import { ensureWorktree } from "./git.ts";
 import { agentToken, LINEAR_MCP_URL, postComment, syncStatus } from "./linear.ts";
 import { issueToken, revokeToken } from "./mcp.ts";
+import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
 import { afterTurn } from "./pipeline.ts";
 import { agentSessions, agents, comments, db, mcpServers, orgs, ticketFolders, tickets, workspaces } from "./db/index.ts";
@@ -170,6 +171,7 @@ export async function setStatus(ticketId: string, to: TicketStatus) {
 async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, ticket.orgId));
   const team = await db.select({ handle: agents.handle, name: agents.name }).from(agents).where(eq(agents.orgId, ticket.orgId));
+  const kb = await kbPrompt(ticket.orgId, dirs.map((d) => d.ws.id), `${ticket.title} ${ticket.body}`);
   return [
     `# Organization: ${org!.name}`,
     org!.contextMd,
@@ -183,6 +185,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
         .filter(Boolean)
         .join("\n"),
     ),
+    `# Knowledge base\nOrg lessons from past tickets and the user. Follow them. When the user corrects you or states a preference, or you learn a durable gotcha, call \`kb_add\` (pass \`replaces\` to fix an outdated entry). \`kb_search\` finds more.${kb && `\n${kb}`}`,
     `# Your role: ${agent.name} (@${agent.handle})`,
     agent.rolePromptMd,
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",

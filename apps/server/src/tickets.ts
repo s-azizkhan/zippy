@@ -45,12 +45,3 @@ export async function createTicket(
   await setFolders(ticket.id, workspaceIds);
   return ticket;
 }
-
-/** Adds a bullet under "## Learnings" (created at the end when missing). */
-export function appendLearning(md: string, text: string) {
-  const line = `- ${text.trim().replace(/\s*\n\s*/g, " ")}`;
-  const i = md.indexOf("## Learnings");
-  if (i < 0) return `${md.trimEnd()}\n\n## Learnings\n${line}`.trimStart();
-  const end = md.indexOf("\n#", i + 1);
-  return end < 0 ? `${md.trimEnd()}\n${line}` : `${md.slice(0, end).trimEnd()}\n${line}\n${md.slice(end)}`;
-}

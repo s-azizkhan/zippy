@@ -1,7 +1,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import type { Agent, AgentWork, Comment, FolderDiff, InboxItem, Label, McpServer, Org, OrgInput, Pipeline, Routine, Ticket, TicketDetail, TicketEvent, Workspace } from "@zippy/shared";
+import type { Agent, AgentWork, Comment, FolderDiff, InboxItem, Knowledge, Label, McpServer, Org, OrgInput, Pipeline, Routine, Ticket, TicketDetail, TicketEvent, Workspace } from "@zippy/shared";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +60,7 @@ export const useInbox = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "inbox"), queryFn: () => api.get<InboxItem[]>(`/orgs/${orgId}/inbox`), enabled: !!orgId, refetchInterval: 15_000 });
 export const useDiff = (ticketId: string, enabled: boolean, merged = false) =>
   useQuery({ queryKey: ["diff", ticketId, merged], queryFn: () => api.get<FolderDiff[]>(`/tickets/${ticketId}/diff${merged ? "?merged=1" : ""}`), enabled, staleTime: 0 });
+export const useKnowledge = (orgId?: string) => useApiQuery<Knowledge[]>(keys.res(orgId!, "knowledge"), orgId ? `/orgs/${orgId}/knowledge` : null);
 export const useLabels = (orgId?: string) => useApiQuery<Label[]>(keys.res(orgId!, "labels"), orgId ? `/orgs/${orgId}/labels` : null);
 export const usePipelines = (orgId?: string) => useApiQuery<Pipeline[]>(keys.res(orgId!, "pipelines"), orgId ? `/orgs/${orgId}/pipelines` : null);
 export const useRoutines = (orgId?: string) => useApiQuery<Routine[]>(keys.res(orgId!, "routines"), orgId ? `/orgs/${orgId}/routines` : null);

@@ -12,6 +12,7 @@ import {
   linearImport,
   pipelineInput,
   routineInput,
+  knowledgeInput,
   type PipelineInput,
   type ApprovalPayload,
   type InboxItem,
@@ -27,8 +28,9 @@ import {
   type TicketEvent,
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
-import { agentSessions, agents, comments, db, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, workspaces } from "./db/index.ts";
+import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, workspaces } from "./db/index.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
+import { addKnowledge } from "./kb.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { localizeImages, readCached } from "./files.ts";
 import { folderDiff, prState, runTests } from "./git.ts";
@@ -36,7 +38,7 @@ import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
-import { appendLearning, autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
+import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -111,6 +113,7 @@ crud("mcp", mcpServers, mcpServerInput);
 crud("agents", agents, agentInput);
 crud("labels", labels, labelInput);
 crud("routines", routines, routineInput);
+crud("knowledge", knowledge, knowledgeInput);
 
 // Tickets
 type TicketRow = typeof tickets.$inferSelect;
@@ -542,7 +545,7 @@ app.get("/orgs/:orgId/inbox", async (c) => {
   return c.json([...items, ...learned].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
 });
 
-/** Accept a proposed learning into org or folder context, or dismiss it. */
+/** Accept a proposed learning (legacy comments) into the knowledge base, or dismiss it. */
 app.post("/comments/:id/learning", async (c) => {
   const { accept } = await body(c, z.object({ accept: z.boolean() }));
   const [l] = await db.select().from(comments).where(eq(comments.id, c.req.param("id")));
@@ -551,9 +554,7 @@ app.post("/comments/:id/learning", async (c) => {
   if (p.status) return c.body(null, 204);
   if (accept) {
     const [t] = await db.select({ orgId: tickets.orgId }).from(tickets).where(eq(tickets.id, l.ticketId));
-    const table = p.workspaceId ? workspaces : orgs;
-    const [row] = await db.select({ md: table.contextMd }).from(table).where(eq(table.id, p.workspaceId ?? t!.orgId));
-    await db.update(table).set({ contextMd: appendLearning(row?.md ?? "", p.text) }).where(eq(table.id, p.workspaceId ?? t!.orgId));
+    await addKnowledge(t!.orgId, { kind: "fact", text: p.text.slice(0, 500), url: "", workspaceId: p.workspaceId, pinned: false }, { source: "agent", agentId: l.agentId, ticketId: l.ticketId });
   }
   const [updated] = await db.update(comments).set({ payload: { ...p, status: accept ? "accepted" : "dismissed" } }).where(eq(comments.id, l.id)).returning();
   emit(l.ticketId, { type: "comment", comment: updated });

@@ -165,6 +165,23 @@ export const comments = pgTable("comments", {
   createdAt: createdAt(),
 });
 
+// Org knowledge base. Agents write via MCP (kb_add); users via Settings.
+export const knowledge = pgTable("knowledge", {
+  id: id(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<import("@zippy/shared").KnowledgeInput["kind"]>().notNull(),
+  text: text("text").notNull(),
+  url: text("url").notNull().default(""),
+  pinned: boolean("pinned").notNull().default(false),
+  source: text("source").$type<"user" | "agent">().notNull().default("user"),
+  agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+  ticketId: uuid("ticket_id").references(() => tickets.id, { onDelete: "set null" }),
+  uses: integer("uses").notNull().default(0), // times injected or confirmed; ranks ties
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
 // Recurring tickets: every `everyHours` a ticket is created from this template.
 export const routines = pgTable("routines", {
   id: id(),

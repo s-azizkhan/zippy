@@ -1,10 +1,10 @@
 import { MdEditor } from "@/components/md-editor";
-import { Braces, Building2, Check, ChevronRight, Copy, Download, FolderGit2, Link2, Plug, Plus, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { BookOpen, Bot, Braces, Building2, Check, ChevronRight, Copy, Download, FolderGit2, Link2, Plug, Pin, Plus, Search, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { EFFORTS, MODELS, mcpServerInput, orgInput, patchOf, workspaceInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
+import { EFFORTS, KB_KINDS, KB_LABELS, MODELS, knowledgeInput, mcpServerInput, orgInput, patchOf, workspaceInput, type KnowledgeInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
 import { Field, fieldErrors, SettingRow } from "@/components/field";
 import { FoldersPicker } from "@/components/pickers";
 import { ToggleList } from "@/components/toggle-list";
@@ -14,11 +14,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, keys, useApiMutation, useAcp, useMcpServers, useSystem, useWorkspaces } from "@/lib/api";
+import { api, keys, useApiMutation, useAcp, useKnowledge, useMcpServers, useSystem, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
-const ICONS: Record<SettingsTab, LucideIcon> = { org: Building2, folders: FolderGit2, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
+const ICONS: Record<SettingsTab, LucideIcon> = { org: Building2, folders: FolderGit2, knowledge: BookOpen, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
 const GROUPS = [...new Set(SETTINGS_TABS.map((t) => t.group))];
 const isTab = (v: string | null): v is SettingsTab => SETTINGS_TABS.some((t) => t.value === v);
 
@@ -68,6 +68,9 @@ export function SettingsPage() {
             </Pane>
             <Pane value="folders" title="Working folders" desc="Local repos agents work in. Each ticket gets an isolated worktree of one folder.">
               <Folders />
+            </Pane>
+            <Pane value="knowledge" title="Knowledge base" desc="Dos, don'ts, preferences, commands and links. Agents add to it as they work; the most relevant entries go into each agent's prompt.">
+              <KnowledgeBase />
             </Pane>
             <Pane value="tools" title="Agent tool defaults" desc="Defaults for every agent. Override per agent on the Agents page.">
               <OrgTools />
@@ -756,6 +759,106 @@ function LinearSettings() {
         pending={disconnect.isPending}
         onConfirm={() => disconnect.mutate(undefined, { onSuccess: () => (setConfirming(false), toast.success("Linear disconnected")) })}
       />
+    </div>
+  );
+}
+
+const BLANK_KB: KnowledgeInput = { kind: "do", text: "", url: "", workspaceId: null, pinned: false };
+
+function KnowledgeBase() {
+  const org = useOrg();
+  const { data = [] } = useKnowledge(org.id);
+  const { data: folders = [] } = useWorkspaces(org.id);
+  const [form, setForm] = useState(BLANK_KB);
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<KnowledgeInput["kind"] | "all">("all");
+  const inv = [keys.res(org.id, "knowledge")];
+  const add = useApiMutation((v: KnowledgeInput) => api.post(`/orgs/${org.id}/knowledge`, v), inv);
+  const patch = useApiMutation(({ id, ...v }: Partial<KnowledgeInput> & { id: string }) => api.patch(`/knowledge/${id}`, v), inv);
+  const remove = useApiMutation((id: string) => api.del(`/knowledge/${id}`), inv);
+  const folderName = (id: string | null) => (id ? (folders.find((f) => f.id === id)?.name ?? "folder") : "org");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const r = knowledgeInput.safeParse(form);
+    if (!r.success) return toast.error(r.error.issues[0]!.message);
+    add.mutate(r.data, { onSuccess: () => setForm({ ...BLANK_KB, kind: form.kind, workspaceId: form.workspaceId }) });
+  }
+
+  const needle = q.trim().toLowerCase();
+  const shown = data
+    .filter((k) => (kind === "all" || k.kind === kind) && (!needle || `${k.text} ${k.url}`.toLowerCase().includes(needle)))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.uses - a.uses);
+
+  return (
+    <div className="grid gap-4">
+      <Card title="Add entry" desc="Short, imperative, one fact per entry. Pinned entries always reach agents.">
+        <form onSubmit={submit} className="grid gap-2 sm:grid-cols-[8rem_1fr_11rem_auto]" aria-label="New knowledge entry">
+          <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v as KnowledgeInput["kind"] })}>
+            <SelectTrigger aria-label="Kind" className="w-full min-w-0"><SelectValue className="truncate" /></SelectTrigger>
+            <SelectContent>{KB_KINDS.map((k) => <SelectItem key={k} value={k}>{KB_LABELS[k]}</SelectItem>)}</SelectContent>
+          </Select>
+          <Input aria-label="Text" value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} placeholder={form.kind === "link" ? "What it is" : "e.g. Run pnpm db:push after schema changes"} />
+          <Select value={form.workspaceId ?? "org"} onValueChange={(v) => setForm({ ...form, workspaceId: v === "org" ? null : v })}>
+            <SelectTrigger aria-label="Scope" className="w-full min-w-0"><SelectValue className="truncate" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="org">Whole org</SelectItem>
+              {folders.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button type="submit" disabled={add.isPending}><Plus aria-hidden /> Add</Button>
+          {form.kind === "link" && (
+            <Input aria-label="URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://" className="font-mono text-[13px] sm:col-span-4" />
+          )}
+        </form>
+      </Card>
+
+      {data.length === 0 ? (
+        <EmptyState icon={BookOpen} title="No knowledge yet" desc="Add your own entries, or let agents fill it as they work tickets and you correct them." />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-48 flex-1">
+              <Search aria-hidden className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+              <Input aria-label="Filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter" className="pl-8" />
+            </div>
+            {(["all", ...KB_KINDS] as const).map((k) => (
+              <Button key={k} size="sm" variant={kind === k ? "secondary" : "ghost"} onClick={() => setKind(k)}>
+                {k === "all" ? `All ${data.length}` : `${KB_LABELS[k]} ${data.filter((d) => d.kind === k).length}`}
+              </Button>
+            ))}
+          </div>
+          <ul className="bg-card divide-y rounded-xl border shadow-xs">
+            {shown.map((k) => (
+              <li key={k.id} className="flex items-start gap-3 px-4 py-2.5">
+                <span className="w-16 shrink-0 pt-1.5 text-[11px] font-medium uppercase text-muted-foreground">{KB_LABELS[k.kind]}</span>
+                <div className="min-w-0 flex-1">
+                  <input
+                    aria-label="Entry text"
+                    defaultValue={k.text}
+                    onBlur={(e) => e.target.value.trim() && e.target.value !== k.text && patch.mutate({ id: k.id, text: e.target.value.trim() })}
+                    onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                    className="focus-visible:bg-muted/60 w-full rounded-md bg-transparent px-1.5 py-1 text-[13px] outline-none"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5 px-1.5">
+                    {/^https?:\/\//i.test(k.url) && <a href={k.url} target="_blank" rel="noreferrer" className="truncate font-mono text-xs text-[#5e6ad2] hover:underline">{k.url}</a>}
+                    <Chip>{folderName(k.workspaceId)}</Chip>
+                    {k.source === "agent" && <Chip><Bot aria-hidden className="inline size-3" /> agent</Chip>}
+                    {k.uses > 0 && <Chip>used {k.uses}×</Chip>}
+                  </div>
+                </div>
+                <Button size="icon" variant="ghost" aria-label={k.pinned ? "Unpin" : "Pin"} aria-pressed={k.pinned} onClick={() => patch.mutate({ id: k.id, pinned: !k.pinned })}>
+                  <Pin aria-hidden className={k.pinned ? "fill-current" : "text-muted-foreground"} />
+                </Button>
+                <Button size="icon" variant="ghost" aria-label="Delete" onClick={() => remove.mutate(k.id)}>
+                  <Trash2 aria-hidden className="text-muted-foreground" />
+                </Button>
+              </li>
+            ))}
+            {!shown.length && <li className="text-muted-foreground px-4 py-6 text-center text-xs">No matches.</li>}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
