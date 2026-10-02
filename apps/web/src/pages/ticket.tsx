@@ -131,7 +131,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
                 {tab === "activity" ? (
                   <Activity ticketId={ticket.id} comments={comments} agents={agents} running={running} />
                 ) : (
-                  <Changes ticket={ticket} comments={comments} />
+                  <Changes ticket={ticket} comments={comments} agents={agents} />
                 )}
               </div>
             </article>

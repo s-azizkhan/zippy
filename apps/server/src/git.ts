@@ -57,18 +57,35 @@ const baseRef = async (cwd: string, ws: Workspace) =>
 export const isRisky = (path: string, riskPaths: string[]) =>
   riskPaths.some((p) => (/[*?[]/.test(p) ? matchesGlob(path, p) : path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`)));
 
+/** Where the branch's own commits start, from its reflog: below the trailing commits, or the last rebase target. */
+async function forkPoint(cwd: string, branch: string | null, fallback: string) {
+  if (!branch) return fallback;
+  const log = (await git(cwd, "reflog", "show", "--format=%H\t%gs", branch).catch(() => "")).split("\n").filter(Boolean);
+  const own = log.find((l) => !l.split("\t")[1]!.startsWith("commit"));
+  if (!own) return fallback;
+  const [sha, subject] = own.split("\t") as [string, string];
+  return /onto ([0-9a-f]{7,40})$/.exec(subject)?.[1] ?? sha; // a rebase replays the branch's commits onto its new base
+}
+
 const MAX_PATCH = 200_000; // per file; huge generated files would freeze the browser
 
 /** Branch changes vs the merge base, committed and uncommitted. Untracked files are listed without a patch. */
-export async function folderDiff(folder: Folder, ws: Workspace): Promise<FolderDiff> {
+export async function folderDiff(folder: Folder, ws: Workspace, showMerged = false): Promise<FolderDiff> {
   const out: FolderDiff = { workspaceId: ws.id, folder: ws.name, branch: folder.branch, base: ws.baseBranch, files: [] };
   const cwd = folder.worktreePath;
   if (!cwd) return { ...out, error: "No worktree yet. It is created when an agent first runs." };
   if (!(await ok(git(cwd, "rev-parse", "--git-dir")))) return { ...out, error: "The worktree is broken: its repo moved or was deleted. It is rebuilt the next time an agent runs." };
   try {
-    const mergeBase = await git(cwd, "merge-base", await baseRef(cwd, ws), "HEAD");
-    const numstat = await git(cwd, "diff", "--numstat", mergeBase);
-    const patch = (await exec("git", ["diff", "--no-color", mergeBase], { cwd, maxBuffer: 64 * 1024 * 1024 })).stdout;
+    const base = await baseRef(cwd, ws);
+    const mergeBase = await git(cwd, "merge-base", base, "HEAD");
+    const [head, tip] = await Promise.all([git(cwd, "rev-parse", "HEAD"), git(cwd, "rev-parse", base)]);
+    let from = mergeBase;
+    if (mergeBase === head && head !== tip && !(await git(cwd, "status", "--porcelain"))) {
+      out.merged = true;
+      if (showMerged) from = await forkPoint(cwd, folder.branch, mergeBase);
+    }
+    const numstat = await git(cwd, "diff", "--numstat", from);
+    const patch = (await exec("git", ["diff", "--no-color", from], { cwd, maxBuffer: 64 * 1024 * 1024 })).stdout;
     const patches = new Map<string, string>();
     for (const chunk of patch.split(/^(?=diff --git )/m)) {
       const path = /^diff --git a\/.+? b\/(.+)$/m.exec(chunk)?.[1];

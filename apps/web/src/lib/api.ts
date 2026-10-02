@@ -58,8 +58,8 @@ export const useAgents = (orgId?: string) => useApiQuery<Agent[]>(keys.res(orgId
 export const useTickets = (orgId?: string) => useApiQuery<Ticket[]>(keys.res(orgId!, "tickets"), orgId ? `/orgs/${orgId}/tickets` : null);
 export const useInbox = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "inbox"), queryFn: () => api.get<InboxItem[]>(`/orgs/${orgId}/inbox`), enabled: !!orgId, refetchInterval: 15_000 });
-export const useDiff = (ticketId: string, enabled: boolean) =>
-  useQuery({ queryKey: ["diff", ticketId], queryFn: () => api.get<FolderDiff[]>(`/tickets/${ticketId}/diff`), enabled, staleTime: 0 });
+export const useDiff = (ticketId: string, enabled: boolean, merged = false) =>
+  useQuery({ queryKey: ["diff", ticketId, merged], queryFn: () => api.get<FolderDiff[]>(`/tickets/${ticketId}/diff${merged ? "?merged=1" : ""}`), enabled, staleTime: 0 });
 export const useLabels = (orgId?: string) => useApiQuery<Label[]>(keys.res(orgId!, "labels"), orgId ? `/orgs/${orgId}/labels` : null);
 export const usePipelines = (orgId?: string) => useApiQuery<Pipeline[]>(keys.res(orgId!, "pipelines"), orgId ? `/orgs/${orgId}/pipelines` : null);
 export const useRoutines = (orgId?: string) => useApiQuery<Routine[]>(keys.res(orgId!, "routines"), orgId ? `/orgs/${orgId}/routines` : null);

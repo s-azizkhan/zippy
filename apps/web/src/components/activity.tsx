@@ -403,7 +403,7 @@ function ApprovalBody({ c, agent }: { c: Comment; agent?: Agent }) {
 }
 
 /** Textarea with @agent autocomplete. ⌘↵ sends. */
-function MentionInput({
+export function MentionInput({
   agents,
   onSend,
   placeholder,

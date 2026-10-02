@@ -459,7 +459,7 @@ app.post("/linear/webhook", async (c) => {
 app.all("/mcp", handleMcp);
 
 // Verify: branch diff per folder, and on-demand test runs posted as timeline cards.
-app.get("/tickets/:id/diff", async (c) => c.json(await Promise.all((await foldersOf(c.req.param("id"))).map(({ folder, ws }) => folderDiff(folder, ws)))));
+app.get("/tickets/:id/diff", async (c) => c.json(await Promise.all((await foldersOf(c.req.param("id"))).map(({ folder, ws }) => folderDiff(folder, ws, c.req.query("merged") === "1")))));
 
 app.post("/tickets/:id/tests", async (c) => {
   const ticketId = c.req.param("id");

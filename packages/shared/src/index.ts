@@ -148,7 +148,7 @@ export type LearningPayload = { text: string; workspaceId: string | null; status
 export type TestPayload = { folder: string; command: string; ok: boolean; output: string; durationMs: number };
 
 export type DiffFile = { path: string; additions: number; deletions: number; risky: boolean; patch: string };
-export type FolderDiff = { workspaceId: string; folder: string; branch: string | null; base: string; files: DiffFile[]; error?: string };
+export type FolderDiff = { workspaceId: string; folder: string; branch: string | null; base: string; files: DiffFile[]; error?: string; merged?: boolean }; // merged: branch tip already in base
 
 export type InboxItem = {
   kind: "question" | "approval" | "gate" | "review" | "blocked" | "learning";
