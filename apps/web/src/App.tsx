@@ -3,7 +3,7 @@ import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftO
 import { MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
-import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation } from "react-router";
+import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
 import { NewTicketDialog } from "@/components/new-ticket-dialog";
@@ -225,12 +225,15 @@ function Layout() {
     return () => clearTimeout(t);
   }, [isLoading]);
 
+  const title = useMatches().at(-1)?.handle as { title?: string } | undefined;
+
   if (isLoading) return null;
   if (error) return <ErrorPage code={errorCode(error)} error={error} onRetry={() => refetch()} />;
   if (!org) return <Onboarding />;
 
   return (
     <div className="bg-sidebar flex h-dvh">
+      {title?.title && <title>{`${title.title} | Zippy - Agent coworkers for your tickets`}</title>}
       <a href="#main" className="bg-background sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
         Skip to content
       </a>
@@ -255,15 +258,15 @@ const router = createBrowserRouter([
     element: <Layout />,
     errorElement: <RouteError />,
     children: [
-      { path: "/", element: <TicketsPage /> },
+      { path: "/", element: <TicketsPage />, handle: { title: "Tickets" } },
       { path: "/t/:id", element: <TicketPage /> },
-      { path: "/inbox", element: <InboxPage /> },
-      { path: "/agents", element: <AgentsPage /> },
-      { path: "/pipelines", element: <PipelinesPage /> },
-      { path: "/routines", element: <RoutinesPage /> },
-      { path: "/settings", element: <SettingsPage /> },
+      { path: "/inbox", element: <InboxPage />, handle: { title: "Inbox" } },
+      { path: "/agents", element: <AgentsPage />, handle: { title: "Agents" } },
+      { path: "/pipelines", element: <PipelinesPage />, handle: { title: "Pipelines" } },
+      { path: "/routines", element: <RoutinesPage />, handle: { title: "Routines" } },
+      { path: "/settings", element: <SettingsPage />, handle: { title: "Settings" } },
       ...(import.meta.env.DEV ? [{ path: "/error/:code", element: <ErrorPreview /> }] : []),
-      { path: "*", element: <ErrorPage code={404} compact /> },
+      { path: "*", element: <ErrorPage code={404} compact />, handle: { title: "Page not found" } },
     ],
   },
 ]);

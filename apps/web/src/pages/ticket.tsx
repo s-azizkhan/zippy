@@ -114,6 +114,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const side = tab === "terminal" ? "terminal" : "changes";
   const head = (
     <div className="grid min-w-0 grid-cols-1 gap-3">
+      {!embedded && <title>{`${ticket.identifier} ${ticket.title} | Zippy - Agent coworkers for your tickets`}</title>}
       <TitleEditor ticket={ticket} />
       <DescriptionEditor ticket={ticket} />
     </div>
