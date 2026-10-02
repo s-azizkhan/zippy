@@ -1,6 +1,7 @@
 import { ArrowRight, ArrowUp, Check, ChevronRight, CircleAlert, ExternalLink, GitPullRequest, Loader2, Workflow, Wrench, X } from "lucide-react";
-import { useId, useMemo, useRef, useState } from "react";
+import { Children, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
+import { Link } from "react-router";
 import remarkGfm from "remark-gfm";
 import type {
   Agent,
@@ -46,9 +47,34 @@ function MdImage({ src, alt }: { src?: string; alt?: string }) {
   );
 }
 
+const MENTION_RE = /(@[a-z][a-z0-9-]+|\b[A-Z][A-Z0-9]{1,9}-\d+\b)/g;
+
+/** Highlight @agent and TICKET-ID in text nodes. */
+const hl = (children: ReactNode): ReactNode =>
+  Children.map(children, (ch) =>
+    typeof ch !== "string"
+      ? ch
+      : ch.split(MENTION_RE).map((part, i) =>
+          i % 2 ? (
+            <Link key={i} to={part[0] === "@" ? "/agents" : `/t/${part}`} className="bg-primary/10 text-primary hover:bg-primary/20 rounded px-1 font-medium no-underline">
+              {part}
+            </Link>
+          ) : (
+            part
+          ),
+        ),
+  );
+
 export const md = (text: string) => (
   <div className="md">
-    <Markdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, alt }) => <MdImage src={typeof src === "string" ? src : undefined} alt={alt} /> }}>
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        img: ({ src, alt }) => <MdImage src={typeof src === "string" ? src : undefined} alt={alt} />,
+        p: ({ children }) => <p>{hl(children)}</p>,
+        li: ({ children }) => <li>{hl(children)}</li>,
+      }}
+    >
       {text}
     </Markdown>
   </div>
