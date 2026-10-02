@@ -76,6 +76,11 @@ export const md = (text: string) => (
         img: ({ src, alt }) => <MdImage src={typeof src === "string" ? src : undefined} alt={alt} />,
         p: ({ children }) => <p>{hl(children)}</p>,
         li: ({ children }) => <li>{hl(children)}</li>,
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer">
+            {children}
+          </a>
+        ),
         code: ({ className, children }) => {
           const text = String(children);
           const lang = /language-(\S+)/.exec(className ?? "")?.[1];
