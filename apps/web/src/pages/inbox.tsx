@@ -1,9 +1,10 @@
-import { CircleAlert, Eye, Inbox as InboxIcon, KeyRound, Lightbulb, MessageCircleQuestion, Workflow } from "lucide-react";
+import { CircleAlert, Search, Eye, Inbox as InboxIcon, KeyRound, Lightbulb, MessageCircleQuestion, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { InboxItem } from "@zippy/shared";
 import { AgentAvatar } from "@/components/status";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api, keys, queryClient, useAgents, useInbox } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { ago, cn, isTyping } from "@/lib/utils";
@@ -35,7 +36,13 @@ export function InboxPage() {
   const { data: agents = [] } = useAgents(org.id);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const list = items ?? [];
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<InboxItem["kind"] | "all">("all");
+  const all = items ?? [];
+  const needle = q.trim().toLowerCase();
+  const list = all.filter(
+    (i) => (kind === "all" || i.kind === kind) && (!needle || `${i.ticket.identifier} ${i.ticket.title} ${i.title} ${i.detail ?? ""}`.toLowerCase().includes(needle)),
+  );
   const current = list.find((i) => itemKey(i) === selected) ?? list[0];
 
   async function run(item: InboxItem, optionId: string) {
@@ -78,14 +85,33 @@ export function InboxPage() {
           <h1 id="inbox-h" className="text-[13px] font-medium">
             Inbox
           </h1>
-          {list.length > 0 && <span className="text-muted-foreground text-xs tabular-nums">{list.length}</span>}
+          {all.length > 0 && <span className="text-muted-foreground text-xs tabular-nums">{list.length === all.length ? all.length : `${list.length}/${all.length}`}</span>}
           <span className="text-muted-foreground ml-auto hidden text-xs lg:inline">J/K move · 1–9 act</span>
         </header>
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" aria-hidden />
+            <Input aria-label="Search inbox" placeholder="Search inbox…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 pl-7 text-[13px]" />
+          </div>
+          <select
+            aria-label="Filter by type"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as typeof kind)}
+            className="bg-background h-8 rounded-md border px-2 text-[13px]"
+          >
+            <option value="all">All types</option>
+            {Object.entries(KIND).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <ul className="flex-1 overflow-y-auto" aria-label="Waiting on you">
           {!isLoading && !list.length && (
             <li className="text-muted-foreground grid place-items-center gap-2 p-16 text-center text-[13px]">
               <InboxIcon className="size-6 opacity-60" aria-hidden />
-              Nothing needs you. Agents are on it.
+              {all.length ? "No matches." : "Nothing needs you. Agents are on it."}
             </li>
           )}
           {list.map((item) => {
