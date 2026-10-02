@@ -119,6 +119,29 @@ export async function fetchIssue(org: Org, ref: string) {
   };
 }
 
+type ListedIssue = { uuid: string; id: string; title: string; description?: string | null; url: string; status: string; priority?: { name: string }; assignee?: string | null };
+const FIELDS = ["uuid", "title", "url", "status", "priority", "assignee"];
+
+export const getIssue = (org: Org, id: string) => call<Issue>(org, "get_issue", { id });
+
+/** Issues assigned to `user` plus ones whose title/description mention @user. ponytail: comment mentions are not searchable via MCP. */
+const mineCache = new Map<string, { at: number; issues: ListedIssue[] }>();
+const MINE_TTL = 30 * 60_000; // ponytail: in-memory, lost on restart
+
+export async function listMine(org: Org, user: string, fresh = false) {
+  const key = `${org.id}:${user.toLowerCase()}`;
+  const hit = mineCache.get(key);
+  if (!fresh && hit && Date.now() - hit.at < MINE_TTL) return hit;
+  const [assigned, mentioned] = await Promise.all([
+    call<{ issues: ListedIssue[] }>(org, "list_issues", { assignee: user, limit: 100, fields: FIELDS }),
+    call<{ issues: ListedIssue[] }>(org, "list_issues", { query: `@${user.replace(/^@/, "")}`, limit: 50, fields: FIELDS }),
+  ]);
+  const seen = new Set<string>();
+  const entry = { at: Date.now(), issues: [...assigned.issues, ...mentioned.issues].filter((i) => !seen.has(i.id) && seen.add(i.id)) };
+  mineCache.set(key, entry);
+  return entry;
+}
+
 // Comments we posted, so the webhook does not echo them back. ponytail: in-memory, lost on restart.
 export const ownCommentIds = new Set<string>();
 

@@ -35,7 +35,7 @@ import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { localizeImages, readCached } from "./files.ts";
 import { folderDiff, prState, runTests } from "./git.ts";
 import { checkPrs } from "./github.ts";
-import { authorizeUrl, completeOAuth, dropClient, fetchIssue, ownCommentIds, verifyWebhook } from "./linear.ts";
+import { authorizeUrl, completeOAuth, dropClient, fetchIssue, getIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
@@ -379,6 +379,18 @@ app.delete("/orgs/:id/linear", async (c) => {
   await db.update(orgs).set({ linearAuth: null, linearWorkspace: null }).where(eq(orgs.id, c.req.param("id")));
   dropClient(c.req.param("id"));
   return c.body(null, 204);
+});
+app.get("/orgs/:orgId/linear/issues", async (c) => {
+  const [org] = await db.select().from(orgs).where(eq(orgs.id, c.req.param("orgId")));
+  const user = c.req.query("user")?.trim();
+  if (!org?.linearAuth?.tokens) return c.json({ error: "Connect Linear in Settings first." }, 400);
+  if (!user) return c.json({ error: "Enter your Linear username." }, 400);
+  return c.json(await listMine(org, user, c.req.query("fresh") === "1"));
+});
+app.get("/orgs/:orgId/linear/issues/:id", async (c) => {
+  const [org] = await db.select().from(orgs).where(eq(orgs.id, c.req.param("orgId")));
+  if (!org?.linearAuth?.tokens) return c.json({ error: "Connect Linear in Settings first." }, 400);
+  return c.json(await getIssue(org, c.req.param("id")));
 });
 app.post("/orgs/:orgId/linear/import", async (c) => {
   const { ref, workspaceIds, assigneeAgentId } = await body(c, linearImport);
