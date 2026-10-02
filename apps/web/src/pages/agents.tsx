@@ -1,4 +1,7 @@
-import { ChevronLeft, ChevronRight, Dices, Eye, FlaskConical, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Dices, Pencil, Trash2 } from "lucide-react";
+import { EyeIcon as Eye } from "@/components/ui/eye";
+import { FlaskIcon as FlaskConical } from "@/components/ui/flask";
+import { PlusIcon as Plus } from "@/components/ui/plus";
 import { motion } from "motion/react";
 import { useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";

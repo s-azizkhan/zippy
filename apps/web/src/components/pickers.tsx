@@ -1,4 +1,5 @@
-import { FolderGit2, Tag } from "lucide-react";
+import { Tag } from "lucide-react";
+import { FolderGit2Icon as FolderGit2 } from "@/components/ui/folder-git-2";
 import { PRIORITIES, TICKET_STATUSES, type Label, type Ticket, type TicketStatus } from "@zippy/shared";
 import { PropertyMenu } from "@/components/property-menu";
 import { AgentAvatar, LabelDot, PRIORITY_LABEL, PriorityIcon, STATUS, StatusIcon } from "@/components/status";

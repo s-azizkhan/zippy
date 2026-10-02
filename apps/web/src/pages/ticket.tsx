@@ -1,5 +1,14 @@
 import { ErrorPage } from "@/components/error-page";
-import { Check, ChevronDown, Columns2, ChevronRight, ChevronUp, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, Link2, MoreHorizontal, Play, RefreshCw, Square, Star } from "lucide-react";
+import { ChevronDown, Columns2, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Square, Star } from "lucide-react";
+import { CheckIcon as Check } from "@/components/ui/check";
+import { CopyIcon as Copy } from "@/components/ui/copy";
+import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
+import { GitBranchIcon as GitBranch } from "@/components/ui/git-branch";
+import { GitMergeIcon as GitMerge } from "@/components/ui/git-merge";
+import { GitPullRequestIcon as GitPullRequest } from "@/components/ui/git-pull-request";
+import { Link2Icon as Link2 } from "@/components/ui/link-2";
+import { PlayIcon as Play } from "@/components/ui/play";
+import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";

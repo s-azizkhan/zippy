@@ -136,6 +136,7 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--primary); background-clip: content-box; }
     ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
   }
+  .inline-flex.shrink-0:has(> svg[width="100%"]) { width: 1rem; height: 1rem; }
   ::selection { background: color-mix(in oklab, var(--primary) 35%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {

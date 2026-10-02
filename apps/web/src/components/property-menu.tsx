@@ -1,4 +1,5 @@
-import { Check, Plus } from "lucide-react";
+import { CheckIcon as Check } from "@/components/ui/check";
+import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useState, type ReactNode } from "react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

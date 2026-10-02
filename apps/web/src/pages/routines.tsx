@@ -1,5 +1,7 @@
 import { MdEditor } from "@/components/md-editor";
-import { Play, Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
+import { PlayIcon as Play } from "@/components/ui/play";
+import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { routineInput, type Routine, type RoutineInput, type Ticket } from "@zippy/shared";

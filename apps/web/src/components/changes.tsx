@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { FlaskConical, FolderGit2, MessageSquarePlus, RefreshCw, ShieldAlert, X } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
+import { FlaskIcon as FlaskConical } from "@/components/ui/flask";
+import { FolderGit2Icon as FolderGit2 } from "@/components/ui/folder-git-2";
+import { MessageSquarePlusIcon as MessageSquarePlus } from "@/components/ui/message-square-plus";
+import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
+import { XIcon as X } from "@/components/ui/x";
 import hljs from "highlight.js/lib/common";
 import type { Agent, Comment, DiffFile, TestPayload, Ticket } from "@zippy/shared";
 import { MentionInput } from "@/components/activity";

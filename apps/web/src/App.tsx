@@ -1,5 +1,18 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftOpen, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Trash2, Workflow } from "lucide-react";
+import { ChevronDown, Trash2 } from "lucide-react";
+import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
+import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
+import { PlusIcon as Plus } from "@/components/ui/plus";
+import { SearchIcon as Search } from "@/components/ui/search";
+import { SquarePenIcon as SquarePen } from "@/components/ui/square-pen";
+import { TerminalIcon as TerminalSquare } from "@/components/ui/terminal";
+import { BotIcon } from "@/components/ui/bot";
+import { FolderGit2Icon } from "@/components/ui/folder-git-2";
+import { LayersIcon } from "@/components/ui/layers";
+import { MailboxIcon } from "@/components/ui/mailbox";
+import { RefreshCWIcon } from "@/components/ui/refresh-cw";
+import { SettingsIcon } from "@/components/ui/settings";
+import { WorkflowIcon } from "@/components/ui/workflow";
 import { MotionConfig, motion } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
@@ -13,7 +26,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useSystem, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useSystem, useUsage, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 import { AgentsPage } from "@/pages/agents";
@@ -52,10 +65,10 @@ const navCls = (active: boolean) =>
     active && "bg-sidebar-accent text-sidebar-accent-foreground",
   );
 
-function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: typeof Inbox; label: string; count?: number; match?: boolean }) {
+function NavItem({ to, icon: Icon, label, count, match, color }: { to: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; label: string; count?: number; match?: boolean; color?: string }) {
   return (
-    <NavLink to={to} end className={({ isActive }) => navCls(match ?? isActive)} aria-current={match ? "page" : undefined}>
-      <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
+    <NavLink to={to} end className={({ isActive }) => cn("group", navCls(match ?? isActive))} aria-current={match ? "page" : undefined}>
+      <Icon className="size-4 shrink-0" style={{ color }} aria-hidden />
       <span className="sr-only flex-1 truncate wide:not-sr-only">{label}</span>
       {!!count && (
         <span key={count} className="pop text-muted-foreground hidden text-xs tabular-nums wide:inline" aria-label={`${count} waiting`}>
@@ -81,6 +94,46 @@ function Section({ title, action, children }: { title: string; action?: React.Re
         {action}
       </div>
       {open && <div className="grid gap-px">{children}</div>}
+    </div>
+  );
+}
+
+const left = (iso: string) => {
+  const m = Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60_000));
+  return m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+};
+
+const WINDOWS = [
+  { k: "five_hour", title: "Session Usage", sub: "5-hour rolling window", ms: 5 * 3600_000 },
+  { k: "seven_day", title: "All models", sub: "Weekly", ms: 7 * 86400_000 },
+] as const;
+
+function UsageMeter() {
+  const { data } = useUsage();
+  if (!data) return null;
+  return (
+    <div className="hidden gap-2 pb-1 wide:grid" aria-label="Claude usage">
+      {WINDOWS.map(({ k, title, sub, ms }) => {
+        const w = data[k];
+        if (!w) return null;
+        const pct = Math.min(100, Math.round(w.utilization));
+        const elapsed = Math.min(100, Math.max(0, 100 - ((Date.parse(w.resets_at) - Date.now()) / ms) * 100));
+        const tone = pct > elapsed + 10 ? "red" : pct > elapsed ? "amber" : "green";
+        return (
+          <div key={k} className="border-border rounded-lg border px-3 py-2" title={`Resets ${new Date(w.resets_at).toLocaleString()}`}>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[13px] font-semibold">{title}</span>
+              <span className={cn("text-[13px] font-semibold", tone === "red" ? "text-red-500" : tone === "amber" ? "text-amber-500" : "text-green-500")}>{pct}%</span>
+            </div>
+            <div className="text-muted-foreground text-[11px]">{sub}</div>
+            <div className="bg-sidebar-accent relative my-2 h-1 rounded-full">
+              <div className={cn("h-full rounded-full", tone === "red" ? "bg-red-500" : tone === "amber" ? "bg-amber-500" : "bg-green-500")} style={{ width: `${pct}%` }} />
+              <div className="absolute -top-0.5 h-2 w-0.5 rounded-full bg-amber-400" style={{ left: `${elapsed}%` }} />
+            </div>
+            <div className="text-muted-foreground text-[11px]">Resets in {left(w.resets_at)}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -161,14 +214,14 @@ function Sidebar() {
         <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className={cn(navCls(false), "wide:hidden")}>
           <Plus className="size-4" aria-hidden />
         </button>
-        <NavItem to="/inbox" icon={Inbox} label="Inbox" count={inbox} />
-        <NavItem to="/" icon={Layers} label="All issues" match={pathname === "/" && !view && !folder} />
+        <NavItem to="/inbox" icon={MailboxIcon} color="#f2994a" label="Inbox" count={inbox} />
+        <NavItem to="/" icon={LayersIcon} color="#5e6ad2" label="All issues" match={pathname === "/" && !view && !folder} />
       </nav>
 
       <Section title="Workspace">
-        <NavItem to="/agents" icon={Bot} label="Agents" match={pathname.startsWith("/agents")} />
-        <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
-        <NavItem to="/routines" icon={Repeat} label="Routines" />
+        <NavItem to="/agents" icon={BotIcon} color="#4cb782" label="Agents" match={pathname.startsWith("/agents")} />
+        <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
+        <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
       </Section>
 
       <Section
@@ -186,7 +239,7 @@ function Sidebar() {
       >
         {workspaces.map((w) => (
           <div key={w.id} className="group relative">
-            <NavItem to={`/?folder=${w.id}`} icon={FolderGit2} label={w.name} match={pathname === "/" && folder === w.id} />
+            <NavItem to={`/?folder=${w.id}`} icon={FolderGit2Icon} color="#26b5ce" label={w.name} match={pathname === "/" && folder === w.id} />
             <button
               aria-label={`Remove ${w.name}`}
               onClick={() => setRemoving(w)}
@@ -230,13 +283,14 @@ function Sidebar() {
       />
 
       <nav className="grid gap-px wide:hidden" aria-label="Workspace">
-        <NavItem to="/agents" icon={Bot} label="Agents" match={pathname.startsWith("/agents")} />
-        <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
-        <NavItem to="/routines" icon={Repeat} label="Routines" />
+        <NavItem to="/agents" icon={BotIcon} color="#4cb782" label="Agents" match={pathname.startsWith("/agents")} />
+        <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
+        <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
       </nav>
 
       <nav className="mt-auto grid gap-px" aria-label="Settings">
-        <NavItem to="/settings" icon={Settings} label="Settings" />
+        <UsageMeter />
+        <NavItem to="/settings" icon={SettingsIcon} color="#bb87fc" label="Settings" />
         <ThemeToggle />
       </nav>
     </aside>

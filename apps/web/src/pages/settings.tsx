@@ -1,5 +1,18 @@
+import type { IconType } from "@/lib/anim-icon";
 import { MdEditor } from "@/components/md-editor";
-import { BookOpen, Bot, Braces, Building2, Check, ChevronRight, Copy, Download, FolderGit2, Link2, Plug, Pin, Plus, Search, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Braces, Building2, ChevronRight, Pin, Trash2 } from "lucide-react";
+import { BookTextIcon as BookOpen } from "@/components/ui/book-text";
+import { BotIcon as Bot } from "@/components/ui/bot";
+import { CheckIcon as Check } from "@/components/ui/check";
+import { CopyIcon as Copy } from "@/components/ui/copy";
+import { DownloadIcon as Download } from "@/components/ui/download";
+import { FolderGit2Icon as FolderGit2 } from "@/components/ui/folder-git-2";
+import { Link2Icon as Link2 } from "@/components/ui/link-2";
+import { PlugZapIcon as Plug } from "@/components/ui/plug-zap";
+import { PlusIcon as Plus } from "@/components/ui/plus";
+import { SearchIcon as Search } from "@/components/ui/search";
+import { ServerIcon as Server } from "@/components/ui/server";
+import { WrenchIcon as Wrench } from "@/components/ui/wrench";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
@@ -18,7 +31,7 @@ import { api, keys, useApiMutation, useAcp, useKnowledge, useMcpServers, useSyst
 import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
-const ICONS: Record<SettingsTab, LucideIcon> = { org: Building2, folders: FolderGit2, knowledge: BookOpen, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
+const ICONS: Record<SettingsTab, IconType> = { org: Building2, folders: FolderGit2, knowledge: BookOpen, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
 const GROUPS = [...new Set(SETTINGS_TABS.map((t) => t.group))];
 const isTab = (v: string | null): v is SettingsTab => SETTINGS_TABS.some((t) => t.value === v);
 
@@ -116,7 +129,7 @@ function Card({ title, desc, children }: { title: string; desc?: string; childre
   );
 }
 
-function EmptyState({ icon: Icon, title, desc, children }: { icon: LucideIcon; title: string; desc: string; children?: ReactNode }) {
+function EmptyState({ icon: Icon, title, desc, children }: { icon: IconType; title: string; desc: string; children?: ReactNode }) {
   return (
     <div className="grid justify-items-center gap-1 rounded-xl border border-dashed px-6 py-10 text-center">
       <span className="bg-muted mb-2 grid size-10 place-items-center rounded-full">

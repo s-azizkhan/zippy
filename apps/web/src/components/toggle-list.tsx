@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { DownloadIcon as Download } from "@/components/ui/download";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RULES, type Catalog, type CatalogItem } from "@zippy/shared";

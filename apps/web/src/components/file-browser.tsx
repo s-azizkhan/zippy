@@ -1,5 +1,9 @@
+import type { IconType } from "@/lib/anim-icon";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, File, FileCode, FileJson, FileText, Folder, FolderOpen, Image, Settings, type LucideIcon } from "lucide-react";
+import { ChevronRight, File, FileCode, FileJson, Folder, Image } from "lucide-react";
+import { FileTextIcon as FileText } from "@/components/ui/file-text";
+import { FolderOpenIcon as FolderOpen } from "@/components/ui/folder-open";
+import { SettingsIcon as Settings } from "@/components/ui/settings";
 import hljs from "highlight.js/lib/common";
 import { useEffect, useMemo, useState } from "react";
 import { md } from "@/components/activity";
@@ -19,7 +23,7 @@ const useFs = <T extends Dir | FileView>(id: string, path: string, enabled = tru
   });
 
 const code = [FileCode, "text-sky-500"] as const;
-const KIND: Record<string, readonly [LucideIcon, string]> = {
+const KIND: Record<string, readonly [IconType, string]> = {
   ts: code, tsx: code, js: code, jsx: code, mjs: code, cjs: code, py: code, php: code, go: code, rs: code, rb: code, java: code, sh: code, sql: code, css: code, html: code,
   json: [FileJson, "text-amber-500"], yaml: [Settings, "text-violet-500"], yml: [Settings, "text-violet-500"], toml: [Settings, "text-violet-500"], env: [Settings, "text-violet-500"],
   md: [FileText, "text-emerald-500"], txt: [FileText, "text-emerald-500"],

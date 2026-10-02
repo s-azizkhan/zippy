@@ -1,5 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownToLine, ExternalLink, RefreshCw, X } from "lucide-react";
+import { ArrowDownToLine } from "lucide-react";
+import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
+import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
+import { XIcon as X } from "@/components/ui/x";
 import { useState } from "react";
 import Markdown from "react-markdown";
 import { useNavigate } from "react-router";

@@ -51,6 +51,8 @@ export const useSystem = () =>
   useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; authMethod?: string } }>("/system") });
 export const useAcp = () =>
   useQuery({ queryKey: ["system", "acp"], queryFn: () => api.get<{ ok: boolean; agent?: string; version?: string; error?: string }>("/system/acp"), staleTime: 60_000, retry: false });
+export type Usage = Record<"five_hour" | "seven_day", { utilization: number; resets_at: string } | null>;
+export const useUsage = () => useQuery({ queryKey: ["system", "usage"], queryFn: () => api.get<Usage | null>("/system/usage"), refetchInterval: 60_000, retry: false });
 export const useOrgs = () => useApiQuery<Org[]>(keys.orgs, "/orgs");
 export const useWorkspaces = (orgId?: string) => useApiQuery<Workspace[]>(keys.res(orgId!, "workspaces"), orgId ? `/orgs/${orgId}/workspaces` : null);
 export const useMcpServers = (orgId?: string) => useApiQuery<McpServer[]>(keys.res(orgId!, "mcp"), orgId ? `/orgs/${orgId}/mcp` : null);

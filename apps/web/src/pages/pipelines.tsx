@@ -1,6 +1,15 @@
+import type { IconType } from "@/lib/anim-icon";
 import { MdEditor } from "@/components/md-editor";
 import { AnimatePresence, motion, Reorder, useDragControls } from "motion/react";
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Flag, GripVertical, Hand, Minus, Plus, Trash2, Undo2, Zap, type LucideIcon } from "lucide-react";
+import { ChevronRight, Flag, Minus, Trash2 } from "lucide-react";
+import { ArrowDownIcon as ArrowDown } from "@/components/ui/arrow-down";
+import { ArrowLeftIcon as ArrowLeft } from "@/components/ui/arrow-left";
+import { ArrowUpIcon as ArrowUp } from "@/components/ui/arrow-up";
+import { GripVerticalIcon as GripVertical } from "@/components/ui/grip-vertical";
+import { HandIcon as Hand } from "@/components/ui/hand";
+import { PlusIcon as Plus } from "@/components/ui/plus";
+import { UndoIcon as Undo2 } from "@/components/ui/undo";
+import { ZapIcon as Zap } from "@/components/ui/zap";
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { pipelineInput, type Agent, type Pipeline, type PipelineInput, type StageInput } from "@zippy/shared";
@@ -306,7 +315,7 @@ function PipelineEditor({ pipeline, onOpen }: { pipeline: Pipeline | null; onOpe
   );
 }
 
-function Terminal({ icon: Icon, label, className }: { icon: LucideIcon; label: string; className?: string }) {
+function Terminal({ icon: Icon, label, className }: { icon: IconType; label: string; className?: string }) {
   return (
     <div className={cn("relative grid grid-cols-[2rem_1fr] items-center gap-3", className)}>
       <span className="bg-muted text-muted-foreground z-10 grid size-8 place-items-center rounded-full border">
@@ -318,7 +327,7 @@ function Terminal({ icon: Icon, label, className }: { icon: LucideIcon; label: s
   );
 }
 
-function Chip({ icon: Icon, tone, children }: { icon: LucideIcon; tone?: "warn"; children: ReactNode }) {
+function Chip({ icon: Icon, tone, children }: { icon: IconType; tone?: "warn"; children: ReactNode }) {
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium", tone === "warn" ? "bg-[#f2994a]/12 text-[#d9822b]" : "bg-muted text-muted-foreground")}>
       <Icon className="size-3" aria-hidden /> {children}

@@ -1,4 +1,7 @@
-import { ArrowLeft, Home, RefreshCw, Settings } from "lucide-react";
+import { ArrowLeftIcon as ArrowLeft } from "@/components/ui/arrow-left";
+import { HomeIcon as Home } from "@/components/ui/home";
+import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
+import { SettingsIcon as Settings } from "@/components/ui/settings";
 import { isRouteErrorResponse, useNavigate, useParams, useRouteError } from "react-router";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

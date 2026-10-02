@@ -1,4 +1,5 @@
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Agent, Ticket, TicketStatus } from "@zippy/shared";

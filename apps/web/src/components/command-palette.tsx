@@ -1,4 +1,8 @@
-import { Bot, ListTodo, Plus, Settings, SunMoon, Workflow } from "lucide-react";
+import { ListTodo, SunMoon } from "lucide-react";
+import { BotIcon as Bot } from "@/components/ui/bot";
+import { PlusIcon as Plus } from "@/components/ui/plus";
+import { SettingsIcon as Settings } from "@/components/ui/settings";
+import { WorkflowIcon as Workflow } from "@/components/ui/workflow";
 import { useNavigate } from "react-router";
 import type { Org } from "@zippy/shared";
 import { StatusIcon } from "@/components/status";

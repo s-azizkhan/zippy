@@ -1,4 +1,11 @@
-import { CircleAlert, Search, Eye, Inbox as InboxIcon, KeyRound, Lightbulb, MessageCircleQuestion, Workflow } from "lucide-react";
+import { Lightbulb } from "lucide-react";
+import { BadgeAlertIcon as CircleAlert } from "@/components/ui/badge-alert";
+import { SearchIcon as Search } from "@/components/ui/search";
+import { EyeIcon as Eye } from "@/components/ui/eye";
+import { MailboxIcon as InboxIcon } from "@/components/ui/mailbox";
+import { KeyIcon as KeyRound } from "@/components/ui/key";
+import { CircleHelpIcon as MessageCircleQuestion } from "@/components/ui/circle-help";
+import { WorkflowIcon as Workflow } from "@/components/ui/workflow";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";

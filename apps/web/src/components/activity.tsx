@@ -1,4 +1,13 @@
-import { ArrowRight, ArrowUp, Check, ChevronRight, CircleAlert, ExternalLink, GitPullRequest, Loader2, Workflow, Wrench, X } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
+import { ArrowRightIcon as ArrowRight } from "@/components/ui/arrow-right";
+import { ArrowUpIcon as ArrowUp } from "@/components/ui/arrow-up";
+import { CheckIcon as Check } from "@/components/ui/check";
+import { BadgeAlertIcon as CircleAlert } from "@/components/ui/badge-alert";
+import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
+import { GitPullRequestIcon as GitPullRequest } from "@/components/ui/git-pull-request";
+import { WorkflowIcon as Workflow } from "@/components/ui/workflow";
+import { WrenchIcon as Wrench } from "@/components/ui/wrench";
+import { XIcon as X } from "@/components/ui/x";
 import { Children, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import hljs from "highlight.js/lib/common";
 import Markdown from "react-markdown";
