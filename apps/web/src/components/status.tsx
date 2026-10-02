@@ -63,8 +63,8 @@ export function StatusIcon({ status, className }: { status: TicketStatus; classN
         <circle cx="7" cy="7" r="3" fill="none" stroke={color} strokeWidth="6" strokeDasharray={`${c * fill} ${c}`} transform="rotate(-90 7 7)" />
       )}
       {fill === 1 && <circle cx="7" cy="7" r={r} fill={color} />}
-      {status === "done" && <path d="M4.5 7.2l1.7 1.6 3.3-3.4" fill="none" stroke="white" strokeWidth="1.4" />}
-      {status === "canceled" && <path d="M5 5l4 4M9 5l-4 4" stroke="white" strokeWidth="1.4" />}
+      {status === "done" && <path className="draw" d="M4.5 7.2l1.7 1.6 3.3-3.4" fill="none" stroke="white" strokeWidth="1.4" />}
+      {status === "canceled" && <path className="draw" d="M5 5l4 4M9 5l-4 4" stroke="white" strokeWidth="1.4" />}
     </svg>
   );
 }

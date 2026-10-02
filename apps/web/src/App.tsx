@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftOpen, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Trash2, Workflow } from "lucide-react";
-import { MotionConfig } from "motion/react";
+import { MotionConfig, motion } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -58,7 +58,7 @@ function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: ty
       <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
       <span className="sr-only flex-1 truncate wide:not-sr-only">{label}</span>
       {!!count && (
-        <span className="text-muted-foreground hidden text-xs tabular-nums wide:inline" aria-label={`${count} waiting`}>
+        <span key={count} className="pop text-muted-foreground hidden text-xs tabular-nums wide:inline" aria-label={`${count} waiting`}>
           {count}
         </span>
       )}
@@ -292,6 +292,7 @@ function Layout() {
     return () => clearTimeout(t);
   }, [isLoading]);
 
+  const { pathname } = useLocation();
   const title = useMatches().at(-1)?.handle as { title?: string } | undefined;
 
   if (isLoading) return null;
@@ -312,7 +313,9 @@ function Layout() {
             Claude is not logged in, so agents cannot run. Run <code className="bg-background rounded px-1.5 py-0.5 font-mono">claude auth login</code> and start Zippy from that terminal.
           </div>
         )}
-        <Outlet context={{ org }} />
+        <motion.div key={pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="flex min-h-0 flex-1 flex-col">
+          <Outlet context={{ org }} />
+        </motion.div>
       </main>
       <CommandPalette org={org} />
       <NewTicketDialog org={org} />

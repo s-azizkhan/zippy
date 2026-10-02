@@ -75,7 +75,7 @@ export function AgentsPage() {
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {agents.map((a, n) => (
             <motion.li key={a.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(n, 8) * 0.04 }}>
-              <Link to={`/agents/${a.handle}`} className="group agent-card bg-card hover:border-primary/40 hover:shadow-primary/5 relative grid h-full w-full gap-4 overflow-hidden rounded-2xl border p-5 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-lg">
+              <Link to={`/agents/${a.handle}`} className="group agent-card lift bg-card hover:border-primary/40 hover:shadow-primary/5 relative grid h-full w-full gap-4 overflow-hidden rounded-2xl border p-5 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-lg">
                 <span aria-hidden className="absolute inset-x-0 top-0 h-24 opacity-[.14]" style={{ background: `linear-gradient(${paletteOf(a.color, a.id).a}, transparent)` }} />
                 <AgentAvatar agent={a} track className="relative size-20 transition group-hover:scale-105" />
                 <div className="relative min-w-0">

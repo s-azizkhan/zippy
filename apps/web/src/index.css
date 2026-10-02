@@ -216,3 +216,20 @@
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 ::view-transition-old(root) { z-index: 0; }
 ::view-transition-new(root) { z-index: 1; }
+
+/* Alive UI: short, subtle, never blocking. Global reduced-motion rule above neutralises all of it. */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes draw { from { stroke-dashoffset: 12; } to { stroke-dashoffset: 0; } }
+@keyframes pop { 40% { transform: scale(1.25); } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.rise { animation: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(min(var(--i, 0), 10) * 30ms); }
+.pop { animation: pop 0.35s ease-out; }
+.draw { stroke-dasharray: 12; animation: draw 0.35s ease-out both; }
+.lift { transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s, border-color 0.2s; }
+.lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px -12px color-mix(in oklab, var(--primary) 40%, transparent); }
+.row-slide { transition: background-color 0.15s, padding-left 0.15s; }
+.row-slide:hover { padding-left: 1.15rem; }
+[data-slot="skeleton"] { background: linear-gradient(90deg, var(--muted) 30%, var(--accent) 50%, var(--muted) 70%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
+button, [role="button"], a { transition-property: background-color, color, border-color, box-shadow, transform, opacity; transition-duration: 0.15s; }
+button:active:not(:disabled) { transform: scale(0.97); }
+circle { transition: stroke 0.3s, fill 0.3s, stroke-dasharray 0.4s ease; }

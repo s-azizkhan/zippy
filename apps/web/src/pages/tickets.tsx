@@ -217,9 +217,10 @@ export function TicketsPage() {
                 </h2>
                 {open && (
                   <ul>
-                    {rows.map((t) => (
+                    {rows.map((t, i) => (
                       <Row
                         key={t.id}
+                        i={i}
                         t={t}
                         agent={agents.find((a) => a.id === t.assigneeAgentId)}
                         orgId={org.id}
@@ -236,13 +237,13 @@ export function TicketsPage() {
   );
 }
 
-function Row({ t, agent, orgId }: { t: Ticket; agent?: Agent; orgId: string }) {
+function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; i: number }) {
   return (
-    <li>
+    <li className="rise" style={{ "--i": i } as React.CSSProperties}>
       <Link
         to={`/t/${t.identifier}${location.search}`}
         data-row
-        className="hover:bg-accent/50 focus-visible:bg-accent border-border/60 flex h-11 items-center gap-3 border-b px-4 text-[13px] outline-none"
+        className="row-slide hover:bg-accent/50 focus-visible:bg-accent border-border/60 flex h-11 items-center gap-3 border-b px-4 text-[13px] outline-none"
       >
         <PriorityIcon priority={t.priority} />
         <span className="sr-only">{PRIORITY_LABEL[t.priority]},</span>
