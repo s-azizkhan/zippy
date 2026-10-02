@@ -4,6 +4,13 @@
 @import "@fontsource-variable/inter";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant wide {
+    @media (min-width: 48rem) {
+        &:where(.sb-wide, .sb-wide *) {
+            @slot;
+        }
+    }
+}
 
 @theme inline {
     --font-heading: var(--font-sans);

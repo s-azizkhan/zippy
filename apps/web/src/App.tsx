@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Bot, ChevronDown, FolderGit2, Inbox, Layers, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Workflow } from "lucide-react";
+import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftOpen, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Workflow } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation } from "react-router";
@@ -28,6 +28,9 @@ function useShortcuts() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen(!useUI.getState().paletteOpen);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        useUI.getState().toggleCollapsed();
       } else if (!isTyping(e) && !e.metaKey && !e.ctrlKey && !e.altKey && e.key === "c") {
         e.preventDefault();
         setNewTicketOpen(true);
@@ -48,9 +51,9 @@ function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: ty
   return (
     <NavLink to={to} end className={({ isActive }) => navCls(match ?? isActive)} aria-current={match ? "page" : undefined}>
       <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
-      <span className="sr-only flex-1 truncate md:not-sr-only">{label}</span>
+      <span className="sr-only flex-1 truncate wide:not-sr-only">{label}</span>
       {!!count && (
-        <span className="text-muted-foreground hidden text-xs tabular-nums md:inline" aria-label={`${count} waiting`}>
+        <span className="text-muted-foreground hidden text-xs tabular-nums wide:inline" aria-label={`${count} waiting`}>
           {count}
         </span>
       )}
@@ -61,7 +64,7 @@ function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: ty
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="hidden md:block">
+    <div className="hidden wide:block">
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
@@ -76,7 +79,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Sidebar() {
   const { data: orgs = [] } = useOrgs();
-  const { orgId, setOrgId, setNewTicketOpen, setPaletteOpen } = useUI();
+  const { orgId, setOrgId, setNewTicketOpen, setPaletteOpen, collapsed, toggleCollapsed } = useUI();
   const org = orgs.find((o) => o.id === orgId) ?? orgs[0]!;
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const { pathname, search } = useLocation();
@@ -87,15 +90,29 @@ function Sidebar() {
   const inbox = inboxItems.length;
 
   return (
-    <aside className="bg-sidebar flex w-14 shrink-0 flex-col gap-4 px-2 py-2 md:w-60 md:px-3" aria-label="Sidebar">
+    <aside className={cn("bg-sidebar flex w-14 shrink-0 flex-col gap-4 px-2 py-2 transition-[width] duration-150 wide:w-60 wide:px-3", !collapsed && "sb-wide")} aria-label="Sidebar">
+      <div className="flex flex-col items-center gap-1 wide:flex-row wide:justify-between">
+        <Link to="/" className="hover:bg-sidebar-accent flex h-8 items-center gap-2 rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring/60" aria-label="Zippy home">
+          <img src="/favicon.svg" alt="" className="size-6 shrink-0" />
+          <span className="hidden text-[15px] font-semibold tracking-tight wide:inline">Zippy</span>
+        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={toggleCollapsed} className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground hidden size-7 items-center justify-center rounded-md md:flex">
+              {collapsed ? <PanelLeftOpen className="size-4" aria-hidden /> : <PanelLeftClose className="size-4" aria-hidden />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{collapsed ? "Expand" : "Collapse"} ⌘B</TooltipContent>
+        </Tooltip>
+      </div>
       <div className="flex items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger className="hover:bg-sidebar-accent focus-visible:ring-ring/60 flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-[13px] font-semibold outline-none focus-visible:ring-2">
             <span className="bg-primary flex size-5 shrink-0 items-center justify-center rounded-[5px] text-[11px] font-bold text-white" aria-hidden>
               {org.name.slice(0, 1)}
             </span>
-            <span className="hidden truncate md:inline">{org.name}</span>
-            <ChevronDown className="text-muted-foreground hidden size-3.5 md:block" aria-hidden />
+            <span className="hidden truncate wide:inline">{org.name}</span>
+            <ChevronDown className="text-muted-foreground hidden size-3.5 wide:block" aria-hidden />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
             <DropdownMenuLabel className="text-muted-foreground text-xs">Switch organization</DropdownMenuLabel>
@@ -112,7 +129,7 @@ function Sidebar() {
         </DropdownMenu>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button aria-label="Search" onClick={() => setPaletteOpen(true)} className="hover:bg-sidebar-accent hidden size-8 items-center justify-center rounded-md md:flex">
+            <button aria-label="Search" onClick={() => setPaletteOpen(true)} className="hover:bg-sidebar-accent hidden size-8 items-center justify-center rounded-md wide:flex">
               <Search className="size-4 opacity-80" aria-hidden />
             </button>
           </TooltipTrigger>
@@ -120,7 +137,7 @@ function Sidebar() {
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className="bg-sidebar-accent hover:bg-accent hidden size-8 items-center justify-center rounded-md border md:flex">
+            <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className="bg-sidebar-accent hover:bg-accent hidden size-8 items-center justify-center rounded-md border wide:flex">
               <SquarePen className="size-4" aria-hidden />
             </button>
           </TooltipTrigger>
@@ -129,7 +146,7 @@ function Sidebar() {
       </div>
 
       <nav className="grid gap-px" aria-label="Main">
-        <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className={cn(navCls(false), "md:hidden")}>
+        <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className={cn(navCls(false), "wide:hidden")}>
           <Plus className="size-4" aria-hidden />
         </button>
         <NavItem to="/inbox" icon={Inbox} label="Inbox" count={inbox} />
@@ -153,7 +170,7 @@ function Sidebar() {
         )}
       </Section>
 
-      <nav className="grid gap-px md:hidden" aria-label="Workspace">
+      <nav className="grid gap-px wide:hidden" aria-label="Workspace">
         <NavItem to="/agents" icon={Bot} label="Agents" />
         <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
         <NavItem to="/routines" icon={Repeat} label="Routines" />
