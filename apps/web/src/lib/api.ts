@@ -18,7 +18,7 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.issues?.[0] ? `${err.issues[0].path.join(".")}: ${err.issues[0].message}` : (err.error ?? res.statusText));
+    throw Object.assign(new Error(err.issues?.[0] ? `${err.issues[0].path.join(".")}: ${err.issues[0].message}` : (err.error ?? res.statusText)), { status: res.status });
   }
   return res.status === 204 || res.status === 202 ? (undefined as T) : res.json();
 }

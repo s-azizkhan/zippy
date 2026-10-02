@@ -1,3 +1,4 @@
+import { ErrorPage } from "@/components/error-page";
 import { Check, ChevronDown, Columns2, ChevronRight, ChevronUp, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, Link2, MoreHorizontal, Play, RefreshCw, Square } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -98,6 +99,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  if (all && !id) return <ErrorPage code={404} compact title="Ticket not found" text={`No ticket matches "${slug}". It may have been deleted or belongs to another org.`} />;
   if (isLoading || !data) {
     return (
       <div className="grid gap-3 p-10">

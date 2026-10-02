@@ -4,6 +4,7 @@ import { MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation } from "react-router";
+import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
 import { NewTicketDialog } from "@/components/new-ticket-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -186,7 +187,7 @@ function Sidebar() {
 
 function Layout() {
   useShortcuts();
-  const { data: orgs, isLoading } = useOrgs();
+  const { data: orgs, isLoading, error, refetch } = useOrgs();
   const { orgId, setOrgId } = useUI();
   const org = orgs?.find((o) => o.id === orgId) ?? orgs?.[0];
   const { data: system } = useSystem();
@@ -198,12 +199,34 @@ function Layout() {
   useEffect(() => {
     if (isLoading) return;
     const boot = document.getElementById("boot");
-    boot?.classList.add("done");
-    const t = setTimeout(() => boot?.remove(), 350);
+    if (!boot) return;
+    boot.classList.add("done");
+    try { sessionStorage.booted = "1"; } catch { /* private mode */ }
+    // Mark glides into the sidebar logo; plain fade if no target or reduced motion.
+    const mark = boot.querySelector("img");
+    const dest = document.querySelector<HTMLElement>('aside img[src="/favicon.svg"]');
+    const from = mark?.getBoundingClientRect();
+    const to = dest?.getBoundingClientRect();
+    let ms = 450;
+    if (mark && dest && from && to && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const start = getComputedStyle(mark).transform;
+      mark.style.animation = "none";
+      dest.style.opacity = "0";
+      ms = 600;
+      mark.animate(
+        [{ transform: start }, { transform: `translate(${to.x + to.width / 2 - from.x - from.width / 2}px, ${to.y + to.height / 2 - from.y - from.height / 2}px) scale(${to.width / from.width})` }],
+        { duration: ms, easing: "cubic-bezier(0.65, 0, 0.2, 1)", fill: "forwards" },
+      );
+    } else boot.style.opacity = "0";
+    const t = setTimeout(() => {
+      boot.remove();
+      if (dest) dest.style.opacity = "";
+    }, ms);
     return () => clearTimeout(t);
   }, [isLoading]);
 
   if (isLoading) return null;
+  if (error) return <ErrorPage code={errorCode(error)} error={error} onRetry={() => refetch()} />;
   if (!org) return <Onboarding />;
 
   return (
@@ -230,6 +253,7 @@ function Layout() {
 const router = createBrowserRouter([
   {
     element: <Layout />,
+    errorElement: <RouteError />,
     children: [
       { path: "/", element: <TicketsPage /> },
       { path: "/t/:id", element: <TicketPage /> },
@@ -238,6 +262,8 @@ const router = createBrowserRouter([
       { path: "/pipelines", element: <PipelinesPage /> },
       { path: "/routines", element: <RoutinesPage /> },
       { path: "/settings", element: <SettingsPage /> },
+      ...(import.meta.env.DEV ? [{ path: "/error/:code", element: <ErrorPreview /> }] : []),
+      { path: "*", element: <ErrorPage code={404} compact /> },
     ],
   },
 ]);
