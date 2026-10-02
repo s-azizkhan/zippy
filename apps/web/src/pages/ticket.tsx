@@ -11,7 +11,7 @@ import { Changes } from "@/components/changes";
 import { Terminal } from "@/components/terminal";
 import { AssigneePicker, FoldersPicker, LabelChips, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
 import { MdEditor } from "@/components/md-editor";
-import { AgentAvatar, StatusIcon } from "@/components/status";
+import { AgentAvatar, SourceIcon, StatusIcon } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -419,7 +419,10 @@ function Properties(props: {
 
   return (
     <aside className="hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto border-l px-3 py-5 text-[13px] lg:flex" aria-label="Issue properties">
-      <div className="-mb-2 flex justify-end gap-2">
+      <div className="-mb-2 flex items-center justify-end gap-2">
+        <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs">
+          <SourceIcon linear={!!ticket.linearId} /> {ticket.linearId ? "Linear" : "Zippy"}
+        </span>
         <CopyBtn label="Copy link" icon={Link2} onClick={() => copy(location.href, "Link")} />
         <CopyBtn label="Copy ID" icon={Copy} onClick={() => copy(ticket.identifier, "ID")} />
         {ticket.linearUrl && <CopyBtn label="Sync from Linear" icon={RefreshCw} onClick={sync} />}

@@ -1,5 +1,5 @@
-import { Plus } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { ChevronDown, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Agent, Ticket, TicketStatus } from "@zippy/shared";
 import { LinearIssues } from "@/components/linear-issues";
@@ -8,6 +8,7 @@ import {
   AgentAvatar,
   PRIORITY_LABEL,
   PriorityIcon,
+  SourceIcon,
   STATUS,
   STATUS_ORDER,
   StatusIcon,
@@ -93,6 +94,7 @@ export function TicketsPage() {
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const setNewTicketOpen = useUI((s) => s.setNewTicketOpen);
   const [params, setParams] = useSearchParams();
+  const [closed, setClosed] = useState<Set<TicketStatus>>(new Set());
   useRowKeys();
 
   const title =
@@ -168,37 +170,61 @@ export function TicketsPage() {
               )}
             </div>
           )}
-          {groups.map(({ status, rows }) => (
-            <section key={status} aria-labelledby={`g-${status}`}>
-              <h2
-                id={`g-${status}`}
-                className="bg-muted/70 sticky top-0 z-10 flex h-9 items-center gap-2 px-4 text-[13px] font-medium backdrop-blur"
-              >
-                <StatusIcon status={status} />
-                {STATUS[status].label}
-                <span className="text-muted-foreground font-normal tabular-nums">
-                  {rows.length}
-                </span>
-                <button
-                  aria-label={`New issue in ${STATUS[status].label}`}
-                  onClick={() => setNewTicketOpen(true)}
-                  className="text-muted-foreground hover:text-foreground hover:bg-accent ml-auto rounded p-1"
+          {groups.map(({ status, rows }) => {
+            const open = !closed.has(status);
+            return (
+              <section key={status} aria-labelledby={`g-${status}`}>
+                <h2
+                  id={`g-${status}`}
+                  className="bg-muted/70 sticky top-0 z-10 flex h-9 items-center gap-2 px-4 text-[13px] font-medium backdrop-blur"
                 >
-                  <Plus className="size-3.5" aria-hidden />
-                </button>
-              </h2>
-              <ul>
-                {rows.map((t) => (
-                  <Row
-                    key={t.id}
-                    t={t}
-                    agent={agents.find((a) => a.id === t.assigneeAgentId)}
-                    orgId={org.id}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
+                  <button
+                    aria-expanded={open}
+                    onClick={() =>
+                      setClosed((c) => {
+                        const n = new Set(c);
+                        if (!n.delete(status)) n.add(status);
+                        return n;
+                      })
+                    }
+                    className="flex h-full flex-1 items-center gap-2 text-left"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "text-muted-foreground size-3.5 transition-transform",
+                        !open && "-rotate-90",
+                      )}
+                      aria-hidden
+                    />
+                    <StatusIcon status={status} />
+                    {STATUS[status].label}
+                    <span className="text-muted-foreground font-normal tabular-nums">
+                      {rows.length}
+                    </span>
+                  </button>
+                  <button
+                    aria-label={`New issue in ${STATUS[status].label}`}
+                    onClick={() => setNewTicketOpen(true)}
+                    className="text-muted-foreground hover:text-foreground hover:bg-accent rounded p-1"
+                  >
+                    <Plus className="size-3.5" aria-hidden />
+                  </button>
+                </h2>
+                {open && (
+                  <ul>
+                    {rows.map((t) => (
+                      <Row
+                        key={t.id}
+                        t={t}
+                        agent={agents.find((a) => a.id === t.assigneeAgentId)}
+                        orgId={org.id}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
@@ -215,8 +241,12 @@ function Row({ t, agent, orgId }: { t: Ticket; agent?: Agent; orgId: string }) {
       >
         <PriorityIcon priority={t.priority} />
         <span className="sr-only">{PRIORITY_LABEL[t.priority]},</span>
-        <span className="text-muted-foreground w-16 shrink-0 font-mono text-xs tabular-nums">
+        <span className="text-muted-foreground flex w-20 shrink-0 items-start gap-0.5 font-mono text-xs tabular-nums">
           {t.identifier}
+          <SourceIcon
+            linear={!!t.linearId}
+            className="opacity-70 [&>*]:size-2.5"
+          />
         </span>
         <StatusIcon status={t.status} />
         <span className="sr-only">{STATUS[t.status].label}:</span>
