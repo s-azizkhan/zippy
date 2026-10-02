@@ -1,0 +1,10 @@
+{
+  "name": "zippy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "db:push": "pnpm --filter @zippy/server db:push",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

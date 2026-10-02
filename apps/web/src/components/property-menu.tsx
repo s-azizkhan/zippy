@@ -1,0 +1,90 @@
+import { Check, Plus } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+
+export type MenuOption = { value: string; label: string; icon?: ReactNode };
+
+type Props = {
+  options: MenuOption[];
+  placeholder: string; // search box text, e.g. "Change status…"
+  trigger: ReactNode;
+  triggerLabel: string; // accessible name for the trigger
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onCreate?: (name: string) => void; // shows "Create …" for unmatched search text
+  align?: "start" | "end";
+  className?: string;
+} & ({ multi?: false; value: string | null; onChange: (v: string) => void } | { multi: true; value: string[]; onChange: (v: string[]) => void });
+
+/** Linear-style property picker: searchable popover, number keys pick the first nine options. */
+export function PropertyMenu(props: Props) {
+  const [innerOpen, setInnerOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const open = props.open ?? innerOpen;
+  const setOpen = (o: boolean) => {
+    (props.onOpenChange ?? setInnerOpen)(o);
+    if (!o) setSearch("");
+  };
+  const selected = (v: string) => (props.multi ? props.value.includes(v) : props.value === v);
+
+  function pick(v: string) {
+    if (props.multi) props.onChange(selected(v) ? props.value.filter((x) => x !== v) : [...props.value, v]);
+    else {
+      props.onChange(v);
+      setOpen(false);
+    }
+  }
+
+  const canCreate = props.onCreate && search.trim() && !props.options.some((o) => o.label.toLowerCase() === search.trim().toLowerCase());
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        aria-label={props.triggerLabel}
+        className={cn(
+          "hover:bg-accent focus-visible:ring-ring/60 flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none focus-visible:ring-2",
+          props.className,
+        )}
+      >
+        {props.trigger}
+      </PopoverTrigger>
+      <PopoverContent align={props.align ?? "start"} className="w-64 p-0">
+        <Command
+          onKeyDown={(e) => {
+            if (!search && /^[1-9]$/.test(e.key)) {
+              const o = props.options[Number(e.key) - 1];
+              if (o) (e.preventDefault(), pick(o.value));
+            }
+          }}
+        >
+          <CommandInput placeholder={props.placeholder} value={search} onValueChange={setSearch} />
+          <CommandList>
+            <CommandEmpty>No results</CommandEmpty>
+            <CommandGroup>
+              {props.options.map((o, i) => (
+                <CommandItem key={o.value} value={`${o.label} ${o.value}`} onSelect={() => pick(o.value)} className="gap-2 text-[13px]">
+                  {props.multi && (
+                    <span className={cn("flex size-3.5 items-center justify-center rounded-[3px] border", selected(o.value) && "border-primary bg-primary text-white")} aria-hidden>
+                      {selected(o.value) && <Check className="size-2.5" />}
+                    </span>
+                  )}
+                  {o.icon}
+                  <span className="flex-1 truncate">{o.label}</span>
+                  {!props.multi && selected(o.value) && <Check className="size-3.5" aria-label="selected" />}
+                  {i < 9 && <span className="text-muted-foreground text-xs tabular-nums">{i + 1}</span>}
+                </CommandItem>
+              ))}
+              {canCreate && (
+                <CommandItem value={`create ${search}`} onSelect={() => (props.onCreate!(search.trim()), setSearch(""))} className="gap-2 text-[13px]">
+                  <Plus className="size-3.5" aria-hidden /> Create “{search.trim()}”
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}

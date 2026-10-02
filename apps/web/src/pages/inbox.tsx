@@ -1,0 +1,146 @@
+import { CircleAlert, Eye, Inbox as InboxIcon, KeyRound, MessageCircleQuestion, Workflow } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import type { InboxItem } from "@zippy/shared";
+import { AgentAvatar } from "@/components/status";
+import { Button } from "@/components/ui/button";
+import { api, keys, queryClient, useAgents, useInbox } from "@/lib/api";
+import { useOrg } from "@/lib/org";
+import { ago, cn, isTyping } from "@/lib/utils";
+import { TicketPage } from "@/pages/ticket";
+
+const KIND = {
+  question: { icon: MessageCircleQuestion, label: "Question", color: "text-[#f2994a]" },
+  approval: { icon: KeyRound, label: "Permission", color: "text-[#f2994a]" },
+  gate: { icon: Workflow, label: "Pipeline gate", color: "text-[#f2c94c]" },
+  review: { icon: Eye, label: "Review", color: "text-[#4cb782]" },
+  blocked: { icon: CircleAlert, label: "Blocked", color: "text-[#eb5757]" },
+} as const;
+
+const itemKey = (i: InboxItem) => i.commentId ?? `${i.kind}:${i.ticket.id}`;
+
+/** Act on an inbox item through the same routes the issue page uses. */
+async function act(item: InboxItem, optionId: string) {
+  if (item.kind === "question") await api.post(`/comments/${item.commentId}/answer`, { answer: optionId });
+  else if (item.kind === "approval") await api.post(`/approvals/${item.commentId}`, { optionId });
+  else if (item.kind === "gate") await api.post(`/tickets/${item.ticket.id}/advance`, { verdict: optionId });
+  else if (item.kind === "review") await api.patch(`/tickets/${item.ticket.id}`, { status: "done" });
+}
+
+export function InboxPage() {
+  const org = useOrg();
+  const { data: items, isLoading } = useInbox(org.id);
+  const { data: agents = [] } = useAgents(org.id);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const list = items ?? [];
+  const current = list.find((i) => itemKey(i) === selected) ?? list[0];
+
+  async function run(item: InboxItem, optionId: string) {
+    setBusy(itemKey(item));
+    try {
+      await act(item, optionId);
+      await queryClient.invalidateQueries({ queryKey: keys.res(org.id, "inbox") });
+      queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
+      queryClient.invalidateQueries({ queryKey: keys.ticket(item.ticket.id) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // J/K move, 1-9 pick an option of the selected item.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey || !current) return;
+      const i = list.indexOf(current);
+      if (e.key === "j" || e.key === "k") {
+        e.preventDefault();
+        const next = list[Math.max(0, Math.min(list.length - 1, i + (e.key === "j" ? 1 : -1)))];
+        if (next) {
+          setSelected(itemKey(next));
+          document.getElementById(`inbox-${itemKey(next)}`)?.focus();
+        }
+      } else if (/^[1-9]$/.test(e.key)) {
+        const opt = (current.options ?? (current.kind === "review" ? [{ id: "done", label: "Mark done" }] : []))[Number(e.key) - 1];
+        if (opt) (e.preventDefault(), run(current, opt.id));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  return (
+    <div className="flex min-h-0 flex-1">
+      <section aria-labelledby="inbox-h" className="flex w-full shrink-0 flex-col border-r md:w-[380px]">
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
+          <h1 id="inbox-h" className="text-[13px] font-medium">
+            Inbox
+          </h1>
+          {list.length > 0 && <span className="text-muted-foreground text-xs tabular-nums">{list.length}</span>}
+          <span className="text-muted-foreground ml-auto hidden text-xs lg:inline">J/K move · 1–9 act</span>
+        </header>
+        <ul className="flex-1 overflow-y-auto" aria-label="Waiting on you">
+          {!isLoading && !list.length && (
+            <li className="text-muted-foreground grid place-items-center gap-2 p-16 text-center text-[13px]">
+              <InboxIcon className="size-6 opacity-60" aria-hidden />
+              Nothing needs you. Agents are on it.
+            </li>
+          )}
+          {list.map((item) => {
+            const k = KIND[item.kind];
+            const agent = agents.find((a) => a.id === item.agentId);
+            const active = current && itemKey(current) === itemKey(item);
+            const options = item.options ?? (item.kind === "review" ? [{ id: "done", label: "Mark done" }] : []);
+            return (
+              <li key={itemKey(item)} className={cn("border-b", active && "bg-accent/60")}>
+                <div
+                  id={`inbox-${itemKey(item)}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-current={active || undefined}
+                  onClick={() => setSelected(itemKey(item))}
+                  onKeyDown={(e) => e.key === "Enter" && setSelected(itemKey(item))}
+                  className="focus-visible:ring-ring/60 grid gap-1.5 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-inset"
+                >
+                  <div className="flex items-center gap-2 text-xs">
+                    <k.icon className={cn("size-3.5 shrink-0", k.color)} aria-hidden />
+                    <span className="text-muted-foreground">{k.label}</span>
+                    <span className="text-muted-foreground tabular-nums">{item.ticket.identifier}</span>
+                    <span className="text-muted-foreground ml-auto">{ago(item.createdAt)}</span>
+                  </div>
+                  <p className="truncate text-[13px] font-medium">{item.ticket.title}</p>
+                  <p className="text-muted-foreground line-clamp-2 flex items-start gap-1.5 text-xs">
+                    {agent && <AgentAvatar agent={agent} className="size-4 text-[9px]" />}
+                    <span className="min-w-0">{item.title}</span>
+                  </p>
+                  {options.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1" role="group" aria-label="Actions">
+                      {options.map((o, n) => (
+                        <Button
+                          key={o.id}
+                          size="xs"
+                          variant={o.primary ? "default" : "outline"}
+                          disabled={busy === itemKey(item)}
+                          onClick={(e) => (e.stopPropagation(), run(item, o.id))}
+                          aria-keyshortcuts={active && n < 9 ? String(n + 1) : undefined}
+                        >
+                          {o.label}
+                        </Button>
+                      ))}
+                      <Button size="xs" variant="ghost" asChild>
+                        <Link to={`/t/${item.ticket.id}`} onClick={(e) => e.stopPropagation()}>
+                          Open
+                        </Link>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      <div className="hidden min-w-0 flex-1 md:flex">{current ? <TicketPage key={current.ticket.id} ticketId={current.ticket.id} embedded /> : null}</div>
+    </div>
+  );
+}
