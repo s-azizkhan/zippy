@@ -4,6 +4,7 @@ import type { Org } from "@zippy/shared";
 import { StatusIcon } from "@/components/status";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useTickets } from "@/lib/api";
+import { SETTINGS_TABS } from "@/lib/settings-tabs";
 import { useUI } from "@/lib/store";
 
 export function CommandPalette({ org }: { org: Org }) {
@@ -33,6 +34,11 @@ export function CommandPalette({ org }: { org: Org }) {
           <CommandItem onSelect={run(() => navigate("/settings"))}>
             <Settings aria-hidden /> Go to settings
           </CommandItem>
+          {SETTINGS_TABS.map((t) => (
+            <CommandItem key={t.value} value={`settings ${t.label}`} onSelect={run(() => navigate(`/settings?tab=${t.value}`))}>
+              <Settings aria-hidden /> Settings → {t.label}
+            </CommandItem>
+          ))}
         </CommandGroup>
         <CommandGroup heading="Tickets">
           {tickets.map((t) => (
