@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Bot, ChevronDown, FolderGit2, Inbox, Layers, PanelLeftClose, PanelLeftOpen, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Workflow } from "lucide-react";
+import { MotionConfig } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation } from "react-router";
@@ -194,6 +195,14 @@ function Layout() {
     if (org && org.id !== orgId) setOrgId(org.id);
   }, [org, orgId, setOrgId]);
 
+  useEffect(() => {
+    if (isLoading) return;
+    const boot = document.getElementById("boot");
+    boot?.classList.add("done");
+    const t = setTimeout(() => boot?.remove(), 350);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
   if (isLoading) return null;
   if (!org) return <Onboarding />;
 
@@ -237,10 +246,12 @@ export default function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={400}>
-          <RouterProvider router={router} />
-          <Toaster position="bottom-right" />
-        </TooltipProvider>
+        <MotionConfig reducedMotion="user">
+          <TooltipProvider delayDuration={400}>
+            <RouterProvider router={router} />
+            <Toaster position="bottom-right" />
+          </TooltipProvider>
+        </MotionConfig>
       </QueryClientProvider>
     </ThemeProvider>
   );

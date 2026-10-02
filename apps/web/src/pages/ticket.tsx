@@ -1,10 +1,13 @@
-import { Check, ChevronDown, ChevronRight, ChevronUp, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, Link2, MoreHorizontal, Play, Square } from "lucide-react";
+import { Check, ChevronDown, Columns2, ChevronRight, ChevronUp, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, GitPullRequestClosed, Link2, MoreHorizontal, Play, RefreshCw, Square } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import type { Agent, AgentSession, Pipeline, RelatedTicket, Ticket } from "@zippy/shared";
 import { Activity, md } from "@/components/activity";
 import { Changes } from "@/components/changes";
+import { Terminal } from "@/components/terminal";
 import { AssigneePicker, FoldersPicker, LabelChips, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
 import { AgentAvatar, StatusIcon } from "@/components/status";
 import { Button } from "@/components/ui/button";
@@ -14,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, keys, useAgents, useApiMutation, usePipelines, useTicket, useTicketEvents, useTickets, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
+import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 import { useOrderedTickets } from "@/pages/tickets";
 
@@ -21,6 +25,31 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 
 type Menu = "status" | "priority" | "assignee" | "labels" | "folders" | null;
 const MENU_KEYS: Record<string, Menu> = { s: "status", p: "priority", a: "assignee", l: "labels", f: "folders" };
+
+type Tab = "activity" | "changes" | "terminal";
+const TABS: Tab[] = ["activity", "changes", "terminal"];
+const SIDE_TABS: Tab[] = ["changes", "terminal"];
+
+const Scroll = ({ children }: { children: React.ReactNode }) => <div className="h-full flex-1 overflow-x-hidden overflow-y-auto">{children}</div>;
+
+function TabBar({ tabs, value, onChange, dot }: { tabs: Tab[]; value: Tab; onChange: (t: Tab) => void; dot: boolean }) {
+  return (
+    <div role="tablist" aria-label="Issue views" className="flex items-center gap-1 border-b">
+      {tabs.map((t) => (
+        <button
+          key={t}
+          role="tab"
+          aria-selected={value === t}
+          onClick={() => onChange(t)}
+          className={cn("text-muted-foreground hover:text-foreground -mb-px border-b-2 border-transparent px-1.5 pb-2 text-[13px] font-medium capitalize", value === t && "border-primary text-foreground")}
+        >
+          {t}
+          {t === "changes" && dot && <span className="bg-primary ml-1.5 inline-block size-1.5 rounded-full align-middle" aria-label="has branch changes" />}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Full issue view. `ticketId` + `embedded` render it inside another page (the Inbox) without list navigation keys. */
 export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded?: boolean } = {}) {
@@ -35,7 +64,10 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const navigate = useNavigate();
   const { search } = useLocation();
   const [menu, setMenu] = useState<Menu>(null);
-  const [tab, setTab] = useState<"activity" | "changes">("activity");
+  const [tab, setTab] = useState<Tab>("activity");
+  const { split: splitPref, toggleSplit } = useUI();
+  const split = splitPref && !embedded;
+  const layout = useDefaultLayout({ id: "ticket-split", storage: localStorage });
   useTicketEvents(id, org.id);
 
   // Pull fresh Linear comments and description when a linked issue opens.
@@ -57,6 +89,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
       const m = MENU_KEYS[e.key];
       if (m) return e.preventDefault(), setMenu(m);
       if (embedded) return;
+      if (e.key === "\\") return e.preventDefault(), toggleSplit();
       if (e.key === "j") go(1);
       else if (e.key === "k") go(-1);
       else if (e.key === "Escape" && !menu) navigate(`/${search}`);
@@ -75,6 +108,24 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   }
   const { ticket, comments, sessions, pipeline, related, parent, children, budgetUsd } = data;
   const running = sessions.filter((s) => s.running).map((s) => s.agentId);
+  const hasBranch = ticket.folders.some((f) => f.branch);
+  const side = tab === "terminal" ? "terminal" : "changes";
+  const head = (
+    <div className="grid min-w-0 grid-cols-1 gap-3">
+      <TitleEditor ticket={ticket} />
+      <DescriptionEditor ticket={ticket} />
+    </div>
+  );
+  const activity = <Activity ticketId={ticket.id} comments={comments} agents={agents} running={running} />;
+  const changes = <Changes ticket={ticket} comments={comments} agents={agents} />;
+  const terminal = <Terminal comments={comments} />;
+  const sidePane = side === "terminal" ? terminal : changes;
+  const main = (
+    <article className="grid min-w-0 grid-cols-1 gap-8 px-6 py-8">
+      {head}
+      {activity}
+    </article>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -90,6 +141,14 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
         <TicketMenu ticket={ticket} />
         <div className="ml-auto flex items-center gap-2">
           <RunControls ticket={ticket} agents={agents} running={running} />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button aria-label="Toggle split view" aria-pressed={split} onClick={toggleSplit} className={cn("hover:bg-accent text-muted-foreground hover:text-foreground hidden size-7 items-center justify-center rounded-md border", !embedded && "lg:flex", split && "bg-accent text-foreground")}>
+                <Columns2 className="size-4" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Split view (\)</TooltipContent>
+          </Tooltip>
           {index >= 0 && !embedded && (
             <div className="text-muted-foreground flex items-center gap-1 text-xs tabular-nums">
               <span aria-label={`Issue ${index + 1} of ${ordered.length}`}>
@@ -104,38 +163,34 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex-1 overflow-x-hidden overflow-y-auto">
-            <article className="mx-auto grid max-w-[760px] grid-cols-1 gap-8 px-6 py-10 md:px-12">
-              <div className="grid min-w-0 grid-cols-1 gap-3">
-                <TitleEditor ticket={ticket} />
-                <DescriptionEditor ticket={ticket} />
-              </div>
-              <div className="grid min-w-0 grid-cols-1 gap-4">
-                <div role="tablist" aria-label="Issue views" className="flex items-center gap-1 border-b">
-                  {(["activity", "changes"] as const).map((t) => (
-                    <button
-                      key={t}
-                      role="tab"
-                      aria-selected={tab === t}
-                      onClick={() => setTab(t)}
-                      className={cn(
-                        "text-muted-foreground hover:text-foreground -mb-px border-b-2 border-transparent px-1.5 pb-2 text-[13px] font-medium capitalize",
-                        tab === t && "border-primary text-foreground",
-                      )}
-                    >
-                      {t}
-                      {t === "changes" && ticket.folders.some((f) => f.branch) && <span className="bg-primary ml-1.5 inline-block size-1.5 rounded-full align-middle" aria-label="has branch changes" />}
-                    </button>
-                  ))}
+          {split ? (
+            <Group orientation="horizontal" id="ticket-split" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged} className="min-h-0 flex-1">
+              <Panel id="main" minSize="30%">
+                <Scroll>{main}</Scroll>
+              </Panel>
+              <Separator className="bg-border hover:bg-primary focus-visible:bg-primary w-px outline-none transition-colors after:absolute after:inset-y-0 after:-inset-x-1 relative" />
+              <Panel id="side" minSize="25%">
+                <Scroll>
+                  <div className="grid gap-4 p-4">
+                    <TabBar tabs={SIDE_TABS} value={side} onChange={setTab} dot={hasBranch} />
+                    {sidePane}
+                  </div>
+                </Scroll>
+              </Panel>
+            </Group>
+          ) : (
+            <Scroll>
+              <article className="mx-auto grid max-w-[760px] grid-cols-1 gap-8 px-6 py-10 md:px-12">
+                {head}
+                <div className="grid min-w-0 grid-cols-1 gap-4">
+                  <TabBar tabs={TABS} value={tab} onChange={setTab} dot={hasBranch} />
+                  <motion.div key={tab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
+                    {tab === "activity" ? activity : tab === "changes" ? changes : terminal}
+                  </motion.div>
                 </div>
-                {tab === "activity" ? (
-                  <Activity ticketId={ticket.id} comments={comments} agents={agents} running={running} />
-                ) : (
-                  <Changes ticket={ticket} comments={comments} agents={agents} />
-                )}
-              </div>
-            </article>
-          </div>
+              </article>
+            </Scroll>
+          )}
           {pipeline && ticket.stageId && ticket.status === "needs_input" && <GateBar ticket={ticket} pipeline={pipeline} />}
         </div>
         <Properties ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />
@@ -159,12 +214,13 @@ function NavBtn({ label, disabled, onClick, icon: Icon }: { label: string; disab
 
 function TicketMenu({ ticket }: { ticket: Ticket }) {
   const copy = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => toast.success(`${what} copied`));
+  const sync = useApiMutation(() => api.post<{ added: number }>(`/tickets/${ticket.id}/linear/sync`), [keys.ticket(ticket.id)]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger aria-label="Issue actions" className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-7 items-center justify-center rounded-md">
         <MoreHorizontal className="size-4" aria-hidden />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" className="w-auto min-w-52">
         <DropdownMenuItem onSelect={() => copy(location.href, "Link")}>
           <Link2 aria-hidden /> Copy link
         </DropdownMenuItem>
@@ -179,6 +235,13 @@ function TicketMenu({ ticket }: { ticket: Ticket }) {
         {ticket.linearUrl && (
           <>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() =>
+                sync.mutate(undefined, { onSuccess: ({ added }) => toast.success(added ? `${added} new Linear comment${added > 1 ? "s" : ""} synced` : "Already up to date"), onError: (e) => toast.error(e.message) })
+              }
+            >
+              <RefreshCw aria-hidden /> Sync from Linear
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <a href={ticket.linearUrl} target="_blank" rel="noreferrer">
                 <ExternalLink aria-hidden /> Open in Linear

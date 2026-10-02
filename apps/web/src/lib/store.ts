@@ -6,6 +6,8 @@ type UI = {
   setOrgId: (id: string | null) => void;
   collapsed: boolean;
   toggleCollapsed: () => void;
+  split: boolean;
+  toggleSplit: () => void;
   paletteOpen: boolean;
   setPaletteOpen: (open: boolean) => void;
   newTicketOpen: boolean;
@@ -19,11 +21,13 @@ export const useUI = create<UI>()(
       setOrgId: (orgId) => set({ orgId }),
       collapsed: false,
       toggleCollapsed: () => set((s) => ({ collapsed: !s.collapsed })),
+      split: false,
+      toggleSplit: () => set((s) => ({ split: !s.split })),
       paletteOpen: false,
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       newTicketOpen: false,
       setNewTicketOpen: (newTicketOpen) => set({ newTicketOpen }),
     }),
-    { name: "zippy-ui", partialize: (s) => ({ orgId: s.orgId, collapsed: s.collapsed }) },
+    { name: "zippy-ui", partialize: (s) => ({ orgId: s.orgId, collapsed: s.collapsed, split: s.split }) },
   ),
 );

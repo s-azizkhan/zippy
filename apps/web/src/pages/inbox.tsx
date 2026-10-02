@@ -1,4 +1,5 @@
 import { CircleAlert, Search, Eye, Inbox as InboxIcon, KeyRound, Lightbulb, MessageCircleQuestion, Workflow } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { InboxItem } from "@zippy/shared";
@@ -47,8 +48,11 @@ export function InboxPage() {
 
   async function run(item: InboxItem, optionId: string) {
     setBusy(itemKey(item));
+    const i = list.indexOf(item);
+    const next = list[i + 1] ?? list[i - 1];
     try {
       await act(item, optionId);
+      if (next) setSelected(itemKey(next));
       await queryClient.invalidateQueries({ queryKey: keys.res(org.id, "inbox") });
       queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
       queryClient.invalidateQueries({ queryKey: keys.ticket(item.ticket.id) });
@@ -69,8 +73,10 @@ export function InboxPage() {
           setSelected(itemKey(next));
           document.getElementById(`inbox-${itemKey(next)}`)?.focus();
         }
-      } else if (/^[1-9]$/.test(e.key)) {
-        const opt = (current.options ?? (current.kind === "review" ? [{ id: "done", label: "Mark done" }] : []))[Number(e.key) - 1];
+      } else if (/^[1-9ar]$/.test(e.key)) {
+        const opts = current.options ?? (current.kind === "review" ? [{ id: "done", label: "Mark done" }] : []);
+        const yesNo = current.kind !== "question";
+        const opt = e.key === "a" ? yesNo && opts.find((o) => o.primary) : e.key === "r" ? yesNo && opts.find((o) => !o.primary) : opts[Number(e.key) - 1];
         if (opt) (e.preventDefault(), run(current, opt.id));
       }
     };
@@ -86,7 +92,7 @@ export function InboxPage() {
             Inbox
           </h1>
           {all.length > 0 && <span className="text-muted-foreground text-xs tabular-nums">{list.length === all.length ? all.length : `${list.length}/${all.length}`}</span>}
-          <span className="text-muted-foreground ml-auto hidden text-xs lg:inline">J/K move · 1–9 act</span>
+          <span className="text-muted-foreground ml-auto hidden text-xs lg:inline">J/K move · A/R/1–9 act</span>
         </header>
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
           <div className="relative min-w-0 flex-1">
@@ -114,13 +120,14 @@ export function InboxPage() {
               {all.length ? "No matches." : "Nothing needs you. Agents are on it."}
             </li>
           )}
+          <AnimatePresence initial={false}>
           {list.map((item) => {
             const k = KIND[item.kind];
             const agent = agents.find((a) => a.id === item.agentId);
             const active = current && itemKey(current) === itemKey(item);
             const options = item.options ?? (item.kind === "review" ? [{ id: "done", label: "Mark done" }] : []);
             return (
-              <li key={itemKey(item)} className={cn("border-b", active && "bg-accent/60")}>
+              <motion.li key={itemKey(item)} layout="position" exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }} className={cn("overflow-hidden border-b", active && "bg-accent/60")}>
                 <div
                   id={`inbox-${itemKey(item)}`}
                   role="button"
@@ -163,9 +170,10 @@ export function InboxPage() {
                     </div>
                   )}
                 </div>
-              </li>
+              </motion.li>
             );
           })}
+          </AnimatePresence>
         </ul>
       </section>
       <div className="hidden min-w-0 flex-1 md:flex">{current ? <TicketPage key={current.ticket.id} ticketId={current.ticket.id} embedded /> : null}</div>
