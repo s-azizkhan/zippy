@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { and, asc, desc, eq, gte, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { z, ZodError } from "zod";
 import {
@@ -342,6 +342,19 @@ setInterval(async () => {
     .where(and(eq(routines.enabled, true), sql`coalesce(${routines.lastRunAt}, ${routines.createdAt}) + make_interval(hours => ${routines.everyHours}) <= now()`));
   for (const r of due) await runRoutine(r).catch((e) => console.error("[routine]", r.name, e.message));
 }, 60_000).unref();
+
+// Tickets an agent is assigned to or has a session on, newest first.
+app.get("/agents/:id/work", async (c) => {
+  const id = c.req.param("id");
+  const rows = await db
+    .select({ ticket: { id: tickets.id, identifier: tickets.identifier, title: tickets.title, status: tickets.status, updatedAt: tickets.updatedAt }, assigned: tickets.assigneeAgentId, session: { id: agentSessions.id, costUsd: agentSessions.costUsd, tokensIn: agentSessions.tokensIn, tokensOut: agentSessions.tokensOut } })
+    .from(tickets)
+    .leftJoin(agentSessions, and(eq(agentSessions.ticketId, tickets.id), eq(agentSessions.agentId, id)))
+    .where(or(eq(tickets.assigneeAgentId, id), isNotNull(agentSessions.id)))
+    .orderBy(desc(tickets.updatedAt))
+    .limit(100);
+  return c.json(rows.map((r) => ({ ticket: r.ticket, assigned: r.assigned === id, running: !!r.session && isRunning(r.session.id), costUsd: r.session?.costUsd ?? 0, tokens: (r.session?.tokensIn ?? 0) + (r.session?.tokensOut ?? 0) })));
+});
 
 // Agent test run: a throwaway ticket with a sample prompt, worked by that agent.
 app.post("/agents/:id/test", async (c) => {

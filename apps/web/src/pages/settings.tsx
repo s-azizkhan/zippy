@@ -1,3 +1,4 @@
+import { MdEditor } from "@/components/md-editor";
 import { Braces, Building2, Check, ChevronRight, Copy, Download, FolderGit2, Link2, Plug, Plus, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -277,7 +278,7 @@ function OrgSettings({ active }: { active: boolean }) {
       </Card>
       <Card title="Context" desc="Markdown. Every agent gets this: product, conventions, people, rules.">
         <Field label="Organization context" error={errors.contextMd}>
-          {(p) => <Textarea {...p} value={form.contextMd} onChange={(e) => setForm({ ...form, contextMd: e.target.value })} className="min-h-80 font-mono text-[13px]" />}
+          {(p) => <MdEditor id={p.id} value={form.contextMd} onChange={(contextMd) => setForm((f) => ({ ...f, contextMd }))} className="min-h-72" />}
         </Field>
       </Card>
       <div role="status" className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
@@ -370,7 +371,7 @@ function FolderForm({ ws, onDone }: { ws?: Workspace; onDone?: () => void }) {
         {(p) => <Textarea {...p} value={riskText} onChange={(e) => setRiskText(e.target.value)} placeholder={"src/payments\n**/migrations/**\n.env*"} className="min-h-20 font-mono text-[13px]" />}
       </Field>
       <Field label="Folder context" hint="Markdown. Added after org context. The repo's CLAUDE.md is loaded too.">
-        {(p) => <Textarea {...p} value={form.contextMd} onChange={set("contextMd")} className="min-h-32 font-mono text-[13px]" />}
+        {(p) => <MdEditor id={p.id} value={form.contextMd} onChange={(contextMd) => setForm((f) => ({ ...f, contextMd }))} className="min-h-28" />}
       </Field>
       <div className="flex gap-2">
         <Button type="submit" size="sm" className="max-md:min-h-11" disabled={save.isPending}>

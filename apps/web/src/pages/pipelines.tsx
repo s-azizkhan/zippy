@@ -1,3 +1,4 @@
+import { MdEditor } from "@/components/md-editor";
 import { AnimatePresence, motion, Reorder, useDragControls } from "motion/react";
 import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Flag, GripVertical, Hand, Minus, Plus, Trash2, Undo2, Zap, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -10,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { api, keys, useAgents, useApiMutation, usePipelines } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,7 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
               {["#5e6ad2", "#26b5ce", "#4cb782"].map((c, i) => (
                 <div key={c} className="flex items-center">
                   {i > 0 && <span className="bg-border h-px w-8" />}
-                  <AgentAvatar agent={{ name: ["P", "B", "R"][i]!, color: c }} className="size-10 text-sm ring-4 ring-background" />
+                  <AgentAvatar agent={{ name: ["P", "B", "R"][i]!, color: c }} className="size-10 text-sm" />
                 </div>
               ))}
             </div>
@@ -95,7 +95,7 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
                     {p.stages.slice(0, 6).map((s, i) => (
                       <div key={s.id} className="flex items-center">
                         {i > 0 && <span className="bg-border h-px w-3" />}
-                        <AgentAvatar agent={agentOf(s.agentId)} className="size-7 text-xs ring-2 ring-card" />
+                        <AgentAvatar agent={agentOf(s.agentId)} className="size-7 text-xs" />
                       </div>
                     ))}
                     {p.stages.length > 6 && <span className="text-muted-foreground ml-1.5 text-xs">+{p.stages.length - 6}</span>}
@@ -331,7 +331,7 @@ function StageRow({ s, n, stages, agent, selected, canInsert, onSelect, onInsert
   return (
     <Reorder.Item as="li" value={s} dragListener={false} dragControls={controls} whileDrag={{ scale: 1.015, zIndex: 20 }} className="group/row relative grid grid-cols-[2rem_1fr] gap-3">
       <span className="bg-border absolute top-8 bottom-0 left-4 w-px" aria-hidden />
-      <AgentAvatar agent={agent} className="z-10 size-8 text-xs ring-4 ring-background" />
+      <AgentAvatar agent={agent} className="z-10 size-8 text-xs" />
       <div>
         <div className={cn("bg-card group/card relative rounded-xl border shadow-xs transition", selected ? "border-primary/60 ring-primary/10 ring-4" : "hover:border-foreground/20")}>
           <button
@@ -387,7 +387,7 @@ function Inspector({ s, i, count, stages, agents, set, move, del }: { s: Row; i:
       <Field label="Name">{(p) => <Input {...p} value={s.name} onChange={(e) => set({ name: e.target.value })} />}</Field>
       <Field label="Agent">{(p) => <AgentSelect id={p.id} agents={agents} value={s.agentId} onChange={(agentId) => set({ agentId })} />}</Field>
       <Field label="Instruction" hint="Optional. The agent's role prompt still applies.">
-        {(p) => <Textarea {...p} placeholder="What should this stage do?" value={s.instruction} onChange={(e) => set({ instruction: e.target.value })} className="min-h-24 text-[13px]" />}
+        {(p) => <MdEditor id={p.id} placeholder="What should this stage do?" value={s.instruction} onChange={(instruction) => set({ instruction })} className="min-h-20" />}
       </Field>
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
         <RouteSelect label="On pass" value={s.onPass} onChange={(onPass) => set({ onPass })} fixed={[["next", "Next stage"], ["done", "Finish"]]} stages={stages} self={i} />

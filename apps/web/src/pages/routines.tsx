@@ -1,3 +1,4 @@
+import { MdEditor } from "@/components/md-editor";
 import { Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -6,7 +7,6 @@ import { Field, fieldErrors } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { api, keys, useAgents, useApiMutation, usePipelines, useRoutines, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { ago } from "@/lib/utils";
@@ -72,7 +72,7 @@ function RoutineForm({ routine, onDone }: { routine?: Routine; onDone?: () => vo
         </Field>
       </div>
       <Field label="Ticket title" hint="The run date is appended." error={errors.title}>{(p) => <Input {...p} value={form.title} onChange={(e) => set("title", e.target.value)} />}</Field>
-      <Field label="Ticket description">{(p) => <Textarea {...p} value={form.body} onChange={(e) => set("body", e.target.value)} className="min-h-24 text-[13px]" />}</Field>
+      <Field label="Ticket description">{(p) => <MdEditor id={p.id} value={form.body} onChange={(v) => set("body", v)} className="min-h-20" />}</Field>
       <fieldset className="grid gap-1.5">
         <legend className="mb-1.5 text-[13px] font-medium">Folders</legend>
         <div className="flex flex-wrap gap-3">

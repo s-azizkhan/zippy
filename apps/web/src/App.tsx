@@ -156,7 +156,7 @@ function Sidebar() {
       </nav>
 
       <Section title="Workspace">
-        <NavItem to="/agents" icon={Bot} label="Agents" />
+        <NavItem to="/agents" icon={Bot} label="Agents" match={pathname.startsWith("/agents")} />
         <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
         <NavItem to="/routines" icon={Repeat} label="Routines" />
       </Section>
@@ -173,7 +173,7 @@ function Sidebar() {
       </Section>
 
       <nav className="grid gap-px wide:hidden" aria-label="Workspace">
-        <NavItem to="/agents" icon={Bot} label="Agents" />
+        <NavItem to="/agents" icon={Bot} label="Agents" match={pathname.startsWith("/agents")} />
         <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
         <NavItem to="/routines" icon={Repeat} label="Routines" />
       </nav>
@@ -262,6 +262,7 @@ const router = createBrowserRouter([
       { path: "/t/:id", element: <TicketPage /> },
       { path: "/inbox", element: <InboxPage />, handle: { title: "Inbox" } },
       { path: "/agents", element: <AgentsPage />, handle: { title: "Agents" } },
+      { path: "/agents/:handle", element: <AgentsPage />, handle: { title: "Agents" } },
       { path: "/pipelines", element: <PipelinesPage />, handle: { title: "Pipelines" } },
       { path: "/routines", element: <RoutinesPage />, handle: { title: "Routines" } },
       { path: "/settings", element: <SettingsPage />, handle: { title: "Settings" } },

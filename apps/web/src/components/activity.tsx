@@ -1,6 +1,8 @@
 import { ArrowRight, ArrowUp, Check, ChevronRight, CircleAlert, ExternalLink, GitPullRequest, Loader2, Workflow, Wrench, X } from "lucide-react";
 import { Children, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
+import type { Editor } from "@tiptap/react";
+import { MdEditor } from "@/components/md-editor";
 import { Link } from "react-router";
 import remarkGfm from "remark-gfm";
 import type {
@@ -56,7 +58,7 @@ const hl = (children: ReactNode): ReactNode =>
       ? ch
       : ch.split(MENTION_RE).map((part, i) =>
           i % 2 ? (
-            <Link key={i} to={part[0] === "@" ? "/agents" : `/t/${part}`} className="bg-primary/10 text-primary hover:bg-primary/20 rounded px-1 font-medium no-underline">
+            <Link key={i} to={part[0] === "@" ? `/agents/${part.slice(1)}` : `/t/${part}`} className="bg-primary/10 text-primary hover:bg-primary/20 rounded px-1 font-medium no-underline">
               {part}
             </Link>
           ) : (
@@ -428,7 +430,7 @@ function ApprovalBody({ c, agent }: { c: Comment; agent?: Agent }) {
   );
 }
 
-/** Textarea with @agent autocomplete. ⌘↵ sends. */
+/** Rendered markdown editor with @agent autocomplete. ⌘↵ sends. */
 export function MentionInput({
   agents,
   onSend,
@@ -444,32 +446,31 @@ export function MentionInput({
 }) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
-  const [mention, setMention] = useState<{ q: string; at: number } | null>(null);
+  const [mention, setMention] = useState<{ q: string } | null>(null);
   const [active, setActive] = useState(0);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const editor = useRef<Editor | null>(null);
   const listId = useId();
   const matches = mention ? agents.filter((a) => a.handle.startsWith(mention.q) || a.name.toLowerCase().startsWith(mention.q)) : [];
   const expanded = !compact || focused || !!text;
 
-  function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setText(e.target.value);
-    const before = e.target.value.slice(0, e.target.selectionStart);
-    const m = /(?:^|\s)@([a-z-]*)$/.exec(before);
-    setMention(m ? { q: m[1]!, at: before.length - m[1]!.length - 1 } : null);
+  function onChange(md: string) {
+    setText(md);
+    const { $from } = editor.current!.state.selection;
+    const m = /(?:^|\s)@([a-z-]*)$/.exec($from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc"));
+    setMention(m ? { q: m[1]! } : null);
     setActive(0);
   }
   function pick(a: Agent) {
-    if (!mention) return;
-    const end = mention.at + 1 + mention.q.length;
-    setText(`${text.slice(0, mention.at)}@${a.handle} ${text.slice(end)}`);
+    const ed = editor.current;
+    if (!ed || !mention) return;
+    const to = ed.state.selection.from;
+    ed.chain().focus().deleteRange({ from: to - mention.q.length - 1, to }).insertContent(`@${a.handle} `).run();
     setMention(null);
-    const caret = mention.at + a.handle.length + 2;
-    requestAnimationFrame(() => ref.current?.setSelectionRange(caret, caret));
   }
   const send = () => text.trim() && onSend(text, () => setText(""));
 
   return (
-    <div className="relative">
+    <div className="relative" onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
       {matches.length > 0 && (
         <ul id={listId} role="listbox" aria-label="Agents" className="bg-popover absolute bottom-full z-20 mb-2 w-64 overflow-hidden rounded-lg border p-1 shadow-lg">
           {matches.map((a, i) => (
@@ -487,32 +488,28 @@ export function MentionInput({
         </ul>
       )}
       <div className="flex items-end gap-2">
-        <textarea
-          ref={ref}
-          value={text}
-          rows={expanded ? 2 : 1}
-          onChange={onChange}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (matches.length) {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                return setActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
+        <div className={cn("min-w-0 flex-1", expanded ? "max-h-64 min-h-12 overflow-y-auto" : "max-h-8 overflow-hidden")}>
+          <MdEditor
+            boxed={false}
+            value={text}
+            label={placeholder}
+            placeholder={placeholder}
+            onEditor={(e) => (editor.current = e)}
+            onChange={onChange}
+            onKeyDown={(e) => {
+              if (matches.length) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  setActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
+                  return true;
+                }
+                if (e.key === "Enter" || e.key === "Tab") return pick(matches[active]!), true;
+                if (e.key === "Escape") return setMention(null), true;
               }
-              if (e.key === "Enter" || e.key === "Tab") return e.preventDefault(), pick(matches[active]!);
-              if (e.key === "Escape") return setMention(null);
-            }
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), send());
-          }}
-          role="combobox"
-          aria-expanded={matches.length > 0}
-          aria-controls={listId}
-          aria-activedescendant={matches[active] ? `${listId}-${matches[active].id}` : undefined}
-          aria-label={placeholder}
-          placeholder={placeholder}
-          className="placeholder:text-muted-foreground min-h-0 flex-1 resize-none bg-transparent text-[14px] leading-relaxed outline-none"
-        />
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) return send(), true;
+            }}
+            className="text-[14px] leading-relaxed"
+          />
+        </div>
         <button
           onClick={send}
           disabled={!text.trim() || pending}

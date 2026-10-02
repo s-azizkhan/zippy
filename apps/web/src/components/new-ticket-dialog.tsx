@@ -1,3 +1,4 @@
+import { MdEditor } from "@/components/md-editor";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
@@ -82,13 +83,9 @@ export function NewTicketDialog({ org }: { org: Org }) {
                 className="placeholder:text-muted-foreground h-10 bg-transparent text-lg font-medium outline-none"
                 autoFocus
               />
-              <textarea
-                aria-label="Description"
-                placeholder="Add description… (markdown)"
-                value={d.body}
-                onChange={(e) => set("body", e.target.value)}
-                className="placeholder:text-muted-foreground min-h-28 resize-none bg-transparent text-[14px] leading-relaxed outline-none"
-              />
+              <div className="min-h-28 text-[14px] leading-relaxed">
+                <MdEditor boxed={false} label="Description" placeholder="Add description… (markdown)" value={d.body} onChange={(v) => set("body", v)} className="min-h-28" />
+              </div>
             </>
           )}
         </div>

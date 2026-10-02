@@ -1,136 +1,345 @@
-import { FlaskConical, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router";
-import type { Ticket } from "@zippy/shared";
+import { ChevronLeft, ChevronRight, Dices, Eye, FlaskConical, Pencil, Plus, Trash2 } from "lucide-react";
+import { motion } from "motion/react";
+import { useRef, useState } from "react";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
+import type { AgentWork, Ticket } from "@zippy/shared";
 import { agentInput, MODELS, type Agent, type AgentInput } from "@zippy/shared";
 import { Field, fieldErrors } from "@/components/field";
-import { AgentAvatar } from "@/components/status";
+import { AgentFace, encodeFace, FACE_PARTS, faceOf, PALETTE_IDS, PALETTES, paletteOf, randomFace, type FacePart } from "@/components/agent-face";
+import { MdEditor } from "@/components/md-editor";
+import { AgentAvatar, STATUS, StatusIcon } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { ToggleList } from "@/components/toggle-list";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { FoldersPicker } from "@/components/pickers";
-import { api, keys, useAgents, useApiMutation, useWorkspaces } from "@/lib/api";
+import { api, keys, useAgentWork, useAgents, useApiMutation, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
-import { cn } from "@/lib/utils";
+import { ago, cn } from "@/lib/utils";
 
-const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: "# Role\n\n", model: "default", canWrite: false, color: "#6366f1", toggles: {} };
+const TEMPLATE = `# Role
+
+You are a ... Describe what this agent is responsible for.
+
+# How you work
+
+- Read the ticket and the relevant code first.
+- Keep changes small. Reuse existing code.
+- (Add the rules this agent must follow.)
+
+# Do not
+
+- Change code outside the ticket scope.
+- (Add what this agent must never do.)
+
+# Output
+
+- Lead with the answer. Then the evidence: file paths, lines, commands run.
+`;
+
+const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: TEMPLATE, model: "default", canWrite: false, color: "arctic-blue", toggles: {} };
+
+const STARTERS: { label: string; canWrite: boolean; color: string; rolePromptMd: string }[] = [
+  { label: "Reviewer", canWrite: false, color: "arctic-blue", rolePromptMd: "# Role\n\nYou review code changes.\n\n- Look for bugs, security issues and missing tests.\n- Cite file and line for every finding.\n- Do not change code.\n" },
+  { label: "Builder", canWrite: true, color: "lime-lagoon", rolePromptMd: "# Role\n\nYou implement tickets.\n\n- Keep the diff small. Match the style around it.\n- Run the type check and tests before you report done.\n" },
+  { label: "Researcher", canWrite: false, color: "orchid-peach", rolePromptMd: "# Role\n\nYou investigate questions about the codebase.\n\n- Find the relevant code first, then answer.\n- Lead with the answer, then the evidence.\n- Do not change code.\n" },
+];
+
+const PART_LABEL: Record<FacePart, string> = { body: "Body", eye: "Eyes", mouth: "Mouth", gear: "Extra" };
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^[^a-z]+|-+$/g, "").slice(0, 30);
+const blurb = (md: string) => md.split("\n").find((l) => l.trim() && !l.startsWith("#"))?.replace(/^[-*]\s*/, "") ?? "No role prompt yet.";
 
 export function AgentsPage() {
   const org = useOrg();
-  const { data: agents = [] } = useAgents(org.id);
-  const [selected, setSelected] = useState<string | "new" | null>(null);
-  const current = selected === "new" ? null : (agents.find((a) => a.id === selected) ?? agents[0]);
+  const { handle } = useParams();
+  const navigate = useNavigate();
+  const { data: agents = [], isLoading } = useAgents(org.id);
+  const current = agents.find((a) => a.handle === handle);
+  if (handle === "new" || current) return <AgentStudio key={handle} agent={current} onClose={(a) => navigate(a ? `/agents/${a.handle}` : "/agents")} />;
+  if (handle) return isLoading ? null : <Navigate to="/agents" replace />;
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <nav className="flex w-64 shrink-0 flex-col border-r" aria-label="Agents">
-        <header className="flex h-12 items-center justify-between border-b px-4">
-          <h1 className="text-[13px] font-semibold">Agents</h1>
-          <Button size="icon-sm" variant="ghost" aria-label="New agent" onClick={() => setSelected("new")}>
-            <Plus aria-hidden />
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-5xl px-6 py-10">
+        <header className="mb-8 flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Your team. Each agent has its own role, model and tools. Mention one as @handle on any ticket.</p>
+          </div>
+          <Button onClick={() => navigate("/agents/new")}>
+            <Plus aria-hidden /> New agent
           </Button>
         </header>
-        <ul className="overflow-y-auto p-2">
-          {agents.map((a) => (
-            <li key={a.id}>
-              <button
-                onClick={() => setSelected(a.id)}
-                aria-current={current?.id === a.id || undefined}
-                className={cn("hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]", current?.id === a.id && selected !== "new" && "bg-accent")}
-              >
-                <AgentAvatar agent={a} />
-                <span className="flex-1 truncate">{a.name}</span>
-                <span className="text-muted-foreground text-xs">@{a.handle}</span>
-              </button>
-            </li>
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {agents.map((a, n) => (
+            <motion.li key={a.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(n, 8) * 0.04 }}>
+              <Link to={`/agents/${a.handle}`} className="group agent-card bg-card hover:border-primary/40 hover:shadow-primary/5 relative grid h-full w-full gap-4 overflow-hidden rounded-2xl border p-5 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-lg">
+                <span aria-hidden className="absolute inset-x-0 top-0 h-24 opacity-[.14]" style={{ background: `linear-gradient(${paletteOf(a.color, a.id).a}, transparent)` }} />
+                <AgentAvatar agent={a} track className="relative size-20 transition group-hover:scale-105" />
+                <div className="relative min-w-0">
+                  <h2 className="truncate text-[15px] font-semibold">{a.name}</h2>
+                  <p className="text-muted-foreground font-mono text-xs">@{a.handle}</p>
+                </div>
+                <p className="text-muted-foreground line-clamp-2 min-h-8 text-xs">{blurb(a.rolePromptMd)}</p>
+                <div className="text-muted-foreground flex items-center gap-2 border-t pt-3 text-xs">
+                  <span className="bg-muted inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium">
+                    {a.canWrite ? <Pencil className="size-3" aria-hidden /> : <Eye className="size-3" aria-hidden />}
+                    {a.canWrite ? "Can edit" : "Read-only"}
+                  </span>
+                  <span className="truncate font-mono">{a.model}</span>
+                  <ChevronRight className="ml-auto size-4 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" aria-hidden />
+                </div>
+              </Link>
+            </motion.li>
           ))}
+          <li>
+            <Link to="/agents/new" className="text-muted-foreground hover:border-primary/40 hover:text-primary grid h-full min-h-56 w-full place-items-center content-center gap-1 rounded-2xl border border-dashed p-5 text-sm transition">
+              <Plus className="size-5" aria-hidden /> New agent
+            </Link>
+          </li>
         </ul>
-      </nav>
-      <div className="flex-1 overflow-y-auto">
-        <AgentEditor key={selected === "new" ? "new" : current?.id} agent={selected === "new" ? null : current} onSaved={setSelected} />
-        {selected !== "new" && current && <TestRun key={current.id} agent={current} />}
       </div>
     </div>
   );
 }
 
-function AgentEditor({ agent, onSaved }: { agent: Agent | null | undefined; onSaved: (id: string | null) => void }) {
+function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a: Agent | null) => void }) {
   const org = useOrg();
-  const [form, setForm] = useState<AgentInput>(agent ?? BLANK);
+  const [draft] = useState<AgentInput>(() => ({ ...BLANK, color: randomFace() }));
+  const initial: AgentInput = agent ? { ...agent, color: encodeFace(faceOf(agent.color, agent.id)) } : draft;
+  const [form, setForm] = useState<AgentInput>(initial);
+  const [handleTouched, setHandleTouched] = useState(!!agent);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const invalidate = [keys.res(org.id, "agents")];
   const save = useApiMutation((v: AgentInput) => (agent ? api.patch<Agent>(`/agents/${agent.id}`, v) : api.post<Agent>(`/orgs/${org.id}/agents`, v)), invalidate);
   const remove = useApiMutation(() => api.del(`/agents/${agent!.id}`), invalidate);
-  const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) => setForm({ ...form, [k]: v });
+  const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const { data: agents = [] } = useAgents(org.id);
+  const [faceTouched, setFaceTouched] = useState(!!agent);
+  const pick = (c: string) => (setFaceTouched(true), set("color", c));
+  /** Face from the name; palette prefers one no other agent uses. */
+  const faceFromName = (name: string) => {
+    const f = faceOf("", name);
+    const taken = new Set(agents.map((a) => faceOf(a.color, a.id).id));
+    const free = PALETTE_IDS.filter((id) => !taken.has(id));
+    const pool = free.length ? free : PALETTE_IDS;
+    return encodeFace({ ...f, id: pool[[...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % pool.length]! });
+  };
+  const work = useAgentWork(agent?.id).data;
+  const live = work?.find((w) => w.running);
+  const [lab, setLab] = useState(false);
+  const labRef = useRef<HTMLDetailsElement>(null);
+  const seedOf = agent?.id ?? "";
+  const face = faceOf(form.color, seedOf);
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const r = agentInput.safeParse(form);
     setErrors(r.success ? {} : fieldErrors(r.error.issues));
-    if (r.success) save.mutate(r.data, { onSuccess: (a) => onSaved(a.id) });
+    if (r.success) save.mutate(r.data, { onSuccess: onClose });
   }
 
   return (
-    <form onSubmit={submit} className="mx-auto grid max-w-3xl gap-5 px-6 py-8" noValidate>
-      <div className="flex items-center gap-3">
-        <AgentAvatar agent={{ name: form.name || "?", color: form.color }} className="size-9 text-sm" />
-        <h2 className="text-lg font-semibold">{agent ? agent.name : "New agent"}</h2>
-        {agent && (
-          <Button type="button" variant="ghost" size="sm" className="text-destructive ml-auto" onClick={() => confirm(`Delete ${agent.name}?`) && remove.mutate(undefined, { onSuccess: () => onSaved(null) })}>
-            <Trash2 aria-hidden /> Delete
+    <form onSubmit={submit} noValidate className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto grid max-w-3xl gap-6 px-6 pt-6 pb-28">
+        <div className="flex items-center justify-between">
+          <Button type="button" variant="ghost" size="sm" onClick={() => onClose(null)}>
+            <ChevronLeft aria-hidden /> Agents
           </Button>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Name" error={errors.name}>
-          {(p) => <Input {...p} value={form.name} onChange={(e) => set("name", e.target.value)} />}
-        </Field>
-        <Field label="Handle" hint="Mention as @handle in comments." error={errors.handle}>
-          {(p) => <Input {...p} value={form.handle} onChange={(e) => set("handle", e.target.value.toLowerCase())} className="font-mono" />}
-        </Field>
-        <Field label="Model" hint="default uses the org default (Settings).">
-          {(p) => (
-            <select {...p} value={form.model} onChange={(e) => set("model", e.target.value)} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
-              {(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => (
-                <option key={m} value={m} className="bg-background">
-                  {m}
-                </option>
-              ))}
-            </select>
+          {agent && (
+            <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => confirm(`Delete ${agent.name}?`) && remove.mutate(undefined, { onSuccess: () => onClose(null) })}>
+              <Trash2 aria-hidden /> Delete
+            </Button>
           )}
-        </Field>
-        <Field label="Color">
-          {(p) => <Input {...p} type="color" value={form.color} onChange={(e) => set("color", e.target.value)} className="h-9 w-16 p-1" />}
-        </Field>
-      </div>
-      <div className="flex items-center justify-between rounded-lg border p-3">
-        <div>
-          <p id="can-write" className="text-[13px] font-medium">
-            Can edit files
-          </p>
-          <p className="text-muted-foreground text-xs">Off = read-only reviewer. File edits are blocked.</p>
         </div>
-        <Switch aria-labelledby="can-write" checked={form.canWrite} onCheckedChange={(v) => set("canWrite", v)} />
+
+        <section className="bg-card relative grid gap-6 overflow-hidden rounded-3xl border p-6 sm:grid-cols-[auto_1fr] sm:items-center">
+          <span aria-hidden className="absolute inset-x-0 top-0 h-32 opacity-[.12] transition-colors" style={{ background: `linear-gradient(${face.a}, transparent)` }} />
+          <motion.div key={form.name.length} initial={{ scale: 0.94, rotate: -5 }} animate={{ scale: 1, rotate: 0 }} className="relative mx-auto">
+            <AgentAvatar agent={{ id: agent?.id, name: form.name || "?", color: form.color }} track running={!!live} className="size-32" />
+            <button type="button" aria-label="Edit face" title="Edit face" onClick={() => (setLab(true), requestAnimationFrame(() => labRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })))}
+              className="bg-background hover:bg-accent absolute right-1 bottom-2 grid size-8 place-items-center rounded-full border shadow-sm transition">
+              <Pencil className="size-3.5" aria-hidden />
+            </button>
+          </motion.div>
+          <div className="relative grid gap-3">
+            <div>
+              <Input aria-label="Name" placeholder="Name your agent" value={form.name} aria-invalid={!!errors.name || undefined} autoFocus={!agent}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setForm((f) => ({ ...f, name, ...(!handleTouched && { handle: slug(name) }), ...(!agent && !faceTouched && name.trim() && { color: faceFromName(name.trim().toLowerCase()) }) }));
+                }}
+                className="h-auto border-0 bg-transparent px-0 text-3xl font-semibold tracking-tight shadow-none focus-visible:ring-0 md:text-3xl dark:bg-transparent" />
+              {errors.name && <p className="text-destructive text-xs">{errors.name}</p>}
+            </div>
+            <div>
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground font-mono text-sm">@</span>
+                <Input aria-label="Handle" placeholder="handle" value={form.handle} aria-invalid={!!errors.handle || undefined}
+                  onChange={(e) => (setHandleTouched(true), set("handle", e.target.value.toLowerCase()))} className="h-7 max-w-48 font-mono" />
+                <span className="text-muted-foreground ml-1 text-xs">mention in comments</span>
+              </div>
+              {agent && (
+                <p className="mt-2 text-xs">
+                  {live ? (
+                    <Link to={`/t/${live.ticket.identifier}`} className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 font-medium text-green-600 dark:text-green-400">
+                      <span className="size-1.5 animate-pulse rounded-full bg-green-500" /> Working on {live.ticket.identifier}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">Idle{work?.[0] && ` · last on ${work[0].ticket.identifier} ${ago(work[0].ticket.updatedAt)}`}</span>
+                  )}
+                </p>
+              )}
+              {errors.handle && <p className="text-destructive text-xs">{errors.handle}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Palette">
+              {PALETTE_IDS.map((c) => (
+                <button key={c} type="button" role="radio" aria-checked={face.id === c} aria-label={c} onClick={() => pick(encodeFace({ ...face, id: c }))}
+                  className={cn("size-5 rounded-full ring-offset-2 ring-offset-[var(--card)] transition hover:scale-110", face.id === c && "ring-2 ring-[var(--foreground)]")} style={{ background: `linear-gradient(${PALETTES[c][0]}, ${PALETTES[c][1]})` }} />
+              ))}
+              <Button type="button" size="sm" variant="outline" className="ml-1 rounded-full" onClick={() => pick(randomFace())}>
+                <Dices aria-hidden /> Shuffle
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <details ref={labRef} open={lab} onToggle={(e) => setLab(e.currentTarget.open)} className="bg-card rounded-2xl border p-4">
+          <summary className="cursor-pointer text-[13px] font-medium select-none">Build the face</summary>
+          <div className="mt-4 grid gap-4">
+            {(Object.keys(FACE_PARTS) as FacePart[]).map((k) => (
+              <div key={k} className="flex items-center gap-3">
+                <span className="text-muted-foreground w-12 shrink-0 text-xs">{PART_LABEL[k]}</span>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={PART_LABEL[k]}>
+                  {Array.from({ length: FACE_PARTS[k] }, (_, i) => (
+                    <button key={i} type="button" role="radio" aria-checked={face[k] === i} aria-label={`${PART_LABEL[k]} ${i + 1}`} onClick={() => pick(encodeFace({ ...face, [k]: i }))}
+                      className={cn("hover:bg-accent rounded-xl p-1 transition", face[k] === i && "bg-accent ring-primary ring-2")}>
+                      <AgentFace seed={seedOf} color={encodeFace({ ...face, [k]: i })} className="size-10" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        {!agent && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground text-xs">Start from</span>
+            {STARTERS.map(({ label, ...s }) => (
+              <Button key={label} type="button" size="sm" variant="outline" className="rounded-full" onClick={() => setForm((f) => ({ ...f, ...s, color: encodeFace({ ...faceOf(f.color, seedOf), id: s.color as keyof typeof PALETTES }), name: f.name || label, handle: handleTouched ? f.handle : slug(f.name || label) }))}>
+                {label}
+              </Button>
+            ))}
+          </div>
+        )}
+
+        <Tabs defaultValue={agent ? "work" : "behavior"}>
+          <TabsList variant="line">
+            {agent && <TabsTrigger value="work">Work{!!work?.length && <span className="text-muted-foreground ml-1 text-xs tabular-nums">{work.length}</span>}</TabsTrigger>}
+            <TabsTrigger value="behavior">Behavior</TabsTrigger>
+            <TabsTrigger value="tools">Skills & MCP</TabsTrigger>
+            {agent && <TabsTrigger value="test">Test run</TabsTrigger>}
+          </TabsList>
+          {agent && (
+            <TabsContent value="work" className="mt-5">
+              <WorkList work={work} />
+            </TabsContent>
+          )}
+          <TabsContent value="behavior" className="mt-5 grid gap-5">
+            <div role="radiogroup" aria-label="Access" className="grid gap-3 sm:grid-cols-2">
+              {[
+                { v: false, icon: Eye, title: "Read-only", hint: "Reviews and advises. File edits are blocked." },
+                { v: true, icon: Pencil, title: "Can edit files", hint: "Writes code and runs commands in the folder." },
+              ].map(({ v, icon: Icon, title, hint }) => (
+                <button key={title} type="button" role="radio" aria-checked={form.canWrite === v} onClick={() => set("canWrite", v)}
+                  className={cn("flex items-start gap-3 rounded-xl border p-4 text-left transition hover:border-primary/40", form.canWrite === v && "border-primary bg-primary/5 ring-1 ring-primary")}>
+                  <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span>
+                    <span className="block text-[13px] font-medium">{title}</span>
+                    <span className="text-muted-foreground block text-xs">{hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <Field label="Model" hint="default uses the org default (Settings).">
+              {(p) => (
+                <select {...p} value={form.model} onChange={(e) => set("model", e.target.value)} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
+                  {(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => (
+                    <option key={m} value={m} className="bg-background">
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field label="Role prompt" hint="Markdown. Added to the Claude Code system prompt, after org and folder context.">
+              {(p) => <MdEditor id={p.id} value={form.rolePromptMd} onChange={(v) => set("rolePromptMd", v)} className="min-h-72" />}
+            </Field>
+          </TabsContent>
+          <TabsContent value="tools" className="mt-5">
+            <p className="text-muted-foreground mb-4 text-xs">Overrides the org defaults in Settings.</p>
+            <ToggleList toggles={form.toggles} base={org.toggles} onChange={(t) => set("toggles", t)} />
+          </TabsContent>
+          {agent && (
+            <TabsContent value="test" className="mt-5">
+              <TestRun agent={agent} dirty={dirty} />
+            </TabsContent>
+          )}
+        </Tabs>
       </div>
-      <Field label="Role prompt" hint="Markdown. Added to the Claude Code system prompt, after org and folder context.">
-        {(p) => <Textarea {...p} value={form.rolePromptMd} onChange={(e) => set("rolePromptMd", e.target.value)} className="min-h-96 font-mono text-[13px]" />}
-      </Field>
-      <Field label="Skills & MCP" hint="Overrides the org defaults in Settings.">
-        {() => <ToggleList toggles={form.toggles} base={org.toggles} onChange={(t) => set("toggles", t)} />}
-      </Field>
-      <div>
-        <Button type="submit" disabled={save.isPending}>
-          {agent ? "Save changes" : "Create agent"}
-        </Button>
-      </div>
+
+      {(dirty || !agent) && (
+        <div className="bg-background/80 fixed inset-x-0 bottom-0 z-20 border-t backdrop-blur">
+          <div className="mx-auto flex max-w-3xl items-center justify-end gap-2 px-6 py-3">
+            <span className="text-muted-foreground mr-auto text-xs">{agent ? "Unsaved changes" : "New agent"}</span>
+            <Button type="button" variant="ghost" onClick={() => (agent ? (setForm(initial), setErrors({})) : onClose(null))}>
+              {agent ? "Discard" : "Cancel"}
+            </Button>
+            <Button type="submit" disabled={save.isPending || !dirty}>
+              {agent ? "Save changes" : "Create agent"}
+            </Button>
+          </div>
+        </div>
+      )}
     </form>
   );
 }
 
+function WorkList({ work }: { work: AgentWork[] | undefined }) {
+  if (!work) return null;
+  if (!work.length) return <p className="text-muted-foreground rounded-2xl border border-dashed p-8 text-center text-sm">No tickets yet. Assign this agent or mention @handle on a ticket.</p>;
+  const cost = work.reduce((n, w) => n + w.costUsd, 0);
+  return (
+    <div className="grid gap-4">
+      <p className="text-muted-foreground text-xs">
+        {work.length} ticket{work.length === 1 ? "" : "s"} · {work.filter((w) => w.running).length} running · ${cost.toFixed(2)} total
+      </p>
+      <ul className="divide-y rounded-2xl border">
+        {work.map(({ ticket: t, running, assigned, costUsd }) => (
+          <li key={t.id}>
+            <Link to={`/t/${t.identifier}`} className="hover:bg-accent/50 flex items-center gap-3 px-4 py-3 text-[13px] transition">
+              <StatusIcon status={t.status} />
+              <span className="text-muted-foreground font-mono text-xs">{t.identifier}</span>
+              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              {running && <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400"><span className="size-1.5 animate-pulse rounded-full bg-green-500" /> Working</span>}
+              {assigned && !running && <span className="bg-muted rounded-full px-2 py-0.5 text-xs">Assigned</span>}
+              <span className="text-muted-foreground hidden text-xs sm:inline">{STATUS[t.status].label}</span>
+              {costUsd > 0 && <span className="text-muted-foreground hidden font-mono text-xs sm:inline">${costUsd.toFixed(2)}</span>}
+              <span className="text-muted-foreground w-20 text-right text-xs">{ago(t.updatedAt)}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Runs the agent on a throwaway ticket so you can check its prompt and tools before real work. */
-function TestRun({ agent }: { agent: Agent }) {
+function TestRun({ agent, dirty }: { agent: Agent; dirty: boolean }) {
   const org = useOrg();
   const navigate = useNavigate();
   const { data: workspaces = [] } = useWorkspaces(org.id);
@@ -139,26 +348,18 @@ function TestRun({ agent }: { agent: Agent }) {
   const folders = picked ?? (workspaces[0] ? [workspaces[0].id] : []);
   const run = useApiMutation(() => api.post<Ticket>(`/agents/${agent.id}/test`, { workspaceIds: folders, prompt }), [keys.res(org.id, "tickets")]);
   return (
-    <form
-      onSubmit={(e) => (e.preventDefault(), run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.identifier}`) }))}
-      className="mx-auto mb-10 grid max-w-3xl gap-3 px-6"
-      aria-label={`Test run ${agent.name}`}
-    >
-      <div className="grid gap-3 rounded-lg border p-4">
-        <p className="flex items-center gap-2 text-[13px] font-medium">
-          <FlaskConical className="size-4" aria-hidden /> Test run
-        </p>
-        <p className="text-muted-foreground text-xs">Creates a "Test run" ticket with this prompt and runs @{agent.handle} on it. Save changes first.</p>
-        <Field label="Sample task">{(p) => <Textarea {...p} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Review the last commit for security issues." className="min-h-20 text-[13px]" />}</Field>
-        <div className="flex items-end gap-2">
-          <Field label="Folder">
-            {() => <FoldersPicker orgId={org.id} value={folders} onChange={setPicked} />}
-          </Field>
-          <Button type="submit" size="sm" disabled={!prompt.trim() || !folders.length || run.isPending}>
-            {run.isPending ? "Starting…" : "Run test"}
-          </Button>
-        </div>
+    <div className="grid gap-3 rounded-2xl border p-5" role="group" aria-label={`Test run ${agent.name}`}>
+      <p className="flex items-center gap-2 text-[13px] font-medium">
+        <FlaskConical className="size-4" aria-hidden /> Try @{agent.handle}
+      </p>
+      <p className="text-muted-foreground text-xs">Creates a "Test run" ticket with this prompt and runs the agent on it.{dirty && " Save changes first: the test uses the saved version."}</p>
+      <Field label="Sample task">{(p) => <Textarea {...p} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Review the last commit for security issues." className="min-h-20 text-[13px]" />}</Field>
+      <div className="flex items-end gap-2">
+        <Field label="Folder">{() => <FoldersPicker orgId={org.id} value={folders} onChange={setPicked} />}</Field>
+        <Button type="button" size="sm" disabled={!prompt.trim() || !folders.length || run.isPending} onClick={() => run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.identifier}`) })}>
+          {run.isPending ? "Starting…" : "Run test"}
+        </Button>
       </div>
-    </form>
+    </div>
   );
 }

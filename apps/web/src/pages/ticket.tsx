@@ -6,10 +6,11 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import type { Agent, AgentSession, Pipeline, RelatedTicket, Ticket } from "@zippy/shared";
-import { Activity, md } from "@/components/activity";
+import { Activity } from "@/components/activity";
 import { Changes } from "@/components/changes";
 import { Terminal } from "@/components/terminal";
 import { AssigneePicker, FoldersPicker, LabelChips, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
+import { MdEditor } from "@/components/md-editor";
 import { AgentAvatar, StatusIcon } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -295,35 +296,8 @@ function TitleEditor({ ticket }: { ticket: Ticket }) {
 }
 
 function DescriptionEditor({ ticket }: { ticket: Ticket }) {
-  const [editing, setEditing] = useState(false);
   const save = useApiMutation((body: string) => api.patch(`/tickets/${ticket.id}`, { body }), [keys.ticket(ticket.id)]);
-  if (editing) {
-    return (
-      <textarea
-        aria-label="Description"
-        autoFocus
-        defaultValue={ticket.body}
-        onBlur={(e) => {
-          setEditing(false);
-          if (e.target.value !== ticket.body) save.mutate(e.target.value);
-        }}
-        onKeyDown={(e) => e.key === "Escape" && e.currentTarget.blur()}
-        className="bg-muted/30 focus-visible:ring-ring/50 min-h-48 w-full resize-y rounded-md p-3 font-mono text-[13px] leading-relaxed outline-none focus-visible:ring-2"
-      />
-    );
-  }
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label="Edit description"
-      onClick={(e) => (e.target as HTMLElement).tagName !== "A" && setEditing(true)}
-      onKeyDown={(e) => e.key === "Enter" && setEditing(true)}
-      className="hover:bg-accent/30 focus-visible:ring-ring/50 -mx-2 cursor-text rounded-md px-2 py-1 text-[15px] leading-relaxed outline-none focus-visible:ring-2"
-    >
-      {ticket.body ? md(ticket.body) : <p className="text-muted-foreground">Add description…</p>}
-    </div>
-  );
+  return <MdEditor boxed={false} label="Description" placeholder="Add description…" value={ticket.body} onBlur={(md) => md !== ticket.body && save.mutate(md)} className="hover:bg-accent/30 focus-visible:bg-accent/30 -mx-2 rounded-md px-2 py-1 text-[15px] leading-relaxed" />;
 }
 
 /** Shown when a pipeline stage waits on the user. */

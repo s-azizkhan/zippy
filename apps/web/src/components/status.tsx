@@ -1,4 +1,5 @@
 import type { Agent, PRIORITIES, TicketStatus } from "@zippy/shared";
+import { AgentFace } from "@/components/agent-face";
 import { cn } from "@/lib/utils";
 
 type Priority = (typeof PRIORITIES)[number];
@@ -68,15 +69,11 @@ export function StatusIcon({ status, className }: { status: TicketStatus; classN
   );
 }
 
-export function AgentAvatar({ agent, className, running }: { agent?: Pick<Agent, "name" | "color"> | null; className?: string; running?: boolean }) {
+export function AgentAvatar({ agent, className, running, track }: { agent?: (Pick<Agent, "name" | "color"> & { id?: string }) | null; className?: string; running?: boolean; track?: boolean }) {
   if (!agent) return <span className={cn("bg-muted inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium", className)} aria-hidden>?</span>;
   return (
-    <span
-      className={cn("relative inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white", className)}
-      style={{ background: agent.color }}
-      aria-hidden
-    >
-      {agent.name.slice(0, 1)}
+    <span className={cn("relative inline-flex size-5 shrink-0", className)} aria-hidden>
+      <AgentFace seed={agent.id ?? agent.name} color={agent.color} track={track} state={running ? "working" : undefined} className="size-full" />
       {running && <span className="absolute -right-0.5 -bottom-0.5 size-2 animate-pulse rounded-full bg-green-500 ring-2 ring-[var(--background)]" />}
     </span>
   );
