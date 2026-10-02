@@ -274,7 +274,7 @@ function OrgSettings({ active }: { active: boolean }) {
         </Field>
       </Card>
       <div role="status" className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
-        {dirty && (
+        {dirty && !save.isPending && (
           <div className="bg-popover pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 shadow-lg duration-300">
             <span className="flex items-center gap-2 text-[13px] font-medium">
               <span aria-hidden className="size-2 rounded-full bg-amber-500" />

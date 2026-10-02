@@ -37,7 +37,7 @@ const useApiQuery = <T,>(key: QueryKey, path: string | null) =>
 /** Mutation that invalidates `invalidate` on success. */
 export function useApiMutation<V, R = unknown>(fn: (v: V) => Promise<R>, invalidate: QueryKey[] = []) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: fn, onSuccess: () => invalidate.forEach((k) => qc.invalidateQueries({ queryKey: k })) });
+  return useMutation({ mutationFn: fn, onSuccess: () => Promise.all(invalidate.map((k) => qc.invalidateQueries({ queryKey: k }))) });
 }
 
 export const keys = {
