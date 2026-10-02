@@ -71,7 +71,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
       </div>
     );
   }
-  const { ticket, comments, sessions, pipeline, related, budgetUsd } = data;
+  const { ticket, comments, sessions, pipeline, related, parent, children, budgetUsd } = data;
   const running = sessions.filter((s) => s.running).map((s) => s.agentId);
 
   return (
@@ -136,7 +136,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
           </div>
           {pipeline && ticket.stageId && ticket.status === "needs_input" && <GateBar ticket={ticket} pipeline={pipeline} />}
         </div>
-        <Properties ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />
+        <Properties ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />
       </div>
     </div>
   );
@@ -301,17 +301,38 @@ function PanelSection({ title, children, action }: { title: string; children: Re
 
 const PR_ICON = { OPEN: [GitPullRequest, "text-[#4cb782]"], MERGED: [GitMerge, "text-[#8b5cf6]"], CLOSED: [GitPullRequestClosed, "text-[#eb5757]"] } as const;
 
+function TicketLinks({ title, items, search }: { title: string; items: RelatedTicket[]; search: string }) {
+  if (!items.length) return null;
+  return (
+    <PanelSection title={title}>
+      <ul className="grid grid-cols-[minmax(0,1fr)]">
+        {items.map((r) => (
+          <li key={r.id}>
+            <Link to={`/t/${r.id}${search}`} className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2">
+              <StatusIcon status={r.status} />
+              <span className="text-muted-foreground shrink-0 tabular-nums">{r.identifier}</span>
+              <span className="truncate">{r.title}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </PanelSection>
+  );
+}
+
 function Properties(props: {
   ticket: Ticket;
   agents: Agent[];
   sessions: AgentSession[];
   pipeline: Pipeline | null;
   related: RelatedTicket[];
+  parent: RelatedTicket | null;
+  subIssues: RelatedTicket[];
   budgetUsd: number | null;
   menu: Menu;
   setMenu: (m: Menu) => void;
 }) {
-  const { ticket, agents, sessions, pipeline, related, budgetUsd, menu, setMenu } = props;
+  const { ticket, agents, sessions, pipeline, related, parent, subIssues, budgetUsd, menu, setMenu } = props;
   const spent = sessions.reduce((n, s) => n + s.costUsd, 0);
   const org = useOrg();
   const { data: workspaces = [] } = useWorkspaces(org.id);
@@ -364,21 +385,9 @@ function Properties(props: {
 
       <PipelineSection ticket={ticket} pipeline={pipeline} agents={agents} />
 
-      {related.length > 0 && (
-        <PanelSection title="Related">
-          <ul className="grid grid-cols-[minmax(0,1fr)]">
-            {related.map((r) => (
-              <li key={r.id}>
-                <Link to={`/t/${r.id}${search}`} className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2">
-                  <StatusIcon status={r.status} />
-                  <span className="text-muted-foreground shrink-0 tabular-nums">{r.identifier}</span>
-                  <span className="truncate">{r.title}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </PanelSection>
-      )}
+      <TicketLinks title="Parent" items={parent ? [parent] : []} search={search} />
+      <TicketLinks title="Sub-issues" items={subIssues} search={search} />
+      <TicketLinks title="Related" items={related.filter((r) => r.id !== parent?.id && !subIssues.some((c) => c.id === r.id))} search={search} />
 
       {(spent > 0 || budgetUsd) && (
         <PanelSection title="Cost">

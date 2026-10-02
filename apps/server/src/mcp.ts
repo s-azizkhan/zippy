@@ -4,10 +4,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { z } from "zod";
-import type { QuestionPayload } from "@zippy/shared";
+import type { LearningPayload, QuestionPayload } from "@zippy/shared";
 import { agents, db, orgs, ticketFolders, tickets } from "./db/index.ts";
 import { commitsAhead, folderDiff, openPr } from "./git.ts";
-import { attachPr } from "./linear.ts";
+import { attachPr, createSubIssue } from "./linear.ts";
+import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
 
@@ -79,6 +80,60 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean) {
       await addComment(ticketId, agentId, "text", { text: `@${target.handle} ${message}` });
       runAgent(ticketId, target.id, `@${me!.handle} asks you: ${message}`).catch(console.error);
       return text(`@${target.handle} was asked. Its reply will appear on the ticket.`);
+    },
+  );
+
+  server.registerTool(
+    "create_subtickets",
+    {
+      description: "Split this ticket into sub-issues (also created in Linear when this ticket is linked). They start in Todo with this ticket's folders; nobody is assigned.",
+      inputSchema: {
+        tickets: z
+          .array(
+            z.object({
+              title: z.string().min(1).max(200),
+              body: z.string().describe("Markdown: scope and acceptance criteria"),
+              blockedBy: z.array(z.number().int().min(0)).optional().describe("Indexes of earlier items in this list that must finish first"),
+            }),
+          )
+          .min(1)
+          .max(12),
+      },
+    },
+    async ({ tickets: items }) => {
+      const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+      const [org] = await db.select().from(orgs).where(eq(orgs.id, t!.orgId));
+      const workspaceIds = (await foldersOf(ticketId)).map((f) => f.ws.id);
+      const made: string[] = [];
+      for (const [i, item] of items.entries()) {
+        const deps = (item.blockedBy ?? []).filter((n) => n < i).map((n) => made[n]!);
+        let linear;
+        if (t!.linearId && org!.linearAuth?.tokens) {
+          const issue = await createSubIssue(org!, t!, { title: item.title, description: item.body, blockedBy: deps });
+          linear = { identifier: issue.id, linearId: issue.uuid, linearUrl: issue.url };
+        }
+        const body = deps.length && !linear ? `${item.body}\n\nBlocked by ${deps.join(", ")}` : item.body;
+        const sub = await createTicket(t!.orgId, { title: item.title, body, workspaceIds, assigneeAgentId: null, priority: "none", labelIds: [], status: "todo" }, { parentId: ticketId, linear });
+        made.push(sub.identifier);
+      }
+      await addComment(ticketId, agentId, "text", { text: `Split into sub-issues: ${made.join(", ")}` });
+      return text(`Created ${made.join(", ")}.`);
+    },
+  );
+
+  server.registerTool(
+    "propose_learning",
+    {
+      description: "Propose a durable lesson (convention, gotcha, command) for future tickets. The user accepts it into org or folder context. Use rarely: only facts not obvious from the code.",
+      inputSchema: {
+        text: z.string().min(1).max(500).describe("One or two sentences, imperative, self-contained"),
+        folder: z.string().optional().describe("Working folder name if it only applies there; omit for the whole org"),
+      },
+    },
+    async ({ text: lesson, folder }) => {
+      const ws = folder ? (await foldersOf(ticketId)).find((f) => f.ws.name === folder)?.ws : undefined;
+      await addComment(ticketId, agentId, "learning", { text: lesson, workspaceId: ws?.id ?? null } satisfies LearningPayload);
+      return text("Proposed. The user will accept or dismiss it.");
     },
   );
 

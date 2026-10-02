@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Bot, ChevronDown, FolderGit2, Inbox, Layers, Plus, Search, Settings, SquarePen, TerminalSquare, Workflow } from "lucide-react";
+import { Bot, ChevronDown, FolderGit2, Inbox, Layers, Plus, Repeat, Search, Settings, SquarePen, TerminalSquare, Workflow } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation } from "react-router";
@@ -15,6 +15,7 @@ import { AgentsPage } from "@/pages/agents";
 import { InboxPage } from "@/pages/inbox";
 import { Onboarding } from "@/pages/onboarding";
 import { PipelinesPage } from "@/pages/pipelines";
+import { RoutinesPage } from "@/pages/routines";
 import { SettingsPage } from "@/pages/settings";
 import { TicketPage } from "@/pages/ticket";
 import { TicketsPage } from "@/pages/tickets";
@@ -138,7 +139,7 @@ function Sidebar() {
       <Section title="Workspace">
         <NavItem to="/agents" icon={Bot} label="Agents" />
         <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
-        <NavItem to="/settings" icon={Settings} label="Settings" />
+        <NavItem to="/routines" icon={Repeat} label="Routines" />
       </Section>
 
       <Section title="Your folders">
@@ -155,6 +156,10 @@ function Sidebar() {
       <nav className="grid gap-px md:hidden" aria-label="Workspace">
         <NavItem to="/agents" icon={Bot} label="Agents" />
         <NavItem to="/pipelines" icon={Workflow} label="Pipelines" />
+        <NavItem to="/routines" icon={Repeat} label="Routines" />
+      </nav>
+
+      <nav className="mt-auto grid gap-px" aria-label="Settings">
         <NavItem to="/settings" icon={Settings} label="Settings" />
       </nav>
     </aside>
@@ -205,6 +210,7 @@ const router = createBrowserRouter([
       { path: "/inbox", element: <InboxPage /> },
       { path: "/agents", element: <AgentsPage /> },
       { path: "/pipelines", element: <PipelinesPage /> },
+      { path: "/routines", element: <RoutinesPage /> },
       { path: "/settings", element: <SettingsPage /> },
     ],
   },

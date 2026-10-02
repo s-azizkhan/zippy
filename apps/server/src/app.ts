@@ -11,9 +11,11 @@ import {
   TICKET_ID_RE,
   linearImport,
   pipelineInput,
+  routineInput,
   type PipelineInput,
   type ApprovalPayload,
   type InboxItem,
+  type LearningPayload,
   type QuestionPayload,
   mcpServerInput,
   mentionedHandles,
@@ -25,7 +27,7 @@ import {
   type TicketEvent,
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
-import { agentSessions, agents, comments, db, labels, mcpServers, orgs, pipelineStages, pipelines, ticketFolders, tickets, workspaces } from "./db/index.ts";
+import { agentSessions, agents, comments, db, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, workspaces } from "./db/index.ts";
 import { installPreset, presets, scanCatalog } from "./catalog.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { localizeImages, readCached } from "./files.ts";
@@ -34,6 +36,7 @@ import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
+import { appendLearning, autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { addComment, cancelAgent, foldersOf, claudeAuthStatus, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -94,6 +97,7 @@ crud("workspaces", workspaces, workspaceInput);
 crud("mcp", mcpServers, mcpServerInput);
 crud("agents", agents, agentInput);
 crud("labels", labels, labelInput);
+crud("routines", routines, routineInput);
 
 // Tickets
 type TicketRow = typeof tickets.$inferSelect;
@@ -104,21 +108,6 @@ async function withFolders<T extends TicketRow>(rows: T[]) {
     ? await db.select().from(ticketFolders).where(inArray(ticketFolders.ticketId, rows.map((t) => t.id))).orderBy(asc(ticketFolders.position))
     : [];
   return rows.map((t) => ({ ...t, folders: folders.filter((f) => f.ticketId === t.id) }));
-}
-
-/** Replace a ticket's folder set, keeping worktree/PR state of folders that stay. */
-async function setFolders(ticketId: string, workspaceIds: string[]) {
-  await db.transaction(async (tx) => {
-    const existing = await tx.select().from(ticketFolders).where(eq(ticketFolders.ticketId, ticketId));
-    const drop = existing.filter((f) => !workspaceIds.includes(f.workspaceId)).map((f) => f.workspaceId);
-    if (drop.length) await tx.delete(ticketFolders).where(and(eq(ticketFolders.ticketId, ticketId), inArray(ticketFolders.workspaceId, drop)));
-    for (const [position, workspaceId] of workspaceIds.entries()) {
-      await tx
-        .insert(ticketFolders)
-        .values({ ticketId, workspaceId, position })
-        .onConflictDoUpdate({ target: [ticketFolders.ticketId, ticketFolders.workspaceId], set: { position } });
-    }
-  });
 }
 
 async function emitTicket(id: string) {
@@ -151,14 +140,7 @@ app.get("/orgs/:orgId/tickets", async (c) =>
   c.json(await withFolders(await db.select().from(tickets).where(eq(tickets.orgId, c.req.param("orgId"))).orderBy(desc(tickets.updatedAt)))),
 );
 app.post("/orgs/:orgId/tickets", async (c) => {
-  const { workspaceIds, ...input } = await body(c, ticketInput);
-  const orgId = c.req.param("orgId");
-  const ticket = await db.transaction(async (tx) => {
-    const [o] = await tx.update(orgs).set({ ticketSeq: sql`${orgs.ticketSeq} + 1` }).where(eq(orgs.id, orgId)).returning();
-    const [t] = await tx.insert(tickets).values({ ...input, orgId, identifier: `${o!.key}-${o!.ticketSeq}` }).returning();
-    return t!;
-  });
-  await setFolders(ticket.id, workspaceIds);
+  const ticket = await createTicket(c.req.param("orgId"), await body(c, ticketInput));
   await autoStart(ticket);
   return c.json(await emitTicket(ticket.id), 201);
 });
@@ -167,14 +149,19 @@ app.get("/tickets/:id", async (c) => {
   const id = c.req.param("id");
   const [ticket] = await withFolders(await db.select().from(tickets).where(eq(tickets.id, id)));
   if (!ticket) return c.notFound();
-  const [timeline, sessions, rel] = await Promise.all([
+  const brief = { id: tickets.id, identifier: tickets.identifier, title: tickets.title, status: tickets.status };
+  const [timeline, sessions, rel, parent, children] = await Promise.all([
     db.select().from(comments).where(eq(comments.ticketId, id)).orderBy(asc(comments.createdAt)),
     db.select().from(agentSessions).where(eq(agentSessions.ticketId, id)),
     related(ticket),
+    ticket.parentId ? db.select(brief).from(tickets).where(eq(tickets.id, ticket.parentId)) : [],
+    db.select(brief).from(tickets).where(eq(tickets.parentId, id)).orderBy(asc(tickets.createdAt)),
   ]);
   return c.json({
     ticket,
     related: rel,
+    parent: parent[0] ?? null,
+    children,
     comments: timeline,
     sessions: sessions.map((s) => ({ ...s, running: isRunning(s.id) })),
     pipeline: ticket.pipelineId ? await loadPipeline(ticket.pipelineId) : null,
@@ -291,13 +278,6 @@ async function savePipeline(orgId: string, id: string | null, input: PipelineInp
   });
 }
 
-const hasFolders = async (ticketId: string) => (await db.select().from(ticketFolders).where(eq(ticketFolders.ticketId, ticketId)).limit(1)).length > 0;
-
-async function autoStart(ticket: TicketRow) {
-  const [p] = await db.select().from(pipelines).where(and(eq(pipelines.orgId, ticket.orgId), eq(pipelines.autoStart, true)));
-  if (p && (await hasFolders(ticket.id))) await startPipeline(ticket.id, p.id);
-}
-
 app.get("/orgs/:orgId/pipelines", async (c) => {
   const rows = await db.select({ id: pipelines.id }).from(pipelines).where(eq(pipelines.orgId, c.req.param("orgId"))).orderBy(asc(pipelines.createdAt));
   return c.json(await Promise.all(rows.map((r) => loadPipeline(r.id))));
@@ -324,6 +304,40 @@ app.post("/tickets/:id/advance", async (c) => {
   const { verdict, note } = await body(c, z.object({ verdict: z.enum(["pass", "fail"]), note: z.string().optional() }));
   await humanDecision(c.req.param("id"), verdict, note);
   return c.body(null, 202);
+});
+
+// Routines: a ticket from a template every N hours.
+async function runRoutine(r: typeof routines.$inferSelect) {
+  await db.update(routines).set({ lastRunAt: new Date() }).where(eq(routines.id, r.id));
+  const date = new Date().toISOString().slice(0, 10);
+  const t = await createTicket(r.orgId, { title: `${r.title} (${date})`, body: r.body, workspaceIds: r.workspaceIds, assigneeAgentId: r.assigneeAgentId, priority: "none", labelIds: [], status: "todo" });
+  if (r.pipelineId && r.workspaceIds.length) await startPipeline(t.id, r.pipelineId);
+  else if (r.assigneeAgentId) runAgent(t.id, r.assigneeAgentId, "Start work on this ticket.").catch(console.error);
+  return t;
+}
+
+app.post("/routines/:id/run", async (c) => {
+  const [r] = await db.select().from(routines).where(eq(routines.id, c.req.param("id")));
+  return r ? c.json(await runRoutine(r), 201) : c.notFound();
+});
+
+// ponytail: 1-minute tick, first run one interval after creation; "Run now" for immediate.
+setInterval(async () => {
+  const due = await db
+    .select()
+    .from(routines)
+    .where(and(eq(routines.enabled, true), sql`coalesce(${routines.lastRunAt}, ${routines.createdAt}) + make_interval(hours => ${routines.everyHours}) <= now()`));
+  for (const r of due) await runRoutine(r).catch((e) => console.error("[routine]", r.name, e.message));
+}, 60_000).unref();
+
+// Agent test run: a throwaway ticket with a sample prompt, worked by that agent.
+app.post("/agents/:id/test", async (c) => {
+  const { workspaceId, prompt } = await body(c, z.object({ workspaceId: z.string().uuid(), prompt: z.string().min(1) }));
+  const [a] = await db.select().from(agents).where(eq(agents.id, c.req.param("id")));
+  if (!a) return c.notFound();
+  const t = await createTicket(a.orgId, { title: `Test run: @${a.handle}`, body: prompt, workspaceIds: [workspaceId], assigneeAgentId: a.id, priority: "none", labelIds: [], status: "todo" });
+  runAgent(t.id, a.id, prompt).catch(console.error);
+  return c.json(t, 201);
 });
 
 // Linear
@@ -452,7 +466,21 @@ app.get("/orgs/:orgId/inbox", async (c) => {
     .select()
     .from(tickets)
     .where(and(eq(tickets.orgId, c.req.param("orgId")), inArray(tickets.status, ["needs_input", "in_review", "blocked"])));
-  if (!open.length) return c.json([]);
+  const learnings = await db
+    .select({ c: comments, t: tickets })
+    .from(comments)
+    .innerJoin(tickets, eq(tickets.id, comments.ticketId))
+    .where(and(eq(tickets.orgId, c.req.param("orgId")), eq(comments.kind, "learning"), sql`${comments.payload}->>'status' is null`));
+  const learned: InboxItem[] = learnings.map(({ c: l, t }) => ({
+    kind: "learning",
+    ticket: { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"] },
+    commentId: l.id,
+    agentId: l.agentId,
+    title: (l.payload as LearningPayload).text,
+    options: [{ id: "accept", label: "Add to context", primary: true }, { id: "dismiss", label: "Dismiss" }],
+    createdAt: l.createdAt.toISOString(),
+  }));
+  if (!open.length) return c.json(learned);
   const rows = await db
     .select()
     .from(comments)
@@ -485,7 +513,25 @@ app.get("/orgs/:orgId/inbox", async (c) => {
       items.push({ kind: "blocked", ticket, agentId: last?.agentId ?? null, title: t.status === "blocked" ? "Blocked" : "Needs input", detail: lastText, createdAt: at });
     }
   }
-  return c.json(items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  return c.json([...items, ...learned].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+});
+
+/** Accept a proposed learning into org or folder context, or dismiss it. */
+app.post("/comments/:id/learning", async (c) => {
+  const { accept } = await body(c, z.object({ accept: z.boolean() }));
+  const [l] = await db.select().from(comments).where(eq(comments.id, c.req.param("id")));
+  if (!l || l.kind !== "learning") return c.notFound();
+  const p = l.payload as LearningPayload;
+  if (p.status) return c.body(null, 204);
+  if (accept) {
+    const [t] = await db.select({ orgId: tickets.orgId }).from(tickets).where(eq(tickets.id, l.ticketId));
+    const table = p.workspaceId ? workspaces : orgs;
+    const [row] = await db.select({ md: table.contextMd }).from(table).where(eq(table.id, p.workspaceId ?? t!.orgId));
+    await db.update(table).set({ contextMd: appendLearning(row?.md ?? "", p.text) }).where(eq(table.id, p.workspaceId ?? t!.orgId));
+  }
+  const [updated] = await db.update(comments).set({ payload: { ...p, status: accept ? "accepted" : "dismissed" } }).where(eq(comments.id, l.id)).returning();
+  emit(l.ticketId, { type: "comment", comment: updated });
+  return c.body(null, 204);
 });
 
 // ponytail: polling gh every 2 min; switch to a GitHub webhook when hosted.

@@ -14,6 +14,8 @@ export const orgs = pgTable("orgs", {
   budgetUsd: real("budget_usd"), // per-ticket agent spend cap; null = no cap
   linearAuth: jsonb("linear_auth").$type<import("../linear.ts").LinearAuth>(), // Linear MCP OAuth client + tokens
   linearWorkspace: text("linear_workspace"),
+  slackWebhookUrl: text("slack_webhook_url").notNull().default(""),
+  notifyDesktop: boolean("notify_desktop").notNull().default(true),
   createdAt: createdAt(),
 });
 
@@ -100,6 +102,7 @@ export const tickets = pgTable("tickets", {
   stageId: uuid("stage_id").references(() => pipelineStages.id, { onDelete: "set null" }),
   loopCount: integer("loop_count").notNull().default(0),
   riskApproved: boolean("risk_approved").notNull().default(false),
+  parentId: uuid("parent_id"), // sub-issue of
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -156,5 +159,21 @@ export const comments = pgTable("comments", {
   linearCommentId: text("linear_comment_id"),
   kind: text("kind").notNull(), // CommentKind
   payload: jsonb("payload").notNull(),
+  createdAt: createdAt(),
+});
+
+// Recurring tickets: every `everyHours` a ticket is created from this template.
+export const routines = pgTable("routines", {
+  id: id(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  workspaceIds: uuid("workspace_ids").array().notNull().default([]),
+  assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id, { onDelete: "set null" }),
+  pipelineId: uuid("pipeline_id").references(() => pipelines.id, { onDelete: "set null" }),
+  everyHours: integer("every_hours").notNull().default(24),
+  enabled: boolean("enabled").notNull().default(true),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   createdAt: createdAt(),
 });

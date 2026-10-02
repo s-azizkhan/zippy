@@ -1,4 +1,4 @@
-import { CircleAlert, Eye, Inbox as InboxIcon, KeyRound, MessageCircleQuestion, Workflow } from "lucide-react";
+import { CircleAlert, Eye, Inbox as InboxIcon, KeyRound, Lightbulb, MessageCircleQuestion, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { InboxItem } from "@zippy/shared";
@@ -15,6 +15,7 @@ const KIND = {
   gate: { icon: Workflow, label: "Pipeline gate", color: "text-[#f2c94c]" },
   review: { icon: Eye, label: "Review", color: "text-[#4cb782]" },
   blocked: { icon: CircleAlert, label: "Blocked", color: "text-[#eb5757]" },
+  learning: { icon: Lightbulb, label: "Learning", color: "text-[#5e6ad2]" },
 } as const;
 
 const itemKey = (i: InboxItem) => i.commentId ?? `${i.kind}:${i.ticket.id}`;
@@ -24,6 +25,7 @@ async function act(item: InboxItem, optionId: string) {
   if (item.kind === "question") await api.post(`/comments/${item.commentId}/answer`, { answer: optionId });
   else if (item.kind === "approval") await api.post(`/approvals/${item.commentId}`, { optionId });
   else if (item.kind === "gate") await api.post(`/tickets/${item.ticket.id}/advance`, { verdict: optionId });
+  else if (item.kind === "learning") await api.post(`/comments/${item.commentId}/learning`, { accept: optionId === "accept" });
   else if (item.kind === "review") await api.patch(`/tickets/${item.ticket.id}`, { status: "done" });
 }
 

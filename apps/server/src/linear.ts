@@ -101,7 +101,7 @@ export async function agentToken(org: Org) {
 
 const connected = (org: Org, ticket: Ticket) => !!(org.linearAuth as LinearAuth | null)?.tokens && !!ticket.linearId;
 
-type Issue = { uuid: string; id: string; title: string; description: string | null; url: string; labels: string[] };
+type Issue = { uuid: string; id: string; title: string; description: string | null; url: string; labels: string[]; teamId: string };
 type LinearComment = { id: string; body: string; createdAt: string; parentId: string | null; author: { name: string } | null };
 
 /** Accepts COM-123 or a linear.app issue URL. */
@@ -152,6 +152,13 @@ export async function syncStatus(org: Org, ticket: Ticket, status: TicketStatus)
     }
   }
   throw err;
+}
+
+/** Sub-issue under a Linear parent, in the parent's team. Returns the created issue. */
+export async function createSubIssue(org: Org, parent: Ticket, input: { title: string; description: string; blockedBy: string[] }) {
+  const p = await call<Issue>(org, "get_issue", { id: parent.identifier });
+  const created = await call<{ id: string }>(org, "save_issue", { team: p.teamId, parentId: parent.identifier, ...input, ...(!input.blockedBy.length && { blockedBy: undefined }) });
+  return call<Issue>(org, "get_issue", { id: created.id });
 }
 
 export async function attachPr(org: Org, ticket: Ticket, url: string, title: string) {

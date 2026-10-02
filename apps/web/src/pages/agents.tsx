@@ -1,5 +1,7 @@
-import { Plus, Trash2 } from "lucide-react";
+import { FlaskConical, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router";
+import type { Ticket } from "@zippy/shared";
 import { agentInput, type Agent, type AgentInput } from "@zippy/shared";
 import { Field, fieldErrors } from "@/components/field";
 import { AgentAvatar } from "@/components/status";
@@ -8,7 +10,7 @@ import { ToggleList } from "@/components/toggle-list";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, keys, useAgents, useApiMutation } from "@/lib/api";
+import { api, keys, useAgents, useApiMutation, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +50,7 @@ export function AgentsPage() {
       </nav>
       <div className="flex-1 overflow-y-auto">
         <AgentEditor key={selected === "new" ? "new" : current?.id} agent={selected === "new" ? null : current} onSaved={setSelected} />
+        {selected !== "new" && current && <TestRun key={current.id} agent={current} />}
       </div>
     </div>
   );
@@ -122,6 +125,48 @@ function AgentEditor({ agent, onSaved }: { agent: Agent | null | undefined; onSa
         <Button type="submit" disabled={save.isPending}>
           {agent ? "Save changes" : "Create agent"}
         </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Runs the agent on a throwaway ticket so you can check its prompt and tools before real work. */
+function TestRun({ agent }: { agent: Agent }) {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const { data: workspaces = [] } = useWorkspaces(org.id);
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const folder = workspaceId || workspaces[0]?.id;
+  const run = useApiMutation(() => api.post<Ticket>(`/agents/${agent.id}/test`, { workspaceId: folder, prompt }), [keys.res(org.id, "tickets")]);
+  return (
+    <form
+      onSubmit={(e) => (e.preventDefault(), run.mutate(undefined, { onSuccess: (t) => navigate(`/t/${t.id}`) }))}
+      className="mx-auto mb-10 grid max-w-3xl gap-3 px-6"
+      aria-label={`Test run ${agent.name}`}
+    >
+      <div className="grid gap-3 rounded-lg border p-4">
+        <p className="flex items-center gap-2 text-[13px] font-medium">
+          <FlaskConical className="size-4" aria-hidden /> Test run
+        </p>
+        <p className="text-muted-foreground text-xs">Creates a "Test run" ticket with this prompt and runs @{agent.handle} on it. Save changes first.</p>
+        <Field label="Sample task">{(p) => <Textarea {...p} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Review the last commit for security issues." className="min-h-20 text-[13px]" />}</Field>
+        <div className="flex items-end gap-2">
+          <Field label="Folder">
+            {(p) => (
+              <select {...p} value={folder ?? ""} onChange={(e) => setWorkspaceId(e.target.value)} className="border-input bg-background h-8 rounded-md border px-2 text-[13px]">
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          <Button type="submit" size="sm" disabled={!prompt.trim() || !folder || run.isPending}>
+            {run.isPending ? "Starting…" : "Run test"}
+          </Button>
+        </div>
       </div>
     </form>
   );

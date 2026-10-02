@@ -7,6 +7,7 @@ import type {
   ApprovalPayload,
   Comment,
   HandoffPayload,
+  LearningPayload,
   PlanPayload,
   PrPayload,
   QuestionPayload,
@@ -270,6 +271,7 @@ function CardBody({ c, agent }: { c: Comment; agent?: Agent }) {
   }
   if (c.kind === "question") return <QuestionBody c={c} agent={agent} />;
   if (c.kind === "approval") return <ApprovalBody c={c} agent={agent} />;
+  if (c.kind === "learning") return <LearningBody c={c} agent={agent} />;
   if (c.kind === "pr") {
     const p = c.payload as PrPayload;
     return (
@@ -342,6 +344,33 @@ function QuestionBody({ c, agent }: { c: Comment; agent?: Agent }) {
               {o === p.recommended && <span className="text-[10px] opacity-80">recommended</span>}
             </Button>
           ))
+        )}
+      </div>
+    </>
+  );
+}
+
+function LearningBody({ c, agent }: { c: Comment; agent?: Agent }) {
+  const p = c.payload as LearningPayload;
+  const decide = useApiMutation((accept: boolean) => api.post(`/comments/${c.id}/learning`, { accept }));
+  return (
+    <>
+      <CardHeader agent={agent} iso={c.createdAt}>
+        <span className="text-xs text-[#5e6ad2]">proposes a learning for {p.workspaceId ? "this folder" : "the org"}</span>
+      </CardHeader>
+      <div className="pl-7 text-[14px]">{md(p.text)}</div>
+      <div className="flex flex-wrap gap-2 pl-7" role="group" aria-label="Learning">
+        {p.status ? (
+          <p className="text-muted-foreground text-xs">{p.status === "accepted" ? "Added to context" : "Dismissed"}</p>
+        ) : (
+          <>
+            <Button size="sm" onClick={() => decide.mutate(true)} disabled={decide.isPending}>
+              Add to context
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => decide.mutate(false)} disabled={decide.isPending}>
+              Dismiss
+            </Button>
+          </>
         )}
       </div>
     </>

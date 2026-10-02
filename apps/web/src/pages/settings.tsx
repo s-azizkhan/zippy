@@ -61,7 +61,7 @@ function OrgTools() {
 
 function OrgSettings() {
   const org = useOrg();
-  const [form, setForm] = useState({ name: org.name, contextMd: org.contextMd, budgetUsd: org.budgetUsd });
+  const [form, setForm] = useState({ name: org.name, contextMd: org.contextMd, budgetUsd: org.budgetUsd, slackWebhookUrl: org.slackWebhookUrl, notifyDesktop: org.notifyDesktop });
   const save = useApiMutation((v: typeof form) => api.patch(`/orgs/${org.id}`, patchOf(orgInput).parse(v)), [keys.orgs]);
   return (
     <form onSubmit={(e) => (e.preventDefault(), save.mutate(form))} className="grid gap-5">
@@ -80,6 +80,18 @@ function OrgSettings() {
             className="w-40"
           />
         )}
+      </Field>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p id="notify-desktop" className="text-[13px] font-medium">
+            Desktop notifications
+          </p>
+          <p className="text-muted-foreground text-xs">macOS notification when a ticket needs input, is ready for review, or is blocked.</p>
+        </div>
+        <Switch aria-labelledby="notify-desktop" checked={form.notifyDesktop} onCheckedChange={(notifyDesktop) => setForm({ ...form, notifyDesktop })} />
+      </div>
+      <Field label="Slack webhook" hint="Incoming webhook URL. Same events as desktop notifications. Empty = off.">
+        {(p) => <Input {...p} value={form.slackWebhookUrl} onChange={(e) => setForm({ ...form, slackWebhookUrl: e.target.value.trim() })} placeholder="https://hooks.slack.com/services/…" className="font-mono text-[13px]" />}
       </Field>
       <Field label="Organization context" hint="Markdown. Every agent gets this: product, conventions, people, rules.">
         {(p) => <Textarea {...p} value={form.contextMd} onChange={(e) => setForm({ ...form, contextMd: e.target.value })} className="min-h-80 font-mono text-[13px]" />}

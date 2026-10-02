@@ -17,6 +17,8 @@ export const orgInput = z.object({
   contextMd: z.string().default(""),
   defaultModel: z.string().default("default"),
   budgetUsd: z.number().positive().nullable().default(null),
+  slackWebhookUrl: z.union([z.literal(""), z.string().startsWith("https://hooks.slack.com/", "a Slack incoming webhook URL")]).default(""),
+  notifyDesktop: z.boolean().default(true),
   toggles,
 });
 
@@ -95,6 +97,17 @@ export const linearImport = z.object({
   assigneeAgentId: z.string().uuid().nullable().default(null),
 });
 
+export const routineInput = z.object({
+  name: z.string().min(1).max(80),
+  title: z.string().min(1).max(200),
+  body: z.string().default(""),
+  workspaceIds: z.array(z.string().uuid()).default([]),
+  assigneeAgentId: z.string().uuid().nullable().default(null),
+  pipelineId: z.string().uuid().nullable().default(null),
+  everyHours: z.number().int().min(1).max(24 * 30).default(24),
+  enabled: z.boolean().default(true),
+});
+
 export const approvalDecision = z.object({ optionId: z.string().nullable() });
 
 export type CatalogItem = { id: string; kind: "skill" | "mcp"; name: string; description: string; source: string; defaultOn: boolean };
@@ -108,8 +121,9 @@ export type AgentInput = z.infer<typeof agentInput>;
 export type StageInput = z.infer<typeof stageInput>;
 export type PipelineInput = z.infer<typeof pipelineInput>;
 export type TicketInput = z.infer<typeof ticketInput>;
+export type RoutineInput = z.infer<typeof routineInput>;
 
-export type CommentKind = "text" | "tool" | "plan" | "approval" | "status" | "error" | "handoff" | "question" | "pr" | "stage" | "test";
+export type CommentKind = "text" | "tool" | "plan" | "approval" | "status" | "error" | "handoff" | "question" | "pr" | "stage" | "test" | "learning";
 
 // Comment payloads by kind.
 export type TextPayload = { text: string; author?: string }; // author: Linear user name for synced comments
@@ -126,13 +140,14 @@ export type HandoffPayload = { verdict: "pass" | "fail"; summary: string; notes?
 export type QuestionPayload = { question: string; options: string[]; recommended?: string; answer?: string; action?: "risk" }; // risk: first option approves protected-path PRs
 export type PrPayload = { url: string; title: string };
 export type StagePayload = { name: string; loop: number };
+export type LearningPayload = { text: string; workspaceId: string | null; status?: "accepted" | "dismissed" }; // workspaceId null = org context
 export type TestPayload = { folder: string; command: string; ok: boolean; output: string; durationMs: number };
 
 export type DiffFile = { path: string; additions: number; deletions: number; risky: boolean; patch: string };
 export type FolderDiff = { workspaceId: string; folder: string; branch: string | null; base: string; files: DiffFile[]; error?: string };
 
 export type InboxItem = {
-  kind: "question" | "approval" | "gate" | "review" | "blocked";
+  kind: "question" | "approval" | "gate" | "review" | "blocked" | "learning";
   ticket: Pick<Ticket, "id" | "identifier" | "title" | "status">;
   commentId?: string;
   agentId: string | null;
@@ -181,15 +196,17 @@ export type Ticket = Row &
     stageId: string | null;
     loopCount: number;
     riskApproved: boolean;
+    parentId: string | null;
     updatedAt: string;
     folders: TicketFolder[];
   };
+export type Routine = Row & RoutineInput & { orgId: string; lastRunAt: string | null };
 export type Label = Row & z.infer<typeof labelInput> & { orgId: string };
 export type RelatedTicket = Pick<Ticket, "id" | "identifier" | "title" | "status">;
 export type Stage = StageInput & { id: string; pipelineId: string; position: number };
 export type Pipeline = Row & Omit<PipelineInput, "stages"> & { orgId: string; stages: Stage[] };
 export type Comment = Row & { ticketId: string; agentId: string | null; parentId: string | null; kind: CommentKind; payload: unknown };
 export type AgentSession = Row & { ticketId: string; agentId: string; acpSessionId: string | null; tokensIn: number; tokensOut: number; costUsd: number; running: boolean };
-export type TicketDetail = { ticket: Ticket; comments: Comment[]; sessions: AgentSession[]; pipeline: Pipeline | null; related: RelatedTicket[]; budgetUsd: number | null };
+export type TicketDetail = { ticket: Ticket; comments: Comment[]; sessions: AgentSession[]; pipeline: Pipeline | null; related: RelatedTicket[]; parent: RelatedTicket | null; children: RelatedTicket[]; budgetUsd: number | null };
 
 export const TICKET_ID_RE = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g;

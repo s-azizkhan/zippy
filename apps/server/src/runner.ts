@@ -11,6 +11,7 @@ import { forAgent } from "./files.ts";
 import { ensureWorktree } from "./git.ts";
 import { agentToken, LINEAR_MCP_URL, postComment, syncStatus } from "./linear.ts";
 import { issueToken, revokeToken } from "./mcp.ts";
+import { notify } from "./notify.ts";
 import { afterTurn } from "./pipeline.ts";
 import { agentSessions, agents, comments, db, mcpServers, orgs, ticketFolders, tickets, workspaces } from "./db/index.ts";
 
@@ -146,6 +147,8 @@ export async function setStatus(ticketId: string, to: TicketStatus) {
   await addComment(ticketId, null, "status", { from: prev.status, to });
   const [org] = await db.select().from(orgs).where(eq(orgs.id, t!.orgId));
   syncStatus(org!, t!, to).catch((e) => console.error("[linear]", e.message));
+  const ping = { needs_input: "needs your input", in_review: "is ready for review", blocked: "is blocked" }[to as string];
+  if (ping) notify(org!, t!, ping).catch(console.error);
 }
 
 async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
@@ -169,7 +172,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",
     !agent.canWrite && "You are read-only. Do not edit files.",
     `# Team\nYou work on a shared ticket with: ${team.map((a) => `@${a.handle} (${a.name})`).join(", ")}. Your replies are posted as ticket comments.`,
-    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
+    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent), \`create_subtickets\` (split big work into sub-issues), \`propose_learning\` (a durable lesson for future tickets; the user accepts it into context)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
     dirs.some((d) => d.branch) && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
     `# Ticket ${ticket.identifier}: ${ticket.title}`,
     ticket.linearUrl && `Linear: ${ticket.linearUrl}`,
