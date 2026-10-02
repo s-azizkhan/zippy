@@ -352,7 +352,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const items = scanCatalog().items.map((i) => ({ i, on: isOn(i, org?.toggles ?? {}, agent.toggles) }));
   const offMcp = items.filter((x) => x.i.kind === "mcp" && !x.on && x.i.source === "Claude Code").map((x) => `mcp__${x.i.name}`);
   const offSkill = items.some((x) => x.i.kind === "skill" && !x.on);
-  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "mcp__zippy__open_pr"]), ...offMcp];
+  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "mcp__zippy__open_pr"]), ...(agent.handle === "general" ? ["mcp__zippy__handoff", "mcp__zippy__create_subtickets", "mcp__claude_ai_Linear__save_issue"] : []), ...offMcp];
   const meta = {
     systemPrompt: { append: await systemPrompt(ticket, agent, dirs) },
     claudeCode: {
