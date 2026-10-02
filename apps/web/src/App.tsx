@@ -94,7 +94,7 @@ function Sidebar() {
       <div className="flex flex-col items-center gap-1 wide:flex-row wide:justify-between">
         <Link to="/" className="hover:bg-sidebar-accent flex h-8 items-center gap-2 rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring/60" aria-label="Zippy home">
           <img src="/favicon.svg" alt="" className="size-6 shrink-0" />
-          <span className="hidden text-[15px] font-semibold tracking-tight wide:inline">Zippy</span>
+          <span className="hidden text-base font-bold tracking-tight wide:inline">Zippy</span>
         </Link>
         <Tooltip>
           <TooltipTrigger asChild>

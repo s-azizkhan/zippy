@@ -133,7 +133,7 @@ export function InboxPage() {
                   <div className="flex items-center gap-2 text-xs">
                     <k.icon className={cn("size-3.5 shrink-0", k.color)} aria-hidden />
                     <span className="text-muted-foreground">{k.label}</span>
-                    <span className="text-muted-foreground tabular-nums">{item.ticket.identifier}</span>
+                    <span className="text-muted-foreground font-mono text-xs tabular-nums">{item.ticket.identifier}</span>
                     <span className="text-muted-foreground ml-auto">{ago(item.createdAt)}</span>
                   </div>
                   <p className="truncate text-[13px] font-medium">{item.ticket.title}</p>

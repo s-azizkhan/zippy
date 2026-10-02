@@ -146,7 +146,7 @@ function Row({ t, agent, orgId }: { t: Ticket; agent?: Agent; orgId: string }) {
       >
         <PriorityIcon priority={t.priority} />
         <span className="sr-only">{PRIORITY_LABEL[t.priority]},</span>
-        <span className="text-muted-foreground w-16 shrink-0 tabular-nums">{t.identifier}</span>
+        <span className="text-muted-foreground w-16 shrink-0 font-mono text-xs tabular-nums">{t.identifier}</span>
         <StatusIcon status={t.status} />
         <span className="sr-only">{STATUS[t.status].label}:</span>
         <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>

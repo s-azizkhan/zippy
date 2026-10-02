@@ -84,7 +84,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
             Issues
           </Link>
           <ChevronRight className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-          <span className="shrink-0 font-medium">{ticket.identifier}</span>
+          <span className="shrink-0 font-mono font-medium">{ticket.identifier}</span>
           <span className="truncate">{ticket.title}</span>
         </nav>
         <TicketMenu ticket={ticket} />
@@ -312,7 +312,7 @@ function TicketLinks({ title, items, search }: { title: string; items: RelatedTi
           <li key={r.id}>
             <Link to={`/t/${r.identifier}${search}`} className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2">
               <StatusIcon status={r.status} />
-              <span className="text-muted-foreground shrink-0 tabular-nums">{r.identifier}</span>
+              <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">{r.identifier}</span>
               <span className="truncate">{r.title}</span>
             </Link>
           </li>
