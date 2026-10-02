@@ -2,6 +2,7 @@ import { ChevronDown, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Agent, Ticket, TicketStatus } from "@zippy/shared";
+import { FileBrowser } from "@/components/file-browser";
 import { LinearIssues } from "@/components/linear-issues";
 import { LabelChips } from "@/components/pickers";
 import {
@@ -28,6 +29,7 @@ const TABS = [
   },
   { id: "backlog", label: "Backlog", statuses: ["backlog"] },
   { id: "linear", label: "Linear", statuses: null },
+  { id: "files", label: "Files", statuses: null },
 ] as const;
 
 const INBOX: TicketStatus[] = ["needs_input", "in_review"];
@@ -47,7 +49,8 @@ export function useOrderedTickets() {
     TABS.find(
       (t) =>
         t.id === params.get("tab") &&
-        (t.id !== "linear" || org.linearConnected),
+        (t.id !== "linear" || org.linearConnected) &&
+        (t.id !== "files" || !!folder),
     ) ?? TABS[0];
   const ordered = useMemo(() => {
     let rows = tickets ?? [];
@@ -118,7 +121,7 @@ export function TicketsPage() {
             aria-label="Views"
             className="flex items-center gap-1"
           >
-            {TABS.filter((t) => t.id !== "linear" || org.linearConnected).map(
+            {TABS.filter((t) => (t.id !== "linear" || org.linearConnected) && (t.id !== "files" || folder)).map(
               (t) => (
                 <button
                   key={t.id}
@@ -144,7 +147,9 @@ export function TicketsPage() {
         )}
       </header>
 
-      {tab.id === "linear" && view !== "inbox" ? (
+      {tab.id === "files" && folder ? (
+        <FileBrowser id={folder} />
+      ) : tab.id === "linear" && view !== "inbox" ? (
         <LinearIssues />
       ) : (
         <div className="flex-1 overflow-y-auto">

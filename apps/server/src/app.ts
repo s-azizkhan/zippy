@@ -33,6 +33,7 @@ import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, org
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
+import { browse, listFiles } from "./browse.ts";
 import { localizeImages, readCached } from "./files.ts";
 import { folderDiff, prState, runTests } from "./git.ts";
 import { checkPrs } from "./github.ts";
@@ -120,6 +121,19 @@ function crud(path: string, table: PgTable & { id: any; orgId: any; createdAt: a
   });
 }
 crud("workspaces", workspaces, workspaceInput);
+app.get("/workspaces/:id/files", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  return w ? c.json(await listFiles(w.path).catch(() => [])) : c.notFound();
+});
+app.get("/workspaces/:id/fs", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  if (!w) return c.notFound();
+  try {
+    return c.json(await browse(w.path, c.req.query("path") ?? ""));
+  } catch (e: any) {
+    return c.json({ error: e.code === "ENOENT" ? "Not found" : e.message }, e.code === "ENOENT" ? 404 : 400);
+  }
+});
 crud("mcp", mcpServers, mcpServerInput);
 crud("agents", agents, agentInput);
 crud("labels", labels, labelInput);

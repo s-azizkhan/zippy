@@ -25,7 +25,7 @@ function newLineNumbers(lines: string[]) {
 const LANG: Record<string, string> = { tsx: "typescript", jsx: "javascript", mjs: "javascript", cjs: "javascript", vue: "xml", svelte: "xml", php: "php", tf: "ini", env: "ini" };
 
 /** Highlighter language from file extension; undefined = plain. Per-line, so multi-line strings/comments won't carry across lines. */
-function langOf(path: string) {
+export function langOf(path: string) {
   const ext = path.split(".").pop()!.toLowerCase();
   const l = LANG[ext] ?? ext;
   return hljs.getLanguage(l) ? l : undefined;
