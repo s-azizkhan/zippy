@@ -1,4 +1,4 @@
-import { Building2, Check, ChevronRight, Copy, FolderGit2, Link2, Plus, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Building2, Check, ChevronRight, Copy, FolderGit2, Link2, Plug, Plus, Server, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
@@ -12,11 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, keys, useApiMutation, useMcpServers, useWorkspaces } from "@/lib/api";
+import { api, keys, useApiMutation, useAcp, useMcpServers, useSystem, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
-const ICONS: Record<SettingsTab, LucideIcon> = { org: Building2, folders: FolderGit2, tools: Wrench, mcp: Server, linear: Link2 };
+const ICONS: Record<SettingsTab, LucideIcon> = { org: Building2, folders: FolderGit2, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
 const GROUPS = [...new Set(SETTINGS_TABS.map((t) => t.group))];
 const isTab = (v: string | null): v is SettingsTab => SETTINGS_TABS.some((t) => t.value === v);
 
@@ -72,6 +72,9 @@ export function SettingsPage() {
             </Pane>
             <Pane value="mcp" title="MCP servers" desc="Servers given to every agent session. Scope one to a folder to limit it.">
               <McpServers />
+            </Pane>
+            <Pane value="connectors" title="Connectors" desc="Status of the services Zippy connects to.">
+              <Connectors />
             </Pane>
             <Pane value="linear" title="Linear" desc="Sync tickets and comments with your Linear workspace.">
               <LinearSettings />
@@ -553,6 +556,32 @@ function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }
         />
       )}
     </form>
+  );
+}
+
+function Connectors() {
+  const { data: system, isLoading } = useSystem();
+  const ok = system?.auth.loggedIn;
+  const acp = useAcp();
+  return (
+    <Card title="AI connection" desc="Claude Code runs every agent. It must be logged in on the machine running Zippy.">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-[13px] font-medium">
+          <span aria-hidden className={`size-2 rounded-full ${ok ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+          {isLoading ? "Checking…" : ok ? `Connected${system.auth.authMethod ? ` (${system.auth.authMethod})` : ""}` : system?.claudePath ? "Not logged in" : "Claude CLI not found"}
+        </p>
+        {system?.claudePath && <code className="bg-muted text-muted-foreground rounded px-1.5 py-1 text-xs">{system.claudePath}</code>}
+      </div>
+      <p className="mt-3 flex items-center gap-2 text-[13px]">
+        <span aria-hidden className={`size-2 rounded-full ${acp.data?.ok ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+        {acp.isLoading ? "Checking ACP adapter…" : acp.data?.ok ? `ACP adapter running${acp.data.version ? ` (${acp.data.agent} ${acp.data.version})` : ""}` : `ACP adapter failed: ${acp.data?.error ?? "unreachable"}`}
+      </p>
+      {!isLoading && !ok && (
+        <p className="text-muted-foreground mt-3 text-xs">
+          Run <code className="bg-muted rounded px-1">claude auth login</code> and start Zippy from that terminal.
+        </p>
+      )}
+    </Card>
   );
 }
 

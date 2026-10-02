@@ -3,6 +3,7 @@ export const SETTINGS_TABS = [
   { value: "folders", label: "Working folders", group: "Workspace" },
   { value: "tools", label: "Agent tool defaults", group: "Agents" },
   { value: "mcp", label: "MCP servers", group: "Agents" },
+  { value: "connectors", label: "Connectors", group: "Integrations" },
   { value: "linear", label: "Linear", group: "Integrations" },
 ] as const;
 

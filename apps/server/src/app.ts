@@ -37,7 +37,7 @@ import { authorizeUrl, completeOAuth, dropClient, fetchIssue, ownCommentIds, ver
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { appendLearning, autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
-import { addComment, cancelAgent, foldersOf, claudeAuthStatus, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
+import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
 
@@ -51,6 +51,7 @@ app.onError((e, c) => {
 const body = async <T extends z.ZodType>(c: { req: { json(): Promise<unknown> } }, schema: T) => schema.parse(await c.req.json()) as z.infer<T>;
 
 app.get("/system", (c) => c.json({ claudePath, auth: claudeAuthStatus() }));
+app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));
 
 // Orgs
 type OrgRow = typeof orgs.$inferSelect;

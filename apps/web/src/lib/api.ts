@@ -49,6 +49,8 @@ export const keys = {
 
 export const useSystem = () =>
   useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; authMethod?: string } }>("/system") });
+export const useAcp = () =>
+  useQuery({ queryKey: ["system", "acp"], queryFn: () => api.get<{ ok: boolean; agent?: string; version?: string; error?: string }>("/system/acp"), staleTime: 60_000, retry: false });
 export const useOrgs = () => useApiQuery<Org[]>(keys.orgs, "/orgs");
 export const useWorkspaces = (orgId?: string) => useApiQuery<Workspace[]>(keys.res(orgId!, "workspaces"), orgId ? `/orgs/${orgId}/workspaces` : null);
 export const useMcpServers = (orgId?: string) => useApiQuery<McpServer[]>(keys.res(orgId!, "mcp"), orgId ? `/orgs/${orgId}/mcp` : null);

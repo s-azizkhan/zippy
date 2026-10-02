@@ -35,6 +35,22 @@ export function claudeAuthStatus(): { loggedIn: boolean; authMethod?: string } {
   }
 }
 
+/** Spawns the ACP adapter and handshakes; resolves to its name/version or throws. */
+export async function acpHealth() {
+  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }) } });
+  const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
+  const conn = new acp.ClientSideConnection(() => ({}) as acp.Client, stream);
+  try {
+    const r = await Promise.race([
+      conn.initialize({ protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 10_000)),
+    ]);
+    return { ok: true as const, agent: r.agentInfo?.name, version: r.agentInfo?.version };
+  } finally {
+    proc.kill();
+  }
+}
+
 type Agent = typeof agents.$inferSelect;
 type Ticket = typeof tickets.$inferSelect;
 type Comment = typeof comments.$inferSelect;
