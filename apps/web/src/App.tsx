@@ -118,17 +118,17 @@ function UsageMeter() {
         if (!w) return null;
         const pct = Math.min(100, Math.round(w.utilization));
         const elapsed = Math.min(100, Math.max(0, 100 - ((Date.parse(w.resets_at) - Date.now()) / ms) * 100));
-        const tone = pct > elapsed + 10 ? "red" : pct > elapsed ? "amber" : "green";
+        const hot = pct >= 90;
         return (
           <div key={k} className="border-border rounded-lg border px-3 py-2" title={`Resets ${new Date(w.resets_at).toLocaleString()}`}>
             <div className="flex items-baseline justify-between">
               <span className="text-[13px] font-semibold">{title}</span>
-              <span className={cn("text-[13px] font-semibold", tone === "red" ? "text-red-500" : tone === "amber" ? "text-amber-500" : "text-green-500")}>{pct}%</span>
+              <span className={cn("text-[13px] font-semibold", hot ? "text-destructive" : "text-primary")}>{pct}%</span>
             </div>
             <div className="text-muted-foreground text-[11px]">{sub}</div>
             <div className="bg-sidebar-accent relative my-2 h-1 rounded-full">
-              <div className={cn("h-full rounded-full", tone === "red" ? "bg-red-500" : tone === "amber" ? "bg-amber-500" : "bg-green-500")} style={{ width: `${pct}%` }} />
-              <div className="absolute -top-0.5 h-2 w-0.5 rounded-full bg-amber-400" style={{ left: `${elapsed}%` }} />
+              <div className={cn("h-full rounded-full", hot ? "bg-destructive" : "bg-primary")} style={{ width: `${pct}%` }} />
+              <div className="absolute -top-0.5 h-2 w-0.5 rounded-full bg-foreground/60" style={{ left: `${elapsed}%` }} />
             </div>
             <div className="text-muted-foreground text-[11px]">Resets in {left(w.resets_at)}</div>
           </div>

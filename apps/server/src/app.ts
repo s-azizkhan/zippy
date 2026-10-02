@@ -41,7 +41,7 @@ import { authorizeUrl, completeOAuth, dropClient, fetchIssue, getIssue, listMine
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
-import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
+import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
 
@@ -76,6 +76,7 @@ app.post("/system/pick-folder", (c) =>
     ),
   ),
 );
+app.get("/system/usage", async (c) => c.json(await claudeUsage()));
 app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));
 
 // Orgs

@@ -36,6 +36,23 @@ export function claudeAuthStatus(): { loggedIn: boolean; authMethod?: string } {
   }
 }
 
+export type Usage = Record<"five_hour" | "seven_day", { utilization: number; resets_at: string } | null>;
+let usage: { at: number; data: Usage | null } = { at: 0, data: null };
+
+/** Claude subscription 5h/weekly limits (same source as `/usage`); cached since the endpoint is rate-limited. */
+export async function claudeUsage(): Promise<Usage | null> {
+  if (Date.now() - usage.at < 60_000) return usage.data;
+  usage.at = Date.now();
+  try {
+    const raw = execFileSync("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
+      headers: { authorization: `Bearer ${JSON.parse(raw).claudeAiOauth.accessToken}`, "anthropic-beta": "oauth-2025-04-20" },
+    });
+    if (res.ok) usage.data = (await res.json()) as Usage;
+  } catch {} // not macOS / not logged in: keep last value
+  return usage.data;
+}
+
 /** Spawns the ACP adapter and handshakes; resolves to its name/version or throws. */
 export async function acpHealth() {
   const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }) } });
