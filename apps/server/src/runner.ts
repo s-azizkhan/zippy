@@ -211,6 +211,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, ticket.orgId));
   const team = await db.select({ handle: agents.handle, name: agents.name }).from(agents).where(eq(agents.orgId, ticket.orgId));
   const kb = await kbPrompt(ticket.orgId, dirs.map((d) => d.ws.id), `${ticket.title} ${ticket.body}`);
+  const inPlace = !!org!.useActiveBranch;
   const tagHuman = activeRules(org, agent).some((r) => r.id === "tag-human");
   return [
     `# Organization: ${org!.name}`,
@@ -218,7 +219,8 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     ...dirs.map((d, i) =>
       [
         `# Working folder: ${d.ws.name}${i === 0 ? " (your cwd)" : ""}`,
-        `Path: ${d.cwd}${d.branch ? ` (git worktree, branch \`${d.branch}\`, base \`${d.ws.baseBranch}\`)` : ""}`,
+        `Path: ${d.cwd}${d.branch && inPlace ? ` (working in place on branch \`${d.branch}\`, base \`${d.ws.baseBranch}\`)` : d.branch ? ` (git worktree, branch \`${d.branch}\`, base \`${d.ws.baseBranch}\`)` : ""}`,
+        !d.branch && !inPlace && agent.canWrite && `No worktree yet: read freely here, but before your first file change in this folder call \`create_worktree\` with folder "${d.ws.name}" and edit only in the path it returns.`,
         d.ws.testCmd && `Test command: \`${d.ws.testCmd}\``,
         d.ws.contextMd,
       ]
@@ -233,8 +235,8 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",
     !agent.canWrite && "You are read-only. Do not edit files.",
     `# Team\nYou work on a shared ticket with: ${team.map((a) => `@${a.handle} (${a.name})`).join(", ")}. Your replies are posted as ticket comments.`,
-    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent or the human by handle), \`assign\` (assign the ticket to an agent or the human by handle), \`create_subtickets\` (split big work into sub-issues), \`propose_learning\` (a durable lesson for future tickets; the user accepts it into context)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
-    dirs.some((d) => d.branch) && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
+    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent or the human by handle), \`assign\` (assign the ticket to an agent or the human by handle), ${inPlace ? "" : "`create_worktree` (get the isolated worktree before changing code), "}\`create_subtickets\` (split big work into sub-issues), \`propose_learning\` (a durable lesson for future tickets; the user accepts it into context)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
+    agent.canWrite && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
     `# Ticket ${ticket.identifier}: ${ticket.title}`,
     ticket.linearUrl && `Linear: ${ticket.linearUrl}`,
     forAgent(ticket.body) || "(no description)",
@@ -480,9 +482,11 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
   try {
     let current = live.get(sessionRow!.id);
     if (!current) {
+      const [{ inPlace }] = await db.select({ inPlace: orgs.useActiveBranch }).from(orgs).where(eq(orgs.id, ticket.orgId));
       const dirs: Dir[] = await Promise.all(
         folders.map(async ({ folder, ws }) => {
-          const { cwd, branch, setupError } = await ensureWorktree(ticket, folder, ws);
+          // Worktrees are created on demand by the create_worktree tool; reuse one that already exists.
+          const { cwd, branch, setupError } = folder.worktreePath || inPlace ? await ensureWorktree(ticket, folder, ws) : { cwd: ws.path, branch: null, setupError: undefined };
           if (setupError) await addComment(ticketId, null, "error", { text: `Setup command failed in ${ws.name}:\n\n\`\`\`\n${setupError}\n\`\`\`` });
           return { ws, cwd, branch };
         }),

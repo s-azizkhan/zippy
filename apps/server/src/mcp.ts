@@ -8,7 +8,7 @@ import { z } from "zod";
 import { KB_KINDS, httpUrl, type QuestionPayload } from "@zippy/shared";
 import { agents, db, knowledge, orgs, ticketFolders, tickets } from "./db/index.ts";
 import { addKnowledge, byShortId, render, search } from "./kb.ts";
-import { commitsAhead, folderDiff, openPr } from "./git.ts";
+import { commitsAhead, ensureWorktree, folderDiff, openPr } from "./git.ts";
 import { attachPr, createSubIssue } from "./linear.ts";
 import { emit } from "./bus.ts";
 import { notify } from "./notify.ts";
@@ -41,7 +41,7 @@ async function humanOf(orgId: string, handle: string) {
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 
-function buildServer(ticketId: string, agentId: string, canWrite: boolean) {
+function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPlace: boolean) {
   const server = new McpServer({ name: "zippy", version: "0.1.0" });
 
   server.registerTool(
@@ -201,6 +201,22 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean) {
   );
 
   if (canWrite) {
+    if (!inPlace) server.registerTool(
+      "create_worktree",
+      {
+        description: "Create (or reuse) the isolated git worktree and branch for a working folder. Call it before your first file change in that folder, not before.",
+        inputSchema: { folder: z.string().describe("Working folder name") },
+      },
+      async ({ folder }) => {
+        const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+        const row = (await foldersOf(ticketId)).find((f) => f.ws.name === folder);
+        if (!t || !row) return text(`No working folder "${folder}" on this ticket.`);
+        const { cwd, branch, setupError } = await ensureWorktree(t, row.folder, row.ws);
+        emit(ticketId, { type: "ticket", ticket: { ...t, folders: (await foldersOf(ticketId)).map((f) => f.folder) } });
+        return text(`Edit and commit in ${cwd}${branch ? ` (branch ${branch})` : " (not a git repo)"}.${setupError ? `\nSetup command failed:\n${setupError}` : ""}`);
+      },
+    );
+
     server.registerTool(
       "open_pr",
       {
@@ -258,10 +274,11 @@ export async function handleMcp(c: Context) {
   const who = token && tokens.get(token);
   if (!who) return c.json({ error: "unauthorized" }, 401);
   const [agent] = await db.select({ canWrite: agents.canWrite }).from(agents).where(eq(agents.id, who.agentId));
+  const [org] = await db.select({ useActiveBranch: orgs.useActiveBranch }).from(orgs).innerJoin(tickets, eq(tickets.orgId, orgs.id)).where(eq(tickets.id, who.ticketId));
   // Newer clients send a protocol revision the SDK rejects with 404; fall back to the default.
   const v = c.req.header("mcp-protocol-version");
   if (v && !SUPPORTED_PROTOCOL_VERSIONS.includes(v)) c.req.raw.headers.delete("mcp-protocol-version");
   const transport = new StreamableHTTPTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  await buildServer(who.ticketId, who.agentId, !!agent?.canWrite).connect(transport);
+  await buildServer(who.ticketId, who.agentId, !!agent?.canWrite, !!org?.useActiveBranch).connect(transport);
   return transport.handleRequest(c);
 }

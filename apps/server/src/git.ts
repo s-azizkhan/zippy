@@ -82,7 +82,7 @@ const MAX_PATCH = 200_000; // per file; huge generated files would freeze the br
 export async function folderDiff(folder: Folder, ws: Workspace, showMerged = false): Promise<FolderDiff> {
   const out: FolderDiff = { workspaceId: ws.id, folder: ws.name, branch: folder.branch, base: ws.baseBranch, files: [] };
   const cwd = folder.worktreePath;
-  if (!cwd) return { ...out, error: "No worktree yet. It is created when an agent first runs." };
+  if (!cwd) return { ...out, error: "No worktree yet. It is created when an agent first needs to change code." };
   if (!(await ok(git(cwd, "rev-parse", "--git-dir")))) return { ...out, error: "The worktree is broken: its repo moved or was deleted. It is rebuilt the next time an agent runs." };
   try {
     const base = await baseRef(cwd, ws);
