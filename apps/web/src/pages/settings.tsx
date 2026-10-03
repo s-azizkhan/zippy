@@ -199,7 +199,7 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, profile: org.profile };
+  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, profile: org.profile };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -281,6 +281,11 @@ function OrgSettings({ active }: { active: boolean }) {
             />
           )}
         </Field>
+      </Card>
+      <Card title="Git" desc="How Zippers get a checkout of each folder.">
+        <SettingRow label="Work on the active branch" hint="No worktree or new branch: Zippers edit the folder in place on its checked-out branch. Zippers on different tickets share that checkout, so run them one at a time.">
+          {(p) => <Switch {...p} checked={form.useActiveBranch} onCheckedChange={(useActiveBranch) => setForm({ ...form, useActiveBranch })} />}
+        </SettingRow>
       </Card>
       <Card title="Notifications" desc="Sent when a ticket needs input, is ready for review, or is blocked.">
         <SettingRow label="Desktop notifications" hint="macOS notification on those events.">
