@@ -143,7 +143,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
     e.preventDefault();
     const r = agentInput.safeParse(form);
     setErrors(r.success ? {} : fieldErrors(r.error.issues));
-    if (r.success) save.mutate(r.data, { onSuccess: onClose });
+    if (r.success) save.mutate(r.data, { onSuccess: (a) => (agent && setForm({ ...a, color: encodeFace(faceOf(a.color, a.id)) }), onClose(a)) });
   }
 
   return (
