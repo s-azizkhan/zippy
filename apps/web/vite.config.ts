@@ -6,7 +6,7 @@ import { defineConfig } from "vite";
 const server = {
   port: 5199,
   ...(process.env.EXPOSE && { host: true, allowedHosts: true }),
-  proxy: { "/api": "http://127.0.0.1:3001" },
+  proxy: { "/api": "http://127.0.0.1:3301" },
 };
 
 export default defineConfig({
