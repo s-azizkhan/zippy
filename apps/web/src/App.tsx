@@ -21,6 +21,7 @@ import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LinearIssueModal } from "@/components/linear-issues";
 import { NewTicketDialog } from "@/components/new-ticket-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -373,6 +374,7 @@ function Layout() {
       </main>
       <CommandPalette org={org} />
       <NewTicketDialog org={org} />
+      <LinearIssueModal />
     </div>
   );
 }

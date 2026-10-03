@@ -89,7 +89,7 @@ export function MdEditor({ value, onChange, onBlur, onKeyDown, onEditor, placeho
         ];
       },
     });
-    return [StarterKit.configure({ codeBlock: false }), CodeBlockLowlight.configure({ lowlight }), Markdown, Image, TableKit, TaskList, TaskItem.configure({ nested: true }), Placeholder.configure({ placeholder }), SlashMenu];
+    return [StarterKit.configure({ codeBlock: false, link: { openOnClick: false } }), CodeBlockLowlight.configure({ lowlight }), Markdown, Image, TableKit, TaskList, TaskItem.configure({ nested: true }), Placeholder.configure({ placeholder }), SlashMenu];
   }, [placeholder]);
   const editor = useEditor({
     extensions,
@@ -99,6 +99,14 @@ export function MdEditor({ value, onChange, onBlur, onKeyDown, onEditor, placeho
     editorProps: {
       attributes: { class: cn("md min-h-full outline-none", className), role: "textbox", "aria-multiline": "true", ...(label && { "aria-label": label }), ...(id && { id }) },
       handleKeyDown: (_, e) => !!cb.current.onKeyDown?.(e),
+      // Link's own openOnClick runs on mouseup and can't be pre-empted; Linear issue links never reach here (modal takes them).
+      handleDOMEvents: {
+        click: (view, e) => {
+          const a = view.editable && e.button === 0 ? (e.target as Element).closest("a") : null;
+          if (a?.href) window.open(a.href, "_blank", "noopener");
+          return false;
+        },
+      },
     },
     onUpdate: ({ editor }) => cb.current.onChange?.(editor.getMarkdown()),
     onBlur: ({ editor }) => cb.current.onBlur?.(editor.getMarkdown()),

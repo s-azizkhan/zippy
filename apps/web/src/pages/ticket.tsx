@@ -281,7 +281,7 @@ function TicketMenu({ ticket }: { ticket: Ticket }) {
               <RefreshCw aria-hidden /> Sync from Linear
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <a href={ticket.linearUrl} target="_blank" rel="noreferrer">
+              <a href={ticket.linearUrl} target="_blank" rel="noreferrer" data-external>
                 <ExternalLink aria-hidden /> Open in Linear
               </a>
             </DropdownMenuItem>

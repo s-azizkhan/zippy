@@ -3,11 +3,12 @@ import { ArrowDownToLine } from "lucide-react";
 import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
 import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
 import { XIcon as X } from "@/components/ui/x";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import { useNavigate } from "react-router";
 import type { Ticket } from "@zippy/shared";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, keys, queryClient, useTickets, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
@@ -32,6 +33,32 @@ type LinearIssue = {
   links?: { id: string; title: string; url: string }[];
   comments?: { id: string; body: string; createdAt: string; author: string | null; parentId: string | null }[];
 };
+
+const OpenIssue = createContext<(id: string) => void>(() => {});
+const LINEAR_ISSUE_URL = /linear\.app\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)/;
+
+/** Markdown where Linear issue links open in the preview panel instead of leaving the app. */
+function Md({ children }: { children: string }) {
+  const open = useContext(OpenIssue);
+  return (
+    <Markdown
+      components={{
+        a: ({ href, children }) => {
+          const id = href && LINEAR_ISSUE_URL.exec(href)?.[1]?.toUpperCase();
+          return id ? (
+            <button type="button" onClick={() => open(id)} className="text-primary font-medium underline underline-offset-2">
+              {children}
+            </button>
+          ) : (
+            <a href={href} target="_blank" rel="noreferrer">{children}</a>
+          );
+        },
+      }}
+    >
+      {children}
+    </Markdown>
+  );
+}
 
 const STEPS = ["Fetching issue from Linear…", "Reading comments…", "Pulling in images…"];
 
@@ -104,7 +131,7 @@ function CommentCard({ c, i }: { c: LComment; i: number }) {
           </time>
         </div>
         <div className="md text-[13px]">
-          <Markdown>{c.body}</Markdown>
+          <Md>{c.body}</Md>
         </div>
       </div>
     </div>
@@ -160,6 +187,120 @@ function PreviewLoader({ title }: { title?: string }) {
   );
 }
 
+export function useLinearIssue(orgId: string, id: string | null) {
+  return useQuery({
+    queryKey: keys.res(orgId, `linear-issue-${id}`),
+    queryFn: () => api.get<LinearIssue>(`/orgs/${orgId}/linear/issues/${id}`),
+    retry: false,
+    enabled: !!id,
+    staleTime: 30 * 60_000,
+  });
+}
+
+/** Imports a Linear issue as a Zippy ticket and opens it. */
+function useBring() {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const { data: workspaces = [] } = useWorkspaces(org.id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function bring(id: string) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const t = await api.post<Ticket>(`/orgs/${org.id}/linear/import`, {
+        ref: id,
+        workspaceIds: workspaces[0] ? [workspaces[0].id] : [],
+      });
+      queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
+      navigate(`/t/${t.identifier}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { bring, busy, error };
+}
+
+function IssuePreview({ id, title }: { id: string; title?: string }) {
+  const org = useOrg();
+  const { data: full, isFetching, error } = useLinearIssue(org.id, id);
+  if (error) return <p className="text-destructive text-[13px]">{error.message}</p>;
+  if (isFetching && !full) return <PreviewLoader title={title} />;
+  if (!full) return null;
+  return (
+    <div className="rise">
+      <h2 className="mb-3 text-base font-medium">{full.title}</h2>
+      <IssueMeta issue={full} />
+      <div className="md mt-4 text-[13px]">
+        <Md>{full.description || "_No description._"}</Md>
+      </div>
+      <Comments list={full.comments ?? []} />
+    </div>
+  );
+}
+
+/** Any Linear issue link clicked in the app (descriptions, comments) opens here instead of a new tab. */
+export function LinearIssueModal() {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const { data: tickets = [] } = useTickets(org?.id);
+  const [id, setId] = useState<string | null>(null);
+  const { bring, busy, error } = useBring();
+  const { data: full } = useLinearIssue(org?.id, id);
+  useEffect(() => {
+    if (!org?.linearConnected) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      const a = (e.target as Element).closest?.("a");
+      const m = a && !a.hasAttribute("data-external") && LINEAR_ISSUE_URL.exec(a.href);
+      if (!m) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setId(m[1]!.toUpperCase());
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [org?.linearConnected]);
+  const imported = !!id && tickets.some((t) => t.identifier === id);
+  return (
+    <OpenIssue.Provider value={setId}>
+      <Dialog open={!!id} onOpenChange={(o) => !o && setId(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogTitle className="text-muted-foreground flex items-center gap-2 font-mono text-xs font-normal">
+            {id}
+            {full?.url && (
+              <a href={full.url} target="_blank" rel="noreferrer" aria-label="Open in Linear"
+                data-external className="hover:text-foreground">
+                <ExternalLink className="size-3" />
+              </a>
+            )}
+          </DialogTitle>
+          {id && <IssuePreview id={id} />}
+          {error && <p className="text-destructive text-[13px]">{error}</p>}
+          {id && (
+            <DialogFooter>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  if (!imported) return bring(id);
+                  setId(null);
+                  navigate(`/t/${id}`);
+                }}
+              >
+                <ArrowDownToLine className="size-4" aria-hidden />
+                {imported ? "Open in Zippy" : busy ? "Bringing…" : "Bring to Zippy"}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+    </OpenIssue.Provider>
+  );
+}
+
 /** Linear issues assigned to / mentioning the user. Select one to preview, float button imports it. */
 export function LinearIssues() {
   const org = useOrg();
@@ -169,9 +310,8 @@ export function LinearIssues() {
   const [ref, setRef] = useState("");
   const [openErr, setOpenErr] = useState("");
   const [sel, setSel] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { bring, busy, error: bringErr } = useBring();
   const { data: tickets = [] } = useTickets(org.id);
-  const { data: workspaces = [] } = useWorkspaces(org.id);
   const [status, setStatus] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const listKey = keys.res(org.id, `linear-issues-${linearUser}`);
@@ -229,44 +369,20 @@ export function LinearIssues() {
       </form>
     );
 
-  const { data: full, isFetching, error: fullError } = useQuery({
-    queryKey: keys.res(org.id, `linear-issue-${sel}`),
-    queryFn: () => api.get<LinearIssue>(`/orgs/${org.id}/linear/issues/${sel}`),
-    retry: false,
-    enabled: !!sel,
-    staleTime: 30 * 60_000,
-  });
+  const { data: full, error: fullError } = useLinearIssue(org.id, sel);
   const current = all.issues.find((i) => i.id === sel);
   const imported = (id: string) => tickets.some((t) => t.identifier === id);
-
-  async function bring(id = sel) {
-    if (!id || busy) return;
-    setBusy(true);
-    try {
-      const t = await api.post<Ticket>(`/orgs/${org.id}/linear/import`, {
-        ref: id,
-        workspaceIds: workspaces[0] ? [workspaces[0].id] : [],
-      });
-      queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
-      navigate(`/t/${t.identifier}`);
-    } catch (e) {
-      setOpenErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function open(e: React.FormEvent) {
     e.preventDefault();
     const id = /[A-Za-z][A-Za-z0-9]+-\d+/.exec(ref)?.[0].toUpperCase();
     if (!id) return setOpenErr("Use an ID like COM-603.");
     setOpenErr("");
-    const t = tickets.find((t) => t.identifier === id);
-    if (t) navigate(`/t/${t.identifier}`);
-    else setSel(id);
+    setSel(id);
   }
 
   return (
+    <OpenIssue.Provider value={setSel}>
     <div className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="text-muted-foreground flex h-9 items-center gap-2 border-b px-4 text-xs">
@@ -318,8 +434,8 @@ export function LinearIssues() {
             />
           </button>
         </div>
-        {openErr && (
-          <p className="text-destructive px-4 pt-2 text-[13px]">{openErr}</p>
+        {(openErr || bringErr) && (
+          <p className="text-destructive px-4 pt-2 text-[13px]">{openErr || bringErr}</p>
         )}
         {isLoading && (
           <div className="grid gap-2 p-4">
@@ -375,6 +491,7 @@ export function LinearIssues() {
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Open in Linear"
+                data-external
                 className="hover:text-foreground"
               >
                 <ExternalLink className="size-3" />
@@ -388,34 +505,20 @@ export function LinearIssues() {
               <X className="size-3.5" aria-hidden />
             </button>
           </div>
-          {fullError ? (
-            <p className="text-destructive text-[13px]">{fullError.message}</p>
-          ) : isFetching && !full ? (
-            <PreviewLoader title={current?.title} />
-          ) : (
-            full && (
-              <div className="rise">
-                <h2 className="mb-3 text-base font-medium">{full.title}</h2>
-                <IssueMeta issue={full} />
-                <div className="md mt-4 text-[13px]">
-                  <Markdown>{full.description || "_No description._"}</Markdown>
-                </div>
-                <Comments list={full.comments ?? []} />
-              </div>
-            )
-          )}
+          <IssuePreview id={sel} title={current?.title} />
         </aside>
       )}
       {sel && (
         <Button
           className="fixed right-6 bottom-6 z-20 rounded-full shadow-lg"
-          disabled={imported(sel) || busy || !!fullError}
-          onClick={() => bring()}
+          disabled={busy || !!fullError}
+          onClick={() => (imported(sel) ? navigate(`/t/${sel}`) : bring(sel))}
         >
           <ArrowDownToLine className="size-4" aria-hidden />
-          {imported(sel) ? "Already in Zippy" : busy ? "Bringing…" : "Bring to Zippy"}
+          {imported(sel) ? "Open in Zippy" : busy ? "Bringing…" : "Bring to Zippy"}
         </Button>
       )}
     </div>
+    </OpenIssue.Provider>
   );
 }
