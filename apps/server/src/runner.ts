@@ -1,5 +1,8 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createRequire } from "node:module";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -37,11 +40,18 @@ export function claudeAuthStatus(): { loggedIn: boolean; authMethod?: string } {
 }
 
 export type Usage = Record<"five_hour" | "seven_day", { utilization: number; resets_at: string } | null>;
-let usage: { at: number; data: Usage | null } = { at: 0, data: null };
+const USAGE_FILE = join(tmpdir(), "zippy-usage.json"); // survives dev restarts
+let usage: { at: number; data: Usage | null } = (() => {
+  try {
+    return JSON.parse(readFileSync(USAGE_FILE, "utf8"));
+  } catch {
+    return { at: 0, data: null };
+  }
+})();
 
 /** Claude subscription 5h/weekly limits (same source as `/usage`); cached since the endpoint is rate-limited. */
 export async function claudeUsage(): Promise<Usage | null> {
-  if (Date.now() - usage.at < 60_000) return usage.data;
+  if (Date.now() - usage.at < 300_000) return usage.data;
   usage.at = Date.now();
   try {
     const raw = execFileSync("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
@@ -49,7 +59,13 @@ export async function claudeUsage(): Promise<Usage | null> {
       headers: { authorization: `Bearer ${JSON.parse(raw).claudeAiOauth.accessToken}`, "anthropic-beta": "oauth-2025-04-20" },
     });
     if (res.ok) usage.data = (await res.json()) as Usage;
-  } catch {} // not macOS / not logged in: keep last value
+    else console.error("claudeUsage:", res.status, await res.text());
+  } catch (e) {
+    console.error("claudeUsage:", (e as Error).message); // not macOS / not logged in: keep last value
+  }
+  try {
+    writeFileSync(USAGE_FILE, JSON.stringify(usage));
+  } catch {}
   return usage.data;
 }
 
