@@ -31,7 +31,7 @@ export async function autoStart(ticket: TicketRow) {
 export async function createTicket(
   orgId: string,
   { workspaceIds, ...input }: TicketInput,
-  extra: { parentId?: string | null; linear?: { identifier: string; linearId: string; linearUrl: string } } = {},
+  extra: { parentId?: string | null; routineId?: string; linear?: { identifier: string; linearId: string; linearUrl: string } } = {},
 ) {
   const ticket = await db.transaction(async (tx) => {
     let identifier = extra.linear?.identifier;
@@ -41,7 +41,7 @@ export async function createTicket(
       // skip ids already taken in this org (e.g. a Linear ticket with the same key)
       if (!(await tx.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.orgId, orgId), eq(tickets.identifier, next))).limit(1)).length) identifier = next;
     }
-    const [t] = await tx.insert(tickets).values({ ...input, orgId, identifier, parentId: extra.parentId ?? null, linearId: extra.linear?.linearId, linearUrl: extra.linear?.linearUrl }).returning();
+    const [t] = await tx.insert(tickets).values({ ...input, orgId, identifier, parentId: extra.parentId ?? null, routineId: extra.routineId, linearId: extra.linear?.linearId, linearUrl: extra.linear?.linearUrl }).returning();
     return t!;
   });
   await setFolders(ticket.id, workspaceIds);

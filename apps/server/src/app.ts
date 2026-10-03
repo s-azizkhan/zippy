@@ -388,7 +388,7 @@ app.post("/tickets/:id/advance", async (c) => {
 async function runRoutine(r: typeof routines.$inferSelect) {
   await db.update(routines).set({ lastRunAt: new Date() }).where(eq(routines.id, r.id));
   const date = new Date().toISOString().slice(0, 10);
-  const t = await createTicket(r.orgId, { title: `${r.title} (${date})`, body: r.body, workspaceIds: r.workspaceIds, assigneeAgentId: r.assigneeAgentId, priority: "none", labelIds: [], status: "todo" });
+  const t = await createTicket(r.orgId, { title: `${r.title} (${date})`, body: r.body, workspaceIds: r.workspaceIds, assigneeAgentId: r.assigneeAgentId, priority: "none", labelIds: [], status: "todo" }, { routineId: r.id });
   if (r.pipelineId && r.workspaceIds.length) await startPipeline(t.id, r.pipelineId);
   else if (r.assigneeAgentId) runAgent(t.id, r.assigneeAgentId, "Start work on this ticket.").catch(console.error);
   return t;

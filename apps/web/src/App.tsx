@@ -34,7 +34,7 @@ import { AgentsPage } from "@/pages/agents";
 import { InboxPage } from "@/pages/inbox";
 import { Onboarding } from "@/pages/onboarding";
 import { PipelinesPage } from "@/pages/pipelines";
-import { RoutinesPage } from "@/pages/routines";
+import { RoutineDetail, RoutineEditor, RoutinesPage } from "@/pages/routines";
 import { ConfirmDialog, FolderForm, SettingsPage } from "@/pages/settings";
 import { TicketPage } from "@/pages/ticket";
 import { TicketsPage } from "@/pages/tickets";
@@ -394,6 +394,9 @@ const router = createBrowserRouter([
       { path: "/zippers/:handle", element: <AgentsPage />, handle: { title: "Zippers" } },
       { path: "/pipelines", element: <PipelinesPage />, handle: { title: "Pipelines" } },
       { path: "/routines", element: <RoutinesPage />, handle: { title: "Routines" } },
+      { path: "/routines/new", element: <RoutineEditor />, handle: { title: "New routine" } },
+      { path: "/routines/:id", element: <RoutineDetail />, handle: { title: "Routines" } },
+      { path: "/routines/:id/edit", element: <RoutineEditor />, handle: { title: "Edit routine" } },
       { path: "/settings", element: <SettingsPage />, handle: { title: "Settings" } },
       ...(import.meta.env.DEV ? [{ path: "/error/:code", element: <ErrorPreview /> }] : []),
       { path: "*", element: <ErrorPage code={404} compact />, handle: { title: "Page not found" } },

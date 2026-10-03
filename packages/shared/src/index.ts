@@ -256,6 +256,7 @@ export type Ticket = Row &
     linearId: string | null;
     linearUrl: string | null;
     pipelineId: string | null;
+    routineId: string | null;
     stageId: string | null;
     loopCount: number;
     riskApproved: boolean;

@@ -1,7 +1,7 @@
 import type { IconType } from "@/lib/anim-icon";
 import { ProfileFields } from "@/components/profile-fields";
 import { MdEditor } from "@/components/md-editor";
-import { Braces, Building2, ChevronRight, Pin, Trash2 } from "lucide-react";
+import { Braces, Building2, ChevronRight, Pin, Trash2, X } from "lucide-react";
 import { BookTextIcon as BookOpen } from "@/components/ui/book-text";
 import { BotIcon as Bot } from "@/components/ui/bot";
 import { CheckIcon as Check } from "@/components/ui/check";
@@ -153,10 +153,10 @@ export function ConfirmDialog({ open, onOpenChange, title, desc, action, onConfi
         </DialogHeader>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            <X aria-hidden /> Cancel
           </Button>
           <Button variant="destructive" disabled={pending} onClick={onConfirm}>
-            {action}
+            <Trash2 aria-hidden /> {action}
           </Button>
         </DialogFooter>
       </DialogContent>

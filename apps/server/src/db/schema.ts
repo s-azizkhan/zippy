@@ -109,6 +109,7 @@ export const tickets = pgTable("tickets", {
   riskApproved: boolean("risk_approved").notNull().default(false),
   archived: boolean("archived").notNull().default(false),
   parentId: uuid("parent_id"), // sub-issue of
+  routineId: uuid("routine_id").references(() => routines.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("tickets_org_identifier").on(t.orgId, t.identifier)]);
