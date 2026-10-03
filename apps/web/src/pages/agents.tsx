@@ -3,7 +3,7 @@ import { EyeIcon as Eye } from "@/components/ui/eye";
 import { FlaskIcon as FlaskConical } from "@/components/ui/flask";
 import { PlusIcon as Plus } from "@/components/ui/plus";
 import { motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { AgentWork, Ticket } from "@zippy/shared";
 import { agentInput, EFFORTS, MODELS, type Agent, type AgentInput } from "@zippy/shared";
@@ -146,8 +146,20 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
     if (r.success) save.mutate(r.data, { onSuccess: (a) => (agent && setForm({ ...a, color: encodeFace(faceOf(a.color, a.id)) }), onClose(a)) });
   }
 
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (dirty && !save.isPending) formRef.current?.requestSubmit();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dirty, save.isPending]);
+
   return (
-    <form onSubmit={submit} noValidate className="min-h-0 flex-1 overflow-y-auto">
+    <form ref={formRef} onSubmit={submit} noValidate className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto grid max-w-3xl gap-6 px-6 pt-6 pb-28">
         <div className="flex items-center justify-between">
           <Button type="button" variant="ghost" size="sm" onClick={() => onClose(null)}>
@@ -305,6 +317,9 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
             </Button>
             <Button type="submit" size="sm" className="max-md:min-h-11" disabled={save.isPending || !dirty}>
               {agent ? "Save changes" : "Create Zipper"}
+              <kbd aria-hidden className="bg-primary-foreground/20 hidden rounded px-1 font-mono text-[10px] sm:inline">
+                ⌘S
+              </kbd>
             </Button>
           </div>
         )}
