@@ -5,6 +5,10 @@
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "db:push": "pnpm --filter @zippy/server db:push",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "share": "node scripts/share.mjs"
+  },
+  "devDependencies": {
+    "qrcode-terminal": "^0.12.0"
   }
 }
