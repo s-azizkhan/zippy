@@ -25,6 +25,7 @@ async function cache(src: string): Promise<string | null> {
 }
 
 const LINEAR_IMAGE = /<linear-image>(\{.*?\})<\/linear-image>/gs;
+const LINEAR_ISSUE = /<issue\b[^>]*?\bhref="(https?:\/\/[^"]+)"[^>]*>(.*?)<\/issue>/gs;
 const MD_UPLOAD = /!\[([^\]]*)\]\((https:\/\/uploads\.linear\.app\/[^)\s]+)\)/g;
 
 /** Rewrite Linear image embeds to markdown images served from the local cache. Unfetchable images stay as links. */
@@ -38,6 +39,7 @@ export async function localizeImages(text: string): Promise<string> {
       // Not the JSON shape we know; leave the tag as text.
     }
   }
+  text = text.replace(LINEAR_ISSUE, "[$2]($1)");
   for (const m of text.matchAll(MD_UPLOAD)) found.push({ match: m[0], src: m[2]!, alt: m[1] || "image" });
   for (const f of found) {
     const key = await cache(f.src);
