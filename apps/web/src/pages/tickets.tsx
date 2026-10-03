@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ChevronDown, ListTodo } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ListFilter, ListTodo } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { FolderOpenIcon } from "@/components/ui/folder-open";
 import { LayersIcon } from "@/components/ui/layers";
@@ -70,7 +70,7 @@ export function useOrderedTickets() {
       rows = rows.filter((t) =>
         t.folders.some((f) => f.workspaceId === folder),
       );
-    if (who) rows = rows.filter((t) => !!t.assigneeAgentId === (who === "agent"));
+    if (who) rows = rows.filter((t) => (who === "agent" || who === "human" ? !!t.assigneeAgentId === (who === "agent") : t.assigneeAgentId === who));
     if (q)
       rows = rows.filter((t) =>
         `${t.identifier} ${t.title}`.toLowerCase().includes(q),
@@ -193,13 +193,19 @@ export function TicketsPage() {
               value={who ?? "all"}
               onValueChange={(v) => setParam("who", v === "all" ? "" : v)}
             >
-              <SelectTrigger size="sm" aria-label="Filter by assignee type" className="h-6 text-xs">
+              <SelectTrigger size="sm" aria-label="Filter by assignee" className={cn("h-6 text-xs", who && "border-primary/50 text-primary")}>
+                <ListFilter className="size-3.5" aria-hidden />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
-                <SelectItem value="agent">Agent</SelectItem>
                 <SelectItem value="human">Human</SelectItem>
+                <SelectItem value="agent">Any agent</SelectItem>
+                {agents.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Input
