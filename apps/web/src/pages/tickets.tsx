@@ -1,6 +1,11 @@
-import { Archive, ArchiveRestore, ChevronDown, CircleDot, Folder, Layers, ListTodo, Waypoints } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ListTodo } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { FolderOpenIcon } from "@/components/ui/folder-open";
+import { LayersIcon } from "@/components/ui/layers";
+import { Link2Icon } from "@/components/ui/link-2";
+import { ZapIcon } from "@/components/ui/zap";
 import { PlusIcon as Plus } from "@/components/ui/plus";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Agent, Ticket, TicketStatus } from "@zippy/shared";
 import { FileBrowser } from "@/components/file-browser";
@@ -22,17 +27,17 @@ import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 
 const TABS = [
-  { id: "all", label: "All issues", icon: Layers, statuses: null },
+  { id: "all", label: "All issues", icon: LayersIcon, statuses: null },
   {
     id: "active",
     label: "Active",
-    icon: CircleDot,
+    icon: ZapIcon,
     statuses: ["needs_input", "in_review", "in_progress", "blocked", "todo"],
   },
   { id: "backlog", label: "Backlog", icon: ListTodo, statuses: ["backlog"] },
-  { id: "linear", label: "Linear", icon: Waypoints, statuses: null },
+  { id: "linear", label: "Linear", icon: Link2Icon, statuses: null },
   { id: "archived", label: "Archived", icon: Archive, statuses: null },
-  { id: "files", label: "Files", icon: Folder, statuses: null },
+  { id: "files", label: "Files", icon: FolderOpenIcon, statuses: null },
 ] as const;
 
 const INBOX: TicketStatus[] = ["needs_input", "in_review"];
@@ -102,12 +107,13 @@ export function TicketsPage() {
   const [params, setParams] = useSearchParams();
   const [closed, setClosed] = useState<Set<TicketStatus>>(new Set());
   useRowKeys();
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const [pill, setPill] = useState<{ left: number; width: number }>();
-  useLayoutEffect(() => {
-    const el = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
-  }, [tab.id, org.linearConnected, folder, view]);
+  const reduce = useReducedMotion();
+  const idx = TABS.findIndex((t) => t.id === tab.id);
+  const prev = useRef(idx);
+  const dir = Math.sign(idx - prev.current) || 1;
+  useEffect(() => {
+    prev.current = idx;
+  }, [idx]);
 
   const title =
     view === "inbox"
@@ -128,16 +134,8 @@ export function TicketsPage() {
           <div
             role="tablist"
             aria-label="Views"
-            ref={tabsRef}
-            className="relative flex items-center gap-1"
+            className="flex items-center gap-1"
           >
-            {pill && (
-              <span
-                aria-hidden
-                className="bg-accent border-border absolute top-0 h-6 rounded-md border motion-safe:[transition:left_300ms_cubic-bezier(.34,1.56,.64,1),width_460ms_cubic-bezier(.34,1.56,.64,1)]"
-                style={pill}
-              />
-            )}
             {TABS.filter((t) => (t.id !== "linear" || org.linearConnected) && (t.id !== "files" || folder)).map(
               (t) => (
                 <button
@@ -155,8 +153,20 @@ export function TicketsPage() {
                     tab.id === t.id && "text-foreground",
                   )}
                 >
-                  <t.icon className="size-3.5" aria-hidden />
-                  {t.label}
+                  {tab.id === t.id && (
+                    <motion.span
+                      layoutId="tab-pill"
+                      aria-hidden
+                      className="bg-accent border-border absolute inset-0 rounded-md border"
+                      transition={
+                        reduce
+                          ? { duration: 0 }
+                          : { type: "spring", stiffness: 520, damping: 28, mass: 0.9 }
+                      }
+                    />
+                  )}
+                  <t.icon className="relative size-3.5" />
+                  <span className="relative">{t.label}</span>
                 </button>
               ),
             )}
@@ -169,7 +179,13 @@ export function TicketsPage() {
       ) : tab.id === "linear" && view !== "inbox" ? (
         <LinearIssues />
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <motion.div
+          key={tab.id}
+          initial={reduce ? false : { opacity: 0, x: dir * 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: "spring", stiffness: 380, damping: 32 }}
+          className="flex-1 overflow-y-auto overflow-x-hidden"
+        >
           {isLoading && (
             <div className="grid gap-2 p-4">
               {[0, 1, 2].map((i) => (
@@ -248,7 +264,7 @@ export function TicketsPage() {
               </section>
             );
           })}
-        </div>
+        </motion.div>
       )}
     </div>
   );
