@@ -1,6 +1,6 @@
 import type { AgentInput } from "@zippy/shared";
 
-export const DEFAULT_AGENTS: (Omit<AgentInput, "toggles"> & { toggles?: AgentInput["toggles"] })[] = [
+export const DEFAULT_AGENTS: (Omit<AgentInput, "toggles" | "effort"> & { toggles?: AgentInput["toggles"]; effort?: string })[] = [
   {
     name: "Validator",
     handle: "validator",

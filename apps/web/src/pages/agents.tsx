@@ -6,7 +6,7 @@ import { motion } from "motion/react";
 import { useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { AgentWork, Ticket } from "@zippy/shared";
-import { agentInput, MODELS, type Agent, type AgentInput } from "@zippy/shared";
+import { agentInput, EFFORTS, MODELS, type Agent, type AgentInput } from "@zippy/shared";
 import { Field, fieldErrors } from "@/components/field";
 import { AgentFace, encodeFace, FACE_PARTS, faceOf, PALETTE_IDS, PALETTES, paletteOf, randomFace, type FacePart } from "@/components/agent-face";
 import { MdEditor } from "@/components/md-editor";
@@ -42,7 +42,7 @@ You are a ... Describe what this Zipper is responsible for.
 - Lead with the answer. Then the evidence: file paths, lines, commands run.
 `;
 
-const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: TEMPLATE, model: "default", canWrite: false, color: "arctic-blue", toggles: {} };
+const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: TEMPLATE, model: "default", effort: "default", canWrite: false, color: "arctic-blue", toggles: {} };
 
 const STARTERS: { label: string; canWrite: boolean; color: string; rolePromptMd: string }[] = [
   { label: "Reviewer", canWrite: false, color: "arctic-blue", rolePromptMd: "# Role\n\nYou review code changes.\n\n- Look for bugs, security issues and missing tests.\n- Cite file and line for every finding.\n- Do not change code.\n" },
@@ -92,7 +92,7 @@ export function AgentsPage() {
                     {a.canWrite ? <Pencil className="size-3" aria-hidden /> : <Eye className="size-3" aria-hidden />}
                     {a.canWrite ? "Can edit" : "Read-only"}
                   </span>
-                  <span className="truncate font-mono">{a.model}</span>
+                  <span className="truncate font-mono">{a.effort !== "default" ? `${a.model} · ${a.effort}` : a.model}</span>
                   <ChevronRight className="ml-auto size-4 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" aria-hidden />
                 </div>
               </Link>
@@ -274,6 +274,9 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
                 <OptionSelect id={p.id} label="Model" value={form.model} onChange={(v) => set("model", v)} options={(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => ({ value: m, label: m }))} />
               )}
             </Field>
+            <Field label="Thinking level" hint="default uses the org default. Lower levels cost less; keep high ones for planning and building.">
+              {(p) => <OptionSelect id={p.id} label="Thinking level" value={form.effort} onChange={(v) => set("effort", v)} options={EFFORTS.map((m) => ({ value: m, label: m }))} />}
+            </Field>
             <Field label="Role prompt" hint="Markdown. Added to the Claude Code system prompt, after org and folder context.">
               {(p) => <MdEditor id={p.id} value={form.rolePromptMd} onChange={(v) => set("rolePromptMd", v)} className="min-h-72" />}
             </Field>
@@ -290,19 +293,22 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
         </Tabs>
       </div>
 
-      {(dirty || !agent) && (
-        <div className="bg-background/80 fixed inset-x-0 bottom-0 z-20 border-t backdrop-blur">
-          <div className="mx-auto flex max-w-3xl items-center justify-end gap-2 px-6 py-3">
-            <span className="text-muted-foreground mr-auto text-xs">{agent ? "Unsaved changes" : "New Zipper"}</span>
-            <Button type="button" variant="ghost" onClick={() => (agent ? (setForm(initial), setErrors({})) : onClose(null))}>
+      <div role="status" className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
+        {(dirty || !agent) && (
+          <div className="bg-popover pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 shadow-lg duration-300">
+            <span className="flex items-center gap-2 text-[13px] font-medium">
+              {agent && <span aria-hidden className="size-2 rounded-full bg-amber-500" />}
+              {agent ? "Unsaved changes" : "New Zipper"}
+            </span>
+            <Button type="button" variant="ghost" size="sm" className="max-md:min-h-11" onClick={() => (agent ? (setForm(initial), setErrors({})) : onClose(null))}>
               {agent ? "Discard" : "Cancel"}
             </Button>
-            <Button type="submit" disabled={save.isPending || !dirty}>
+            <Button type="submit" size="sm" className="max-md:min-h-11" disabled={save.isPending || !dirty}>
               {agent ? "Save changes" : "Create Zipper"}
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </form>
   );
 }

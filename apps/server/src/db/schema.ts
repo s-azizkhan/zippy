@@ -10,6 +10,7 @@ export const orgs = pgTable("orgs", {
   contextMd: text("context_md").notNull().default(""),
   defaultModel: text("default_model").notNull().default("default"),
   defaultEffort: text("default_effort").notNull().default("default"),
+  cacheTtl: text("cache_ttl").notNull().default("5m"), // prompt cache lifetime: 5m, or 1h (costlier writes, stays warm across slow replies)
   ticketSeq: integer("ticket_seq").notNull().default(0),
   toggles: jsonb("toggles").$type<Record<string, boolean>>().notNull().default({}),
   budgetUsd: real("budget_usd"), // per-ticket agent spend cap; null = no cap
@@ -61,6 +62,7 @@ export const agents = pgTable(
     handle: text("handle").notNull(),
     rolePromptMd: text("role_prompt_md").notNull().default(""),
     model: text("model").notNull().default("default"),
+    effort: text("effort").notNull().default("default"), // default = org default
     canWrite: boolean("can_write").notNull().default(false),
     color: text("color").notNull().default("#6366f1"),
     toggles: jsonb("toggles").$type<Record<string, boolean>>().notNull().default({}),

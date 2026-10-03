@@ -6,6 +6,7 @@ export type TicketStatus = z.infer<typeof ticketStatus>;
 
 export const MODELS = ["default", "opus", "sonnet", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"];
 export const EFFORTS = ["default", "low", "medium", "high", "xhigh", "max"];
+export const CACHE_TTLS = ["5m", "1h"];
 
 export const HUMAN = "human"; // assignee picker value for the profile's human
 
@@ -50,6 +51,7 @@ export const orgInput = z.object({
   contextMd: z.string().default(""),
   defaultModel: z.string().default("default"),
   defaultEffort: z.string().default("default"),
+  cacheTtl: z.enum(["5m", "1h"]).default("5m"),
   budgetUsd: z.number().positive().nullable().default(null),
   slackWebhookUrl: z.union([z.literal(""), z.string().startsWith("https://hooks.slack.com/", "a Slack incoming webhook URL")]).default(""),
   notifyDesktop: z.boolean().default(true),
@@ -87,6 +89,7 @@ export const agentInput = z.object({
   handle,
   rolePromptMd: z.string().default(""),
   model: z.string().default("default"),
+  effort: z.string().default("default"),
   canWrite: z.boolean().default(false),
   color: z.string().default("#6366f1"),
   toggles,

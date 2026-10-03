@@ -278,10 +278,10 @@ const POLICY_AUTO_ALLOW = new Set(["read", "search", "think"]);
 async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Ticket, agent: Agent, dirs: Dir[]): Promise<Live> {
   const cwd = dirs[0]!.cwd;
   const additionalDirectories = dirs.slice(1).map((d) => d.cwd);
-  const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort }).from(orgs).where(eq(orgs.id, ticket.orgId));
+  const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const proc = spawn(process.execPath, [ADAPTER], {
     stdio: ["pipe", "pipe", "inherit"],
-    env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), ...gitIdentity(org?.profile) },
+    env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) },
   });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const l = {
@@ -433,7 +433,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   }
   // Model first: effort levels depend on it. "default" = leave to Claude Code.
   const model = agent.model !== "default" ? agent.model : (org?.defaultModel ?? "default");
-  for (const [configId, value] of [["model", model], ["effort", org?.defaultEffort ?? "default"]]) {
+  for (const [configId, value] of [["model", model], ["effort", agent.effort !== "default" ? agent.effort : (org?.defaultEffort ?? "default")]]) {
     if (value !== "default") await l.conn.setSessionConfigOption({ sessionId: l.acpSessionId, configId, value }).catch(() => {});
   }
 

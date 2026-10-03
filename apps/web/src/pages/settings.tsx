@@ -18,7 +18,7 @@ import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { EFFORTS, KB_KINDS, KB_LABELS, MODELS, knowledgeInput, mcpServerInput, orgInput, patchOf, workspaceInput, type KnowledgeInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
+import { CACHE_TTLS, EFFORTS, KB_KINDS, KB_LABELS, MODELS, knowledgeInput, mcpServerInput, orgInput, patchOf, workspaceInput, type KnowledgeInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
 import { Field, fieldErrors, SettingRow } from "@/components/field";
 import { FoldersPicker } from "@/components/pickers";
 import { OptionSelect } from "@/components/property-menu";
@@ -199,7 +199,7 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, profile: org.profile };
+  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, cacheTtl: org.cacheTtl, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, profile: org.profile };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -264,6 +264,9 @@ function OrgSettings({ active }: { active: boolean }) {
             )}
           </Field>
         ))}
+        <Field label="Prompt cache" hint="1h keeps context cheap when Zippers are woken more than 5 minutes apart, but cache writes cost more.">
+          {(p) => <OptionSelect id={p.id} label="Prompt cache" value={form.cacheTtl} onChange={(v) => setForm({ ...form, cacheTtl: v as "5m" | "1h" })} options={CACHE_TTLS.map((m) => ({ value: m, label: m }))} />}
+        </Field>
       </Card>
       <Card title="Budget" desc="Zippers stop and ask you when a ticket's total spend reaches this limit.">
         <Field label="Zipper budget per ticket (USD)" hint="Empty = no limit." error={errors.budgetUsd}>
