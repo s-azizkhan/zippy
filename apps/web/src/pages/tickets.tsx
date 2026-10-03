@@ -331,7 +331,7 @@ export function TicketsPage() {
 function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; i: number }) {
   const fav = useUI((s) => s.favorites.includes(t.id));
   return (
-    <li className="rise group/row relative" style={{ "--i": i } as React.CSSProperties}>
+    <li className="rise cv-row group/row relative" style={{ "--i": i } as React.CSSProperties}>
       <Link
         to={`/t/${t.identifier}${location.search}`}
         data-row

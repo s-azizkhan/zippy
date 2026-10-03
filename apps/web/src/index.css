@@ -228,6 +228,7 @@
 .draw { stroke-dasharray: 12; animation: draw 0.35s ease-out both; }
 .lift { transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s, border-color 0.2s; }
 .lift:hover { transform: translateY(-2px); box-shadow: 0 8px 24px -12px color-mix(in oklab, var(--primary) 40%, transparent); }
+.cv-row { content-visibility: auto; contain-intrinsic-size: auto 44px; } /* skip layout/paint offscreen; DOM stays for j/k nav */
 .row-slide { transition: background-color 0.15s, padding-left 0.15s; }
 .row-slide:hover { padding-left: 1.15rem; }
 [data-slot="skeleton"] { background: linear-gradient(90deg, var(--muted) 30%, var(--accent) 50%, var(--muted) 70%) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite; }
