@@ -2,7 +2,7 @@ import { MdEditor } from "@/components/md-editor";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import type { Org, Ticket, TicketStatus } from "@zippy/shared";
+import { HUMAN, type Org, type Ticket, type TicketStatus } from "@zippy/shared";
 import { AssigneePicker, FoldersPicker, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -11,8 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { api, keys, queryClient, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 
-type Draft = { title: string; body: string; status: TicketStatus; priority: Ticket["priority"]; assigneeAgentId: string | null; labelIds: string[]; workspaceIds: string[] | null };
-const EMPTY: Draft = { title: "", body: "", status: "todo", priority: "none", assigneeAgentId: null, labelIds: [], workspaceIds: null };
+type Draft = { title: string; body: string; status: TicketStatus; priority: Ticket["priority"]; assigneeAgentId: string | null; assigneeHuman: boolean; labelIds: string[]; workspaceIds: string[] | null };
+const EMPTY: Draft = { title: "", body: "", status: "todo", priority: "none", assigneeAgentId: null, assigneeHuman: false, labelIds: [], workspaceIds: null };
 
 export function NewTicketDialog({ org }: { org: Org }) {
   const { newTicketOpen, setNewTicketOpen } = useUI();
@@ -97,7 +97,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
               <PriorityPicker chip value={d.priority} onChange={(v) => set("priority", v)} />
             </>
           )}
-          <AssigneePicker chip orgId={org.id} value={d.assigneeAgentId} onChange={(v) => set("assigneeAgentId", v)} />
+          <AssigneePicker chip orgId={org.id} value={d.assigneeHuman ? HUMAN : d.assigneeAgentId} onChange={(v) => setD((x) => ({ ...x, assigneeAgentId: v === HUMAN ? null : v, assigneeHuman: v === HUMAN }))} />
           {linearRef === null && <LabelsPicker chip orgId={org.id} value={d.labelIds} onChange={(v) => set("labelIds", v)} />}
           <FoldersPicker chip orgId={org.id} value={workspaceIds} onChange={(v) => set("workspaceIds", v)} />
         </div>

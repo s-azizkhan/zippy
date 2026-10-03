@@ -9,6 +9,8 @@ import { agents, db, knowledge, orgs, ticketFolders, tickets } from "./db/index.
 import { addKnowledge, byShortId, render, search } from "./kb.ts";
 import { commitsAhead, folderDiff, openPr } from "./git.ts";
 import { attachPr, createSubIssue } from "./linear.ts";
+import { emit } from "./bus.ts";
+import { notify } from "./notify.ts";
 import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
@@ -29,6 +31,12 @@ const hops = new Map<string, number>();
 export const resetHops = (ticketId: string) => hops.delete(ticketId);
 
 const MAX_KB_PER_TICKET = 8;
+
+/** The org's human when `handle` is theirs. */
+async function humanOf(orgId: string, handle: string) {
+  const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId));
+  return org?.profile.handle && org.profile.handle === handle.replace(/^@/, "") ? { org } : undefined;
+}
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 
@@ -68,11 +76,17 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean) {
   server.registerTool(
     "mention",
     {
-      description: "Ask another agent on this ticket to do something. It runs in its own session and replies on the ticket.",
-      inputSchema: { handle: z.string().describe("Agent handle without @"), message: z.string() },
+      description: "Ask another agent, or the human, on this ticket to do something. An agent runs in its own session and replies on the ticket; the human is notified.",
+      inputSchema: { handle: z.string().describe("Agent or human handle without @"), message: z.string() },
     },
     async ({ handle, message }) => {
       const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+      const human = await humanOf(t!.orgId, handle);
+      if (human) {
+        await addComment(ticketId, agentId, "text", { text: `@${handle.replace(/^@/, "")} ${message}` });
+        notify(human.org, t!, "has a message for you").catch(console.error);
+        return text("Human was notified.");
+      }
       const [target] = await db.select().from(agents).where(and(eq(agents.orgId, t!.orgId), eq(agents.handle, handle.replace(/^@/, ""))));
       if (!target) return text(`No agent @${handle}.`);
       if (target.id === agentId) return text("You cannot mention yourself.");
@@ -83,6 +97,25 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean) {
       await addComment(ticketId, agentId, "text", { text: `@${target.handle} ${message}` });
       runAgent(ticketId, target.id, `@${me!.handle} asks you: ${message}`).catch(console.error);
       return text(`@${target.handle} was asked. Its reply will appear on the ticket.`);
+    },
+  );
+
+  server.registerTool(
+    "assign",
+    {
+      description: "Assign this ticket to an agent or the human by handle, or pass \"none\" to unassign. The human is notified.",
+      inputSchema: { handle: z.string().describe("Agent or human handle without @, or none") },
+    },
+    async ({ handle }) => {
+      const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+      const h = handle.replace(/^@/, "");
+      const human = await humanOf(t!.orgId, h);
+      const [target] = human || h === "none" ? [] : await db.select().from(agents).where(and(eq(agents.orgId, t!.orgId), eq(agents.handle, h)));
+      if (!human && !target && h !== "none") return text(`No agent or human @${h}.`);
+      const [u] = await db.update(tickets).set({ assigneeAgentId: target?.id ?? null, assigneeHuman: !!human, updatedAt: new Date() }).where(eq(tickets.id, ticketId)).returning();
+      emit(ticketId, { type: "ticket", ticket: { ...u!, folders: (await foldersOf(ticketId)).map((f) => f.folder) } });
+      if (human) notify(human.org, t!, "was assigned to you").catch(console.error);
+      return text(human ? `Assigned to @${h} (human).` : target ? `Assigned to @${h}.` : "Unassigned.");
     },
   );
 

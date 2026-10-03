@@ -208,6 +208,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, ticket.orgId));
   const team = await db.select({ handle: agents.handle, name: agents.name }).from(agents).where(eq(agents.orgId, ticket.orgId));
   const kb = await kbPrompt(ticket.orgId, dirs.map((d) => d.ws.id), `${ticket.title} ${ticket.body}`);
+  const tagHuman = activeRules(org, agent).some((r) => r.id === "tag-human");
   return [
     `# Organization: ${org!.name}`,
     org!.contextMd,
@@ -222,14 +223,14 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
         .join("\n"),
     ),
     `# Knowledge base\nOrg lessons from past tickets and the user. Follow them. When the user corrects you or states a preference, or you learn a durable gotcha, call \`kb_add\` (pass \`replaces\` to fix an outdated entry). \`kb_search\` finds more.${kb && `\n${kb}`}`,
-    org!.profile.name && `# The human\nYou work for ${org!.profile.name}${org!.profile.handle ? ` (@${org!.profile.handle})` : ""}${org!.profile.role ? `, ${org!.profile.role}` : ""}.${org!.profile.githubUsername ? ` GitHub: ${org!.profile.githubUsername}.` : ""}${org!.profile.about ? `\n${org!.profile.about}` : ""}`,
+    org!.profile.name && `# The human\nYou work for ${org!.profile.name}${org!.profile.handle ? ` (@${org!.profile.handle})` : ""}${org!.profile.role ? `, ${org!.profile.role}` : ""}.${org!.profile.githubUsername ? ` GitHub: ${org!.profile.githubUsername}.` : ""}${tagHuman ? ` Tag as: Zippy ${org!.profile.handle ? `@${org!.profile.handle}` : "n/a"}; GitHub ${org!.profile.githubUsername ? `@${org!.profile.githubUsername}` : "n/a"}; Linear ${org!.profile.linearUser ? (org!.linearWorkspace ? `https://linear.app/${org!.linearWorkspace}/profiles/${org!.profile.linearUser}` : `@${org!.profile.linearUser}`) : "n/a"}.` : ""}${org!.profile.about ? `\n${org!.profile.about}` : ""}`,
     `# Your role: ${agent.name} (@${agent.handle})`,
     agent.rolePromptMd,
     `# Rules\n${activeRules(org, agent).map((r) => `- ${r.text}`).join("\n")}`,
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",
     !agent.canWrite && "You are read-only. Do not edit files.",
     `# Team\nYou work on a shared ticket with: ${team.map((a) => `@${a.handle} (${a.name})`).join(", ")}. Your replies are posted as ticket comments.`,
-    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent), \`create_subtickets\` (split big work into sub-issues), \`propose_learning\` (a durable lesson for future tickets; the user accepts it into context)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
+    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent or the human by handle), \`assign\` (assign the ticket to an agent or the human by handle), \`create_subtickets\` (split big work into sub-issues), \`propose_learning\` (a durable lesson for future tickets; the user accepts it into context)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
     dirs.some((d) => d.branch) && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
     `# Ticket ${ticket.identifier}: ${ticket.title}`,
     ticket.linearUrl && `Linear: ${ticket.linearUrl}`,

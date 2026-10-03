@@ -219,7 +219,7 @@ app.patch("/tickets/:id", async (c) => {
   const { workspaceIds, ...patch } = await body(c, ticketPatch);
   const [t] = await db
     .update(tickets)
-    .set({ ...patch, updatedAt: new Date() })
+    .set({ ...patch, ...(patch.assigneeAgentId && { assigneeHuman: false }), ...(patch.assigneeHuman && { assigneeAgentId: null }), updatedAt: new Date() })
     .where(eq(tickets.id, c.req.param("id")))
     .returning();
   if (!t) return c.notFound();

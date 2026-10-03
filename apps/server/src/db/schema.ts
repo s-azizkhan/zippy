@@ -94,6 +94,7 @@ export const tickets = pgTable("tickets", {
   id: id(),
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
   assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id, { onDelete: "set null" }),
+  assigneeHuman: boolean("assignee_human").notNull().default(false),
   identifier: text("identifier").notNull(),
   title: text("title").notNull(),
   body: text("body").notNull().default(""),

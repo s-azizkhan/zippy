@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
-import type { Agent, AgentSession, Pipeline, RelatedTicket, Ticket } from "@zippy/shared";
+import { HUMAN, type Agent, type AgentSession, type Pipeline, type RelatedTicket, type Ticket } from "@zippy/shared";
 import { Activity } from "@/components/activity";
 import { Changes } from "@/components/changes";
 import { Terminal } from "@/components/terminal";
@@ -471,7 +471,7 @@ function Properties(props: {
       <PanelSection title="Properties">
         <StatusPicker {...ctl("status")} value={ticket.status} onChange={(status) => patch.mutate({ status })} />
         <PriorityPicker {...ctl("priority")} value={ticket.priority} onChange={(priority) => patch.mutate({ priority })} />
-        <AssigneePicker {...ctl("assignee")} orgId={org.id} value={ticket.assigneeAgentId} onChange={(assigneeAgentId) => patch.mutate({ assigneeAgentId })} />
+        <AssigneePicker {...ctl("assignee")} orgId={org.id} value={ticket.assigneeHuman ? HUMAN : ticket.assigneeAgentId} onChange={(v) => patch.mutate({ assigneeAgentId: v === HUMAN ? null : v, assigneeHuman: v === HUMAN })} />
         <FoldersPicker {...ctl("folders")} orgId={org.id} value={ticket.folders.map((f) => f.workspaceId)} onChange={(workspaceIds) => patch.mutate({ workspaceIds })} />
       </PanelSection>
 

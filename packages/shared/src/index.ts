@@ -7,6 +7,8 @@ export type TicketStatus = z.infer<typeof ticketStatus>;
 export const MODELS = ["default", "opus", "sonnet", "haiku", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"];
 export const EFFORTS = ["default", "low", "medium", "high", "xhigh", "max"];
 
+export const HUMAN = "human"; // assignee picker value for the profile's human
+
 export const PRIORITIES = ["none", "urgent", "high", "medium", "low"] as const;
 
 const handle = z.string().regex(/^[a-z][a-z0-9-]{1,30}$/, "lowercase letters, digits, dashes");
@@ -19,6 +21,7 @@ export const RULES: { id: string; name: string; description: string; text: strin
   { id: "terse", name: "Terse replies", description: "Short, simple words. Lead with the answer.", defaultOn: true, text: "Everything you post is read by the user. Keep it terse. Use simple words (close to ASD-STE100). Lead with the answer. Do not narrate tool calls or your own thinking." },
   { id: "never-assume", name: "Never assume", description: "Gather context with skills and MCP, then ask the human.", defaultOn: true, text: "Never assume. If something is unclear, first gather context with your skills and MCP tools. If that is not enough, ask the human. Give options and your recommendation." },
   { id: "humanizer", name: "Humanize output", description: "Run the final text through the humanizer skill.", defaultOn: false, text: "Run your final text through the humanizer skill before you reply." },
+  { id: "tag-human", name: "Tag the human", description: "Mention you by ID on comments and issues (Zippy, Linear, GitHub).", defaultOn: false, text: "When you write a comment, issue or PR text anywhere (Zippy, Linear, GitHub) and need the human's attention, tag them with their IDs from \"The human\"." },
   {
     id: "no-status-change",
     name: "Never change status",
@@ -93,6 +96,7 @@ export const ticketInput = z.object({
   body: z.string().default(""),
   workspaceIds: z.array(z.string().uuid()).default([]),
   assigneeAgentId: z.string().uuid().nullable().default(null),
+  assigneeHuman: z.boolean().optional(), // the profile's human; excludes an agent assignee
   priority: z.enum(PRIORITIES).default("none"),
   labelIds: z.array(z.string().uuid()).default([]),
   status: ticketStatus.default("todo"),

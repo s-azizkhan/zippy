@@ -1,9 +1,9 @@
 import { Tag } from "lucide-react";
 import { FolderGit2Icon as FolderGit2 } from "@/components/ui/folder-git-2";
-import { PRIORITIES, TICKET_STATUSES, type Label, type Ticket, type TicketStatus } from "@zippy/shared";
+import { HUMAN, PRIORITIES, TICKET_STATUSES, type Label, type Ticket, type TicketStatus } from "@zippy/shared";
 import { PropertyMenu } from "@/components/property-menu";
-import { AgentAvatar, LabelDot, PRIORITY_LABEL, PriorityIcon, STATUS, StatusIcon } from "@/components/status";
-import { api, keys, queryClient, useAgents, useLabels, useWorkspaces } from "@/lib/api";
+import { AgentAvatar, LabelDot, UserAvatar, PRIORITY_LABEL, PriorityIcon, STATUS, StatusIcon } from "@/components/status";
+import { api, keys, queryClient, useAgents, useLabels, useOrgs, useWorkspaces } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Priority = Ticket["priority"];
@@ -55,7 +55,11 @@ const NONE = "none";
 
 export function AssigneePicker({ orgId, value, onChange, ...ctl }: { orgId: string; value: string | null; onChange: (v: string | null) => void } & Ctl) {
   const { data: agents = [] } = useAgents(orgId);
-  const a = agents.find((x) => x.id === value);
+  const { data: orgs = [] } = useOrgs();
+  const { name = "", handle = "" } = orgs.find((o) => o.id === orgId)?.profile ?? {};
+  const human = handle ? { name: name || `@${handle}` } : null; // only a handled human can be tagged
+  const a = value === HUMAN ? human : agents.find((x) => x.id === value);
+  const avatar = (x: typeof a, cls: string) => (x && x === human ? <UserAvatar name={x.name} className={cls} /> : <AgentAvatar agent={x as (typeof agents)[number] | undefined} className={cls} />);
   return (
     <PropertyMenu
       {...ctl}
@@ -66,11 +70,12 @@ export function AssigneePicker({ orgId, value, onChange, ...ctl }: { orgId: stri
       onChange={(v) => onChange(v === NONE ? null : v)}
       options={[
         { value: NONE, label: "No assignee", icon: <AgentAvatar agent={null} className="size-4" /> },
+        ...(human ? [{ value: HUMAN, label: human.name, icon: avatar(human, "size-4 text-[9px]") }] : []),
         ...agents.map((x) => ({ value: x.id, label: x.name, icon: <AgentAvatar agent={x} className="size-4 text-[9px]" /> })),
       ]}
       trigger={
         <>
-          <AgentAvatar agent={a} className="size-4 text-[9px]" />
+          {avatar(a, "size-4 text-[9px]")}
           <span className={cn("truncate", !a && muted)}>{a?.name ?? (ctl.chip ? "Assignee" : "No assignee")}</span>
         </>
       }
