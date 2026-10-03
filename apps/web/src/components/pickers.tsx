@@ -65,13 +65,13 @@ export function AssigneePicker({ orgId, value, onChange, ...ctl }: { orgId: stri
       {...ctl}
       className={cn(ctl.chip && chipCls)}
       triggerLabel={`Assignee: ${a?.name ?? "No assignee"}`}
-      placeholder="Assign to agent…"
+      placeholder="Assign to Zipper…"
       value={value ?? NONE}
       onChange={(v) => onChange(v === NONE ? null : v)}
       options={[
         { value: NONE, label: "No assignee", icon: <AgentAvatar agent={null} className="size-4" /> },
-        ...(human ? [{ value: HUMAN, label: human.name, icon: avatar(human, "size-4 text-[9px]") }] : []),
-        ...agents.map((x) => ({ value: x.id, label: x.name, icon: <AgentAvatar agent={x} className="size-4 text-[9px]" /> })),
+        ...(human ? [{ value: HUMAN, label: human.name, icon: avatar(human, "size-4 text-[9px]"), group: "People" }] : []),
+        ...agents.map((x) => ({ value: x.id, label: x.name, icon: <AgentAvatar agent={x} className="size-4 text-[9px]" />, group: "Zippers" })),
       ]}
       trigger={
         <>

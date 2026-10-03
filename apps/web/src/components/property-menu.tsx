@@ -5,7 +5,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export type MenuOption = { value: string; label: string; icon?: ReactNode };
+export type MenuOption = { value: string; label: string; icon?: ReactNode; group?: string };
 
 type Props = {
   options: MenuOption[];
@@ -38,6 +38,7 @@ export function PropertyMenu(props: Props) {
     }
   }
 
+  const groups = [...new Set(props.options.map((o) => o.group ?? ""))];
   const canCreate = props.onCreate && search.trim() && !props.options.some((o) => o.label.toLowerCase() === search.trim().toLowerCase());
 
   return (
@@ -63,8 +64,9 @@ export function PropertyMenu(props: Props) {
           <CommandInput placeholder={props.placeholder} value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>No results</CommandEmpty>
-            <CommandGroup>
-              {props.options.map((o, i) => (
+            {groups.map((g) => (
+              <CommandGroup key={g} heading={g || undefined}>
+                {props.options.map((o, i) => (o.group ?? "") === g && (
                 <CommandItem key={o.value} value={`${o.label} ${o.value}`} onSelect={() => pick(o.value)} className="gap-2 text-[13px]">
                   {props.multi && (
                     <span className={cn("flex size-3.5 items-center justify-center rounded-[3px] border", selected(o.value) && "border-primary bg-primary text-white")} aria-hidden>
@@ -76,13 +78,16 @@ export function PropertyMenu(props: Props) {
                   {!props.multi && selected(o.value) && <Check className="size-3.5" aria-label="selected" />}
                   {i < 9 && <span className="text-muted-foreground text-xs tabular-nums">{i + 1}</span>}
                 </CommandItem>
-              ))}
-              {canCreate && (
+                ))}
+              </CommandGroup>
+            ))}
+            {canCreate && (
+              <CommandGroup>
                 <CommandItem value={`create ${search}`} onSelect={() => (props.onCreate!(search.trim()), setSearch(""))} className="gap-2 text-[13px]">
                   <Plus className="size-3.5" aria-hidden /> Create “{search.trim()}”
                 </CommandItem>
-              )}
-            </CommandGroup>
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
