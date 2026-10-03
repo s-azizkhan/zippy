@@ -8,14 +8,13 @@ import { SquarePenIcon as SquarePen } from "@/components/ui/square-pen";
 import { TerminalIcon as TerminalSquare } from "@/components/ui/terminal";
 import { MotionConfig, motion } from "motion/react";
 import { ThemeProvider } from "next-themes";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches, useNavigate, useSearchParams } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LinearIssueModal } from "@/components/linear-issues";
-import { NewTicketDialog } from "@/components/new-ticket-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
@@ -23,14 +22,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useSystem, useUsage, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
-import { AgentsPage } from "@/pages/agents";
-import { InboxPage } from "@/pages/inbox";
-import { Onboarding } from "@/pages/onboarding";
-import { PipelinesPage } from "@/pages/pipelines";
-import { RoutineDetail, RoutineEditor, RoutinesPage } from "@/pages/routines";
-import { ConfirmDialog, FolderForm, SettingsPage } from "@/pages/settings";
-import { TicketPage } from "@/pages/ticket";
-import { TicketsPage } from "@/pages/tickets";
+const Onboarding = lazy(() => import("@/pages/onboarding").then((m) => ({ default: m.Onboarding })));
+const NewTicketDialog = lazy(() => import("@/components/new-ticket-dialog").then((m) => ({ default: m.NewTicketDialog })));
+const FolderForm = lazy(() => import("@/pages/settings").then((m) => ({ default: m.FolderForm })));
+const ConfirmDialog = lazy(() => import("@/pages/settings").then((m) => ({ default: m.ConfirmDialog })));
+const page = (load: () => Promise<Record<string, any>>, name: string) => ({ lazy: async () => ({ Component: (await load())[name] }) });
 
 
 function useShortcuts() {
@@ -287,10 +283,10 @@ function Sidebar() {
           <DialogHeader>
             <DialogTitle>New working folder</DialogTitle>
           </DialogHeader>
-          <FolderForm onDone={() => setAdding(false)} />
+          {adding && <Suspense fallback={null}><FolderForm onDone={() => setAdding(false)} /></Suspense>}
         </DialogContent>
       </Dialog>
-      <ConfirmDialog
+      {removing && <Suspense fallback={null}><ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
         title={`Remove ${removing?.name}?`}
@@ -306,7 +302,7 @@ function Sidebar() {
             },
           })
         }
-      />
+      /></Suspense>}
 
       <div className="relative grid gap-1">
         <UsageMeter />
@@ -322,7 +318,7 @@ function Sidebar() {
 function Layout() {
   useShortcuts();
   const { data: orgs, isLoading, error, refetch } = useOrgs();
-  const { orgId, setOrgId, onboardingOpen, setOnboardingOpen } = useUI();
+  const { orgId, setOrgId, onboardingOpen, setOnboardingOpen, newTicketOpen } = useUI();
   const [params, setParams] = useSearchParams();
   const linkOrg = params.get("org"); // deep links (Slack) name their org
   const org = orgs?.find((o) => o.id === (linkOrg ?? orgId)) ?? orgs?.[0];
@@ -373,7 +369,7 @@ function Layout() {
 
   if (isLoading) return null;
   if (error) return <ErrorPage code={errorCode(error)} error={error} onRetry={() => refetch()} />;
-  if (!org || onboardingOpen) return <Onboarding onCancel={org ? () => setOnboardingOpen(false) : undefined} />;
+  if (!org || onboardingOpen) return <Suspense fallback={null}><Onboarding onCancel={org ? () => setOnboardingOpen(false) : undefined} /></Suspense>;
 
   return (
     <div className="bg-sidebar flex h-dvh">
@@ -394,7 +390,7 @@ function Layout() {
         </motion.div>
       </main>
       <CommandPalette org={org} />
-      <NewTicketDialog org={org} />
+      {newTicketOpen && <Suspense fallback={null}><NewTicketDialog org={org} /></Suspense>}
       <LinearIssueModal />
     </div>
   );
@@ -405,17 +401,17 @@ const router = createBrowserRouter([
     element: <Layout />,
     errorElement: <RouteError />,
     children: [
-      { path: "/", element: <TicketsPage />, handle: { title: "Tickets" } },
-      { path: "/t/:id", element: <TicketPage /> },
-      { path: "/inbox", element: <InboxPage />, handle: { title: "Inbox" } },
-      { path: "/zippers", element: <AgentsPage />, handle: { title: "Zippers" } },
-      { path: "/zippers/:handle", element: <AgentsPage />, handle: { title: "Zippers" } },
-      { path: "/pipelines", element: <PipelinesPage />, handle: { title: "Pipelines" } },
-      { path: "/routines", element: <RoutinesPage />, handle: { title: "Routines" } },
-      { path: "/routines/new", element: <RoutineEditor />, handle: { title: "New routine" } },
-      { path: "/routines/:id", element: <RoutineDetail />, handle: { title: "Routines" } },
-      { path: "/routines/:id/edit", element: <RoutineEditor />, handle: { title: "Edit routine" } },
-      { path: "/settings", element: <SettingsPage />, handle: { title: "Settings" } },
+      { path: "/", ...page(() => import("@/pages/tickets"), "TicketsPage"), handle: { title: "Tickets" } },
+      { path: "/t/:id", ...page(() => import("@/pages/ticket"), "TicketPage") },
+      { path: "/inbox", ...page(() => import("@/pages/inbox"), "InboxPage"), handle: { title: "Inbox" } },
+      { path: "/zippers", ...page(() => import("@/pages/agents"), "AgentsPage"), handle: { title: "Zippers" } },
+      { path: "/zippers/:handle", ...page(() => import("@/pages/agents"), "AgentsPage"), handle: { title: "Zippers" } },
+      { path: "/pipelines", ...page(() => import("@/pages/pipelines"), "PipelinesPage"), handle: { title: "Pipelines" } },
+      { path: "/routines", ...page(() => import("@/pages/routines"), "RoutinesPage"), handle: { title: "Routines" } },
+      { path: "/routines/new", ...page(() => import("@/pages/routines"), "RoutineEditor"), handle: { title: "New routine" } },
+      { path: "/routines/:id", ...page(() => import("@/pages/routines"), "RoutineDetail"), handle: { title: "Routines" } },
+      { path: "/routines/:id/edit", ...page(() => import("@/pages/routines"), "RoutineEditor"), handle: { title: "Edit routine" } },
+      { path: "/settings", ...page(() => import("@/pages/settings"), "SettingsPage"), handle: { title: "Settings" } },
       ...(import.meta.env.DEV ? [{ path: "/error/:code", element: <ErrorPreview /> }] : []),
       { path: "*", element: <ErrorPage code={404} compact />, handle: { title: "Page not found" } },
     ],
