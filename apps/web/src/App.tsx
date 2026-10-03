@@ -1,18 +1,11 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ChevronDown, Trash2 } from "lucide-react";
+import { Bot as BotIcon, ChevronDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
 import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
 import { PlusIcon as Plus } from "@/components/ui/plus";
 import { SearchIcon as Search } from "@/components/ui/search";
 import { SquarePenIcon as SquarePen } from "@/components/ui/square-pen";
 import { TerminalIcon as TerminalSquare } from "@/components/ui/terminal";
-import { BotIcon } from "@/components/ui/bot";
-import { FolderGit2Icon } from "@/components/ui/folder-git-2";
-import { LayersIcon } from "@/components/ui/layers";
-import { MailboxIcon } from "@/components/ui/mailbox";
-import { RefreshCWIcon } from "@/components/ui/refresh-cw";
-import { SettingsIcon } from "@/components/ui/settings";
-import { WorkflowIcon } from "@/components/ui/workflow";
 import { MotionConfig, motion } from "motion/react";
 import { ThemeProvider } from "next-themes";
 import { useEffect, useState } from "react";
@@ -66,10 +59,10 @@ const navCls = (active: boolean) =>
     active && "bg-sidebar-accent text-sidebar-accent-foreground",
   );
 
-function NavItem({ to, icon: Icon, label, count, match, color }: { to: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; label: string; count?: number; match?: boolean; color?: string }) {
+function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; count?: number; match?: boolean }) {
   return (
     <NavLink to={to} end className={({ isActive }) => cn("group", navCls(match ?? isActive))} aria-current={match ? "page" : undefined}>
-      <Icon className="size-4 shrink-0" style={{ color }} aria-hidden />
+      <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
       <span className="sr-only flex-1 truncate wide:not-sr-only">{label}</span>
       {!!count && (
         <span key={count} className="pop text-muted-foreground hidden text-xs tabular-nums wide:inline" aria-label={`${count} waiting`}>
@@ -218,14 +211,14 @@ function Sidebar() {
         <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className={cn(navCls(false), "wide:hidden")}>
           <Plus className="size-4" aria-hidden />
         </button>
-        <NavItem to="/inbox" icon={MailboxIcon} color="#f2994a" label="Inbox" count={inbox} />
-        <NavItem to="/" icon={LayersIcon} color="#5e6ad2" label="All issues" match={pathname === "/" && !view && !folder} />
+        <NavItem to="/inbox" icon={MailboxIcon} label="Inbox" count={inbox} />
+        <NavItem to="/" icon={LayersIcon} label="All issues" match={pathname === "/" && !view && !folder} />
       </nav>
 
       <Section title="Workspace">
-        <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
-        <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
-        <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
+        <NavItem to="/zippers" icon={BotIcon} label="Zippers" match={pathname.startsWith("/zippers")} />
+        <NavItem to="/pipelines" icon={WorkflowIcon} label="Pipelines" />
+        <NavItem to="/routines" icon={RefreshCWIcon} label="Routines" />
       </Section>
 
       <Section
@@ -243,7 +236,7 @@ function Sidebar() {
       >
         {workspaces.map((w) => (
           <div key={w.id} className="group relative">
-            <NavItem to={`/?folder=${w.id}`} icon={FolderGit2Icon} color="#26b5ce" label={w.name} match={pathname === "/" && folder === w.id} />
+            <NavItem to={`/?folder=${w.id}`} icon={FolderGit2Icon} label={w.name} match={pathname === "/" && folder === w.id} />
             <button
               aria-label={`Remove ${w.name}`}
               onClick={() => setRemoving(w)}
@@ -287,14 +280,14 @@ function Sidebar() {
       />
 
       <nav className="grid gap-px wide:hidden" aria-label="Workspace">
-        <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
-        <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
-        <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
+        <NavItem to="/zippers" icon={BotIcon} label="Zippers" match={pathname.startsWith("/zippers")} />
+        <NavItem to="/pipelines" icon={WorkflowIcon} label="Pipelines" />
+        <NavItem to="/routines" icon={RefreshCWIcon} label="Routines" />
       </nav>
 
       <nav className="mt-auto grid gap-px" aria-label="Settings">
         <UsageMeter />
-        <NavItem to="/settings" icon={SettingsIcon} color="#bb87fc" label="Settings" />
+        <NavItem to="/settings" icon={SettingsIcon} label="Settings" />
         <ThemeToggle />
       </nav>
     </aside>
