@@ -10,6 +10,8 @@ export const queryClient = new QueryClient({
   },
 });
 
+const OK: Record<string, string> = { POST: "Done", PATCH: "Saved", PUT: "Saved", DELETE: "Deleted" };
+
 async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
@@ -20,6 +22,7 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
     const err = await res.json().catch(() => ({}));
     throw Object.assign(new Error(err.issues?.[0] ? `${err.issues[0].path.join(".")}: ${err.issues[0].message}` : (err.error ?? res.statusText)), { status: res.status });
   }
+  if (method !== "GET" && !/sync$|pick-folder$/.test(path)) toast.success(body && typeof body === "object" && "archived" in body ? (body.archived ? "Issue archived" : "Issue unarchived") : OK[method]);
   return res.status === 204 || res.status === 202 ? (undefined as T) : res.json();
 }
 

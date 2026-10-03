@@ -40,7 +40,7 @@
       #boot i { display: block; width: 72px; height: 3px; border-radius: 3px; background: rgba(94, 106, 210, 0.2); overflow: hidden; animation: boot-fade 0.5s ease 0.3s both; transition: opacity 0.15s; }
       #boot i::after { content: ""; display: block; width: 40%; height: 100%; border-radius: 3px; background: #5e6ad2; animation: boot-bar 1.1s ease-in-out infinite; }
       #boot.done span, #boot.done i { opacity: 0; transform: translateY(6px); }
-      #root > * { animation: root-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      #root > * { animation: root-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
       /* Repeat visit this session: no intro, quicker exit. */
       .seen #boot img, .seen #boot span, .seen #boot i { animation: none; }
       .seen #boot img { animation: boot-bob 1.6s ease-in-out infinite; }

@@ -70,7 +70,7 @@ export function StatusIcon({ status, className }: { status: TicketStatus; classN
 }
 
 export function AgentAvatar({ agent, className, running, track }: { agent?: (Pick<Agent, "name" | "color"> & { id?: string }) | null; className?: string; running?: boolean; track?: boolean }) {
-  if (!agent) return <span className={cn("bg-muted inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-medium", className)} aria-hidden>?</span>;
+  if (!agent) return <span className={cn("inline-flex size-5 shrink-0 rounded-full border border-dashed border-muted-foreground/40", className)} aria-hidden />;
   return (
     <span className={cn("relative inline-flex size-5 shrink-0", className)} aria-hidden>
       <AgentFace seed={agent.id ?? agent.name} color={agent.color} track={track} state={running ? "working" : undefined} className="size-full" />

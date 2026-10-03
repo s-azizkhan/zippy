@@ -251,6 +251,7 @@ function FavoriteButton({ id }: { id: string }) {
 function TicketMenu({ ticket }: { ticket: Ticket }) {
   const sync = useLinearSync(ticket);
   const org = useOrg();
+  const navigate = useNavigate();
   const archive = useApiMutation(() => api.patch(`/tickets/${ticket.id}`, { archived: !ticket.archived }), [keys.ticket(ticket.id), keys.res(org.id, "tickets")]);
   return (
     <DropdownMenu>
@@ -264,7 +265,7 @@ function TicketMenu({ ticket }: { ticket: Ticket }) {
         <DropdownMenuItem onSelect={() => copy(ticket.identifier, "ID")}>
           <Copy aria-hidden /> Copy ID
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => archive.mutate(undefined)}>
+        <DropdownMenuItem onSelect={() => archive.mutate(undefined, { onSuccess: () => { if (!ticket.archived) navigate("/?tab=all"); } })}>
           {ticket.archived ? <ArchiveRestore aria-hidden /> : <Archive aria-hidden />} {ticket.archived ? "Unarchive" : "Archive"}
         </DropdownMenuItem>
         {ticket.folders[0]?.branch && (

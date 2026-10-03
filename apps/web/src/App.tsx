@@ -408,7 +408,7 @@ export default function App() {
         <MotionConfig reducedMotion="user">
           <TooltipProvider delayDuration={400}>
             <RouterProvider router={router} />
-            <Toaster position="bottom-right" />
+            <Toaster position="top-right" closeButton />
           </TooltipProvider>
         </MotionConfig>
       </QueryClientProvider>
