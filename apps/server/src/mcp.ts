@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { z } from "zod";
@@ -257,6 +258,9 @@ export async function handleMcp(c: Context) {
   const who = token && tokens.get(token);
   if (!who) return c.json({ error: "unauthorized" }, 401);
   const [agent] = await db.select({ canWrite: agents.canWrite }).from(agents).where(eq(agents.id, who.agentId));
+  // Newer clients send a protocol revision the SDK rejects with 404; fall back to the default.
+  const v = c.req.header("mcp-protocol-version");
+  if (v && !SUPPORTED_PROTOCOL_VERSIONS.includes(v)) c.req.raw.headers.delete("mcp-protocol-version");
   const transport = new StreamableHTTPTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await buildServer(who.ticketId, who.agentId, !!agent?.canWrite).connect(transport);
   return transport.handleRequest(c);
