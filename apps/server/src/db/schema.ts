@@ -151,6 +151,8 @@ export const agentSessions = pgTable(
     acpSessionId: text("acp_session_id"),
     tokensIn: integer("tokens_in").notNull().default(0),
     tokensOut: integer("tokens_out").notNull().default(0),
+    tokensCacheRead: integer("tokens_cache_read").notNull().default(0),
+    tokensCacheWrite: integer("tokens_cache_write").notNull().default(0),
     costUsd: real("cost_usd").notNull().default(0), // cumulative, from ACP usage_update
     // Timeline comments after this are fed to the agent on its next prompt.
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),

@@ -519,7 +519,10 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
       if (res.usage) {
         await db
           .update(agentSessions)
-          .set({ tokensIn: sql`${agentSessions.tokensIn} + ${res.usage.inputTokens}`, tokensOut: sql`${agentSessions.tokensOut} + ${res.usage.outputTokens}` })
+          .set({ tokensIn: sql`${agentSessions.tokensIn} + ${res.usage.inputTokens}`, tokensOut: sql`${agentSessions.tokensOut} + ${res.usage.outputTokens}`,
+            tokensCacheRead: sql`${agentSessions.tokensCacheRead} + ${res.usage.cachedReadTokens ?? 0}`,
+            tokensCacheWrite: sql`${agentSessions.tokensCacheWrite} + ${res.usage.cachedWriteTokens ?? 0}`,
+          })
           .where(eq(agentSessions.id, sessionRow!.id));
       }
       await l.work; // cost updates land before the budget decision

@@ -427,6 +427,8 @@ function Properties(props: {
   const spent = sessions.reduce((n, s) => n + s.costUsd, 0);
   const tokIn = sessions.reduce((n, s) => n + s.tokensIn, 0);
   const tokOut = sessions.reduce((n, s) => n + s.tokensOut, 0);
+  const tokCacheRead = sessions.reduce((n, s) => n + s.tokensCacheRead, 0);
+  const tokCacheWrite = sessions.reduce((n, s) => n + s.tokensCacheWrite, 0);
   const org = useOrg();
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const { search } = useLocation();
@@ -492,7 +494,7 @@ function Properties(props: {
       <TicketLinks title="Sub-issues" items={subIssues} search={search} />
       <TicketLinks title="Related" items={related.filter((r) => r.id !== parent?.id && !subIssues.some((c) => c.id === r.id))} search={search} />
 
-      {(spent > 0 || tokIn + tokOut > 0 || budgetUsd) && (
+      {(spent > 0 || tokIn + tokOut + tokCacheRead + tokCacheWrite > 0 || budgetUsd) && (
         <PanelSection title="Cost">
           <div className="grid gap-1.5 px-2">
             <p className="tabular-nums">
@@ -511,8 +513,10 @@ function Properties(props: {
                 <div className={cn("h-full rounded-full", spent >= budgetUsd ? "bg-[#eb5757]" : spent >= budgetUsd * 0.8 ? "bg-[#f2994a]" : "bg-primary")} style={{ width: `${Math.min(100, (spent / budgetUsd) * 100)}%` }} />
               </div>
             )}
-            <p className="text-muted-foreground flex gap-3 text-xs tabular-nums" title={`${tokIn.toLocaleString()} in, ${tokOut.toLocaleString()} out`}>
+            <p className="text-muted-foreground flex flex-wrap gap-x-3 text-xs tabular-nums" title={`${tokIn.toLocaleString()} new input, ${tokCacheRead.toLocaleString()} cache read, ${tokCacheWrite.toLocaleString()} cache write, ${tokOut.toLocaleString()} output`}>
               <span>{tok(tokIn)} in</span>
+              <span>{tok(tokCacheRead)} cached</span>
+              <span>{tok(tokCacheWrite)} cache write</span>
               <span>{tok(tokOut)} out</span>
             </p>
           </div>
@@ -528,7 +532,7 @@ function Properties(props: {
                 <li key={s.agentId} className="flex h-8 items-center gap-2 px-2">
                   <AgentAvatar agent={a} running={s.running} />
                   <span className="flex-1 truncate">{a?.name}</span>
-                  <span className="text-muted-foreground text-xs tabular-nums" title={`${tok(s.tokensIn)} in, ${tok(s.tokensOut)} out`}>
+                  <span className="text-muted-foreground text-xs tabular-nums" title={`${tok(s.tokensIn)} in, ${tok(s.tokensCacheRead)} cached, ${tok(s.tokensCacheWrite)} cache write, ${tok(s.tokensOut)} out`}>
                     {usd(s.costUsd)}
                   </span>
                   <span className="sr-only">{s.running ? "working" : "idle"}</span>

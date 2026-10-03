@@ -274,7 +274,7 @@ export type RelatedTicket = Pick<Ticket, "id" | "identifier" | "title" | "status
 export type Stage = StageInput & { id: string; pipelineId: string; position: number };
 export type Pipeline = Row & Omit<PipelineInput, "stages"> & { orgId: string; stages: Stage[] };
 export type Comment = Row & { ticketId: string; agentId: string | null; parentId: string | null; kind: CommentKind; payload: unknown };
-export type AgentSession = Row & { ticketId: string; agentId: string; acpSessionId: string | null; tokensIn: number; tokensOut: number; costUsd: number; running: boolean };
+export type AgentSession = Row & { ticketId: string; agentId: string; acpSessionId: string | null; tokensIn: number; tokensOut: number; tokensCacheRead: number; tokensCacheWrite: number; costUsd: number; running: boolean };
 export type AgentWork = { ticket: Pick<Ticket, "id" | "identifier" | "title" | "status" | "updatedAt">; assigned: boolean; running: boolean; costUsd: number; tokens: number };
 export type TicketDetail = { ticket: Ticket; comments: Comment[]; sessions: AgentSession[]; pipeline: Pipeline | null; related: RelatedTicket[]; parent: RelatedTicket | null; children: RelatedTicket[]; budgetUsd: number | null };
 
