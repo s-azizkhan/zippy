@@ -29,6 +29,18 @@ export const RULES: { id: string; name: string; description: string; text: strin
   },
 ];
 
+/** The human using Zippy. Git identity is used for agent commits. */
+export const profileInput = z.object({
+  name: z.string().max(80).default(""),
+  handle: z.union([z.literal(""), handle]).default(""), // without "@"
+  role: z.string().max(80).default(""),
+  githubUsername: z.string().regex(/^[A-Za-z0-9-]{0,39}$/, "letters, digits, dashes").default(""),
+  githubEmail: z.union([z.literal(""), z.email("an email address")]).default(""),
+  linearUser: z.string().default(""),
+  about: z.string().max(2000).default(""), // working style, shown to agents
+});
+export type Profile = z.infer<typeof profileInput>;
+
 export const orgInput = z.object({
   name: z.string().min(1).max(80),
   key: z.string().regex(/^[A-Z]{2,6}$/, "2-6 uppercase letters"),
@@ -39,8 +51,11 @@ export const orgInput = z.object({
   slackWebhookUrl: z.union([z.literal(""), z.string().startsWith("https://hooks.slack.com/", "a Slack incoming webhook URL")]).default(""),
   notifyDesktop: z.boolean().default(true),
   linearPush: z.boolean().default(true), // push status/comments/PR links to Linear
+  profile: profileInput.default(() => profileInput.parse({})),
   toggles,
 });
+
+export const orgCreate = orgInput.extend({ agents: z.array(z.string()).optional() }); // handles from the default library; omitted = all
 
 export const workspaceInput = z.object({
   name: z.string().min(1).max(80),

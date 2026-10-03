@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
-import { RULES, type ApprovalPayload, type TicketStatus, type ToolPayload } from "@zippy/shared";
+import { RULES, type ApprovalPayload, type Profile, type TicketStatus, type ToolPayload } from "@zippy/shared";
 import { emit } from "./bus.ts";
 import { desktopMcps, isOn, scanCatalog } from "./catalog.ts";
 import { forAgent } from "./files.ts";
@@ -222,6 +222,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
         .join("\n"),
     ),
     `# Knowledge base\nOrg lessons from past tickets and the user. Follow them. When the user corrects you or states a preference, or you learn a durable gotcha, call \`kb_add\` (pass \`replaces\` to fix an outdated entry). \`kb_search\` finds more.${kb && `\n${kb}`}`,
+    org!.profile.name && `# The human\nYou work for ${org!.profile.name}${org!.profile.handle ? ` (@${org!.profile.handle})` : ""}${org!.profile.role ? `, ${org!.profile.role}` : ""}.${org!.profile.githubUsername ? ` GitHub: ${org!.profile.githubUsername}.` : ""}${org!.profile.about ? `\n${org!.profile.about}` : ""}`,
     `# Your role: ${agent.name} (@${agent.handle})`,
     agent.rolePromptMd,
     `# Rules\n${activeRules(org, agent).map((r) => `- ${r.text}`).join("\n")}`,
@@ -260,14 +261,21 @@ async function mcpFor(ticket: Ticket, agent: Agent, token: string, dirs: Dir[]):
   ));
 }
 
+/** Agent commits are authored as the human. Unset fields fall back to the machine's git config. */
+const gitIdentity = (p?: Profile) => {
+  const name = p?.name || p?.githubUsername;
+  return { ...(name && { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name }), ...(p?.githubEmail && { GIT_AUTHOR_EMAIL: p.githubEmail, GIT_COMMITTER_EMAIL: p.githubEmail }) };
+};
+
 const POLICY_AUTO_ALLOW = new Set(["read", "search", "think"]);
 
 async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Ticket, agent: Agent, dirs: Dir[]): Promise<Live> {
   const cwd = dirs[0]!.cwd;
   const additionalDirectories = dirs.slice(1).map((d) => d.cwd);
+  const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const proc = spawn(process.execPath, [ADAPTER], {
     stdio: ["pipe", "pipe", "inherit"],
-    env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }) },
+    env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), ...gitIdentity(org?.profile) },
   });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const l = {
@@ -385,7 +393,6 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
 
   await l.conn.initialize({ protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
   const mcp = await mcpFor(ticket, agent, token, dirs);
-  const [org] = await db.select({ toggles: orgs.toggles, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const items = scanCatalog().items.map((i) => ({ i, on: isOn(i, org?.toggles ?? {}, agent.toggles) }));
   const offMcp = items.filter((x) => x.i.kind === "mcp" && !x.on && x.i.source === "Claude Code").map((x) => `mcp__${x.i.name}`);
   const offSkill = items.some((x) => x.i.kind === "skill" && !x.on);

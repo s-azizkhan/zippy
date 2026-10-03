@@ -1,4 +1,5 @@
 import type { IconType } from "@/lib/anim-icon";
+import { ProfileFields } from "@/components/profile-fields";
 import { MdEditor } from "@/components/md-editor";
 import { Braces, Building2, ChevronRight, Pin, Trash2 } from "lucide-react";
 import { BookTextIcon as BookOpen } from "@/components/ui/book-text";
@@ -198,7 +199,7 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop };
+  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, profile: org.profile };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -244,6 +245,9 @@ function OrgSettings({ active }: { active: boolean }) {
 
   return (
     <form onSubmit={(e) => (e.preventDefault(), submit())} noValidate className="grid gap-5">
+      <Card title="You" desc="Agents commit as you and know who they work for.">
+        <ProfileFields profile={form.profile} onChange={(profile) => setForm({ ...form, profile })} />
+      </Card>
       <Card title="Identity">
         <Field label="Name" error={errors.name}>
           {(p) => <Input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}

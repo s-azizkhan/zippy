@@ -10,9 +10,8 @@ import type { Ticket } from "@zippy/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, keys, queryClient, useTickets, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useTickets, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
-import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type LinearIssue = {
@@ -305,7 +304,9 @@ export function LinearIssueModal() {
 export function LinearIssues() {
   const org = useOrg();
   const navigate = useNavigate();
-  const { linearUser, setLinearUser } = useUI();
+  const linearUser = org.profile.linearUser;
+  const saveUser = useApiMutation((u: string) => api.patch(`/orgs/${org.id}`, { profile: { ...org.profile, linearUser: u } }), [keys.orgs]);
+  const setLinearUser = (u: string) => saveUser.mutate(u);
   const [draft, setDraft] = useState("");
   const [ref, setRef] = useState("");
   const [openErr, setOpenErr] = useState("");

@@ -21,6 +21,7 @@ import {
   type QuestionPayload,
   mcpServerInput,
   mentionedHandles,
+  orgCreate,
   orgInput,
   patchOf,
   ticketInput,
@@ -83,12 +84,15 @@ app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) =>
 type OrgRow = typeof orgs.$inferSelect;
 const publicOrg = ({ linearAuth, ...o }: OrgRow) => ({ ...o, linearConnected: !!linearAuth?.tokens });
 
+// Agent library offered in onboarding. Description = the role's first sentence.
+app.get("/default-agents", (c) => c.json(DEFAULT_AGENTS.map((a) => ({ handle: a.handle, name: a.name, color: a.color, canWrite: a.canWrite, description: a.rolePromptMd.split("\n").find((l, i) => i > 0 && l.trim()) ?? "" }))));
 app.get("/orgs", async (c) => c.json((await db.select().from(orgs).orderBy(asc(orgs.createdAt))).map(publicOrg)));
 app.post("/orgs", async (c) => {
-  const input = await body(c, orgInput);
+  const { agents: picked, ...input } = await body(c, orgCreate);
   const org = await db.transaction(async (tx) => {
     const [o] = await tx.insert(orgs).values(input).returning();
-    await tx.insert(agents).values(DEFAULT_AGENTS.map((a) => ({ ...a, orgId: o!.id })));
+    const chosen = DEFAULT_AGENTS.filter((a) => !picked || picked.includes(a.handle));
+    if (chosen.length) await tx.insert(agents).values(chosen.map((a) => ({ ...a, orgId: o!.id })));
     return o!;
   });
   await createDefaultPipeline(org.id);

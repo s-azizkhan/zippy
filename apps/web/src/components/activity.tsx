@@ -35,6 +35,7 @@ import { AgentAvatar, STATUS, StatusIcon, UserAvatar } from "@/components/status
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { api, useApiMutation } from "@/lib/api";
+import { useOrg } from "@/lib/org";
 import { ago, cn } from "@/lib/utils";
 
 /** Image in markdown: click opens a full-size preview. */
@@ -247,13 +248,19 @@ function ToolRun({ items, agent }: { items: Comment[]; agent?: Agent }) {
   );
 }
 
-function CardHeader({ agent, author, iso, children }: { agent?: Agent; author?: string; iso: string; children?: React.ReactNode }) {
+function CardHeader({ agent, author: linearAuthor, iso, children }: { agent?: Agent; author?: string; iso: string; children?: React.ReactNode }) {
+  const org = useOrg();
+  const { name, linearUser } = org.profile;
+  // A Linear comment by you shows as "You", linked to your Linear profile.
+  const mine = !!linearAuthor && [name, linearUser].some((n) => n && n.toLowerCase() === linearAuthor.toLowerCase());
+  const author = mine ? undefined : linearAuthor;
+  const profileUrl = mine && org.linearWorkspace && linearUser ? `https://linear.app/${org.linearWorkspace}/profiles/${linearUser}` : null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-[13px]">
       {agent ? <AgentAvatar agent={agent} /> : <UserAvatar name={author} />}
-      <span className="font-medium">{agent ? agent.name : (author ?? "You")}</span>
+      <span className="font-medium">{agent ? agent.name : profileUrl ? <a href={profileUrl} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">You</a> : (author ?? "You")}</span>
       {agent && <span className="text-muted-foreground text-xs">via Zippy</span>}
-      {author && <span className="text-muted-foreground text-xs">via Linear</span>}
+      {linearAuthor && <span className="text-muted-foreground text-xs">via Linear</span>}
       {children}
       <span className="text-xs">
         <Time iso={iso} />

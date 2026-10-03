@@ -141,7 +141,7 @@ function UsageMeter() {
 
 function Sidebar() {
   const { data: orgs = [] } = useOrgs();
-  const { orgId, setOrgId, setNewTicketOpen, setPaletteOpen, collapsed, toggleCollapsed } = useUI();
+  const { orgId, setOrgId, setNewTicketOpen, setPaletteOpen, setOnboardingOpen, collapsed, toggleCollapsed } = useUI();
   const org = orgs.find((o) => o.id === orgId) ?? orgs[0]!;
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const { pathname, search } = useLocation();
@@ -187,6 +187,9 @@ function Sidebar() {
                 {o.name}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuItem onSelect={() => setOnboardingOpen(true)}>
+              <Plus className="size-4" aria-hidden /> New organization
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link to="/settings">Settings</Link>
@@ -301,7 +304,7 @@ function Sidebar() {
 function Layout() {
   useShortcuts();
   const { data: orgs, isLoading, error, refetch } = useOrgs();
-  const { orgId, setOrgId } = useUI();
+  const { orgId, setOrgId, onboardingOpen, setOnboardingOpen } = useUI();
   const [params, setParams] = useSearchParams();
   const linkOrg = params.get("org"); // deep links (Slack) name their org
   const org = orgs?.find((o) => o.id === (linkOrg ?? orgId)) ?? orgs?.[0];
@@ -352,7 +355,7 @@ function Layout() {
 
   if (isLoading) return null;
   if (error) return <ErrorPage code={errorCode(error)} error={error} onRetry={() => refetch()} />;
-  if (!org) return <Onboarding />;
+  if (!org || onboardingOpen) return <Onboarding onCancel={org ? () => setOnboardingOpen(false) : undefined} />;
 
   return (
     <div className="bg-sidebar flex h-dvh">
