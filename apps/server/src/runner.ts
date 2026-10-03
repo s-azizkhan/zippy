@@ -472,20 +472,26 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     .from(agentSessions)
     .where(and(eq(agentSessions.ticketId, ticketId), eq(agentSessions.agentId, agentId)));
 
+  // Show the Zipper as working before the slow worktree/process startup.
+  emit(ticketId, { type: "session", agentId, running: true });
+  await setStatus(ticketId, "in_progress");
+
   let l: Live;
   try {
     let current = live.get(sessionRow!.id);
     if (!current) {
-      const dirs: Dir[] = [];
-      for (const { folder, ws } of folders) {
-        const { cwd, branch, setupError } = await ensureWorktree(ticket, folder, ws);
-        if (setupError) await addComment(ticketId, null, "error", { text: `Setup command failed in ${ws.name}:\n\n\`\`\`\n${setupError}\n\`\`\`` });
-        dirs.push({ ws, cwd, branch });
-      }
+      const dirs: Dir[] = await Promise.all(
+        folders.map(async ({ folder, ws }) => {
+          const { cwd, branch, setupError } = await ensureWorktree(ticket, folder, ws);
+          if (setupError) await addComment(ticketId, null, "error", { text: `Setup command failed in ${ws.name}:\n\n\`\`\`\n${setupError}\n\`\`\`` });
+          return { ws, cwd, branch };
+        }),
+      );
       current = await start(sessionRow!, ticket, agent, dirs);
     }
     l = current;
   } catch (e) {
+    emit(ticketId, { type: "session", agentId, running: false });
     await addComment(ticketId, agent.id, "error", { text: `Agent failed to start: ${(e as Error).message}` });
     return setStatus(ticketId, "blocked");
   }
