@@ -223,7 +223,7 @@ function Sidebar() {
       </nav>
 
       <Section title="Workspace">
-        <NavItem to="/agents" icon={BotIcon} color="#4cb782" label="Agents" match={pathname.startsWith("/agents")} />
+        <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
         <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
         <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
       </Section>
@@ -287,7 +287,7 @@ function Sidebar() {
       />
 
       <nav className="grid gap-px wide:hidden" aria-label="Workspace">
-        <NavItem to="/agents" icon={BotIcon} color="#4cb782" label="Agents" match={pathname.startsWith("/agents")} />
+        <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
         <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
         <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
       </nav>
@@ -359,7 +359,7 @@ function Layout() {
 
   return (
     <div className="bg-sidebar flex h-dvh">
-      {title?.title && <title>{`${title.title} | Zippy - Agent coworkers for your tickets`}</title>}
+      {title?.title && <title>{`${title.title} | Zippy - Zipper coworkers for your tickets`}</title>}
       <a href="#main" className="bg-background sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
         Skip to content
       </a>
@@ -390,8 +390,8 @@ const router = createBrowserRouter([
       { path: "/", element: <TicketsPage />, handle: { title: "Tickets" } },
       { path: "/t/:id", element: <TicketPage /> },
       { path: "/inbox", element: <InboxPage />, handle: { title: "Inbox" } },
-      { path: "/agents", element: <AgentsPage />, handle: { title: "Agents" } },
-      { path: "/agents/:handle", element: <AgentsPage />, handle: { title: "Agents" } },
+      { path: "/zippers", element: <AgentsPage />, handle: { title: "Zippers" } },
+      { path: "/zippers/:handle", element: <AgentsPage />, handle: { title: "Zippers" } },
       { path: "/pipelines", element: <PipelinesPage />, handle: { title: "Pipelines" } },
       { path: "/routines", element: <RoutinesPage />, handle: { title: "Routines" } },
       { path: "/settings", element: <SettingsPage />, handle: { title: "Settings" } },

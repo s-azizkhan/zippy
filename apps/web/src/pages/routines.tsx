@@ -27,7 +27,7 @@ export function RoutinesPage() {
       </header>
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto grid max-w-3xl gap-4 px-6 py-8">
-          <p className="text-muted-foreground text-[13px]">Recurring work: every N hours Zippy creates a ticket from the template and starts its pipeline or agent. Dependency bumps, Sentry triage, weekly audits.</p>
+          <p className="text-muted-foreground text-[13px]">Recurring work: every N hours Zippy creates a ticket from the template and starts its pipeline or Zipper. Dependency bumps, Sentry triage, weekly audits.</p>
           {data.map((r) => (
             <RoutineForm key={r.id} routine={r} />
           ))}
@@ -103,7 +103,7 @@ function RoutineForm({ routine, onDone }: { routine?: Routine; onDone?: () => vo
             </select>
           )}
         </Field>
-        <Field label="Or agent" hint="Used when no pipeline is set.">
+        <Field label="Or Zipper" hint="Used when no pipeline is set.">
           {(p) => (
             <select {...p} value={form.assigneeAgentId ?? ""} onChange={(e) => set("assigneeAgentId", e.target.value || null)} className={selectCls}>
               <option value="">Nobody (ticket only)</option>

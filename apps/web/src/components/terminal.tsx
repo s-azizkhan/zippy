@@ -54,5 +54,5 @@ export function Terminal({ comments }: { comments: Comment[] }) {
     }
   }, [comments]);
 
-  return <div ref={host} role="log" aria-label="Agent terminal output" className="h-[60vh] min-h-64 overflow-hidden rounded-md bg-[#0f0f10] p-2" />;
+  return <div ref={host} role="log" aria-label="Zipper terminal output" className="h-[60vh] min-h-64 overflow-hidden rounded-md bg-[#0f0f10] p-2" />;
 }

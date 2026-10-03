@@ -77,19 +77,19 @@ export function SettingsPage() {
             ))}
           </TabsPrimitive.List>
           <div className="min-w-0 flex-1">
-            <Pane value="org" title="Organization" desc="Identity, spending limits, notifications and shared context for every agent.">
+            <Pane value="org" title="Organization" desc="Identity, spending limits, notifications and shared context for every Zipper.">
               <OrgSettings active={tab === "org"} />
             </Pane>
-            <Pane value="folders" title="Working folders" desc="Local repos agents work in. Each ticket gets an isolated worktree of one folder.">
+            <Pane value="folders" title="Working folders" desc="Local repos Zippers work in. Each ticket gets an isolated worktree of one folder.">
               <Folders />
             </Pane>
-            <Pane value="knowledge" title="Knowledge base" desc="Dos, don'ts, preferences, commands and links. Agents add to it as they work; the most relevant entries go into each agent's prompt.">
+            <Pane value="knowledge" title="Knowledge base" desc="Dos, don'ts, preferences, commands and links. Zippers add to it as they work; the most relevant entries go into each Zipper's prompt.">
               <KnowledgeBase />
             </Pane>
-            <Pane value="tools" title="Agent tool defaults" desc="Defaults for every agent. Override per agent on the Agents page.">
+            <Pane value="tools" title="Zipper tool defaults" desc="Defaults for every Zipper. Override per Zipper on the Zippers page.">
               <OrgTools />
             </Pane>
-            <Pane value="mcp" title="MCP servers" desc="Servers given to every agent session. Scope one to a folder to limit it.">
+            <Pane value="mcp" title="MCP servers" desc="Servers given to every Zipper session. Scope one to a folder to limit it.">
               <McpServers />
             </Pane>
             <Pane value="connectors" title="Connectors" desc="Status of the services Zippy connects to.">
@@ -245,7 +245,7 @@ function OrgSettings({ active }: { active: boolean }) {
 
   return (
     <form onSubmit={(e) => (e.preventDefault(), submit())} noValidate className="grid gap-5">
-      <Card title="You" desc="Agents commit as you and know who they work for.">
+      <Card title="You" desc="Zippers commit as you and know who they work for.">
         <ProfileFields profile={form.profile} onChange={(profile) => setForm({ ...form, profile })} />
       </Card>
       <Card title="Identity">
@@ -256,7 +256,7 @@ function OrgSettings({ active }: { active: boolean }) {
           {(p) => <Input {...p} value={form.key} maxLength={6} onChange={(e) => setForm({ ...form, key: e.target.value.toUpperCase() })} className="w-32 font-mono" />}
         </Field>
       </Card>
-      <Card title="Agent defaults" desc="Used by agents whose model is set to default. Empty picks follow your Claude Code setting.">
+      <Card title="Zipper defaults" desc="Used by Zippers whose model is set to default. Empty picks follow your Claude Code setting.">
         {([["Model", "defaultModel", MODELS], ["Thinking level", "defaultEffort", EFFORTS]] as const).map(([label, k, opts]) => (
           <Field key={k} label={label}>
             {(p) => (
@@ -271,8 +271,8 @@ function OrgSettings({ active }: { active: boolean }) {
           </Field>
         ))}
       </Card>
-      <Card title="Budget" desc="Agents stop and ask you when a ticket's total spend reaches this limit.">
-        <Field label="Agent budget per ticket (USD)" hint="Empty = no limit." error={errors.budgetUsd}>
+      <Card title="Budget" desc="Zippers stop and ask you when a ticket's total spend reaches this limit.">
+        <Field label="Zipper budget per ticket (USD)" hint="Empty = no limit." error={errors.budgetUsd}>
           {(p) => (
             <Input
               {...p}
@@ -296,7 +296,7 @@ function OrgSettings({ active }: { active: boolean }) {
           {(p) => <Input {...p} value={form.slackWebhookUrl} onChange={(e) => setForm({ ...form, slackWebhookUrl: e.target.value.trim() })} placeholder="https://hooks.slack.com/services/…" className="font-mono text-[13px]" />}
         </Field>
       </Card>
-      <Card title="Context" desc="Markdown. Every agent gets this: product, conventions, people, rules.">
+      <Card title="Context" desc="Markdown. Every Zipper gets this: product, conventions, people, rules.">
         <Field label="Organization context" error={errors.contextMd}>
           {(p) => <MdEditor id={p.id} value={form.contextMd} onChange={(contextMd) => setForm((f) => ({ ...f, contextMd }))} className="min-h-72" />}
         </Field>
@@ -333,7 +333,7 @@ function Folders() {
   return (
     <div className="grid gap-3">
       {data.length === 0 && !adding && (
-        <EmptyState icon={FolderGit2} title="No working folders yet" desc="Add a local git repo so agents have somewhere to work.">
+        <EmptyState icon={FolderGit2} title="No working folders yet" desc="Add a local git repo so Zippers have somewhere to work.">
           <Button onClick={() => setAdding(true)}>
             <Plus aria-hidden /> Add working folder
           </Button>
@@ -522,7 +522,7 @@ function McpJsonEditor({ servers, onDone }: { servers: McpServer[]; onDone: () =
         open={!!confirm}
         onOpenChange={(o) => !o && setConfirm(null)}
         title={`Remove ${removed.length} server(s)?`}
-        desc={`Not in the JSON: ${removed.join(", ")}. Agents will no longer get them.`}
+        desc={`Not in the JSON: ${removed.join(", ")}. Zippers will no longer get them.`}
         action="Save and remove"
         pending={save.isPending}
         onConfirm={() => commit(confirm!)}
@@ -551,7 +551,7 @@ function McpServers() {
 
   if (json) return <McpJsonEditor servers={data} onDone={() => setJson(false)} />;
   const toolbar = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center justify-center gap-2">
       <Button variant={data.length ? "outline" : "default"} className="max-md:min-h-11" onClick={() => setAdding(true)}>
         <Plus aria-hidden /> Add MCP server
       </Button>
@@ -566,7 +566,7 @@ function McpServers() {
   return (
     <div className="grid gap-3">
       {data.length === 0 && !adding && (
-        <EmptyState icon={Server} title="No MCP servers yet" desc="MCP servers give agents extra tools, like databases, browsers or issue trackers.">
+        <EmptyState icon={Server} title="No MCP servers yet" desc="MCP servers give Zippers extra tools, like databases, browsers or issue trackers.">
           {toolbar}
         </EmptyState>
       )}
@@ -685,7 +685,7 @@ function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }
           open={confirming}
           onOpenChange={setConfirming}
           title={`Remove ${server.name}?`}
-          desc="Agents will no longer get this MCP server."
+          desc="Zippers will no longer get this MCP server."
           action="Remove server"
           pending={remove.isPending}
           onConfirm={() => remove.mutate(undefined, { onSuccess: () => toast.success("Server removed") })}
@@ -700,7 +700,7 @@ function Connectors() {
   const ok = system?.auth.loggedIn;
   const acp = useAcp();
   return (
-    <Card title="AI connection" desc="Claude Code runs every agent. It must be logged in on the machine running Zippy.">
+    <Card title="AI connection" desc="Claude Code runs every Zipper. It must be logged in on the machine running Zippy.">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="flex items-center gap-2 text-[13px] font-medium">
           <span aria-hidden className={`size-2 rounded-full ${ok ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
@@ -737,7 +737,7 @@ function LinearSettings() {
     });
   return (
     <div className="grid gap-5">
-      <Card title="Connection" desc="Connects through the Linear MCP server. Agents post to Linear as you, with their name in the comment, ticket status syncs, and every agent gets the Linear MCP server.">
+      <Card title="Connection" desc="Connects through the Linear MCP server. Zippers post to Linear as you, with their name in the comment, ticket status syncs, and every Zipper gets the Linear MCP server.">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-2 text-[13px] font-medium">
             <span aria-hidden className={`size-2 rounded-full ${org.linearConnected ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
@@ -755,11 +755,11 @@ function LinearSettings() {
         </div>
       </Card>
       <Card title="Sync to Linear" desc="Push Zippy activity to the linked Linear issue.">
-        <SettingRow label="Sync from Zippy to Linear" hint="Status changes, agent comments and PR links. Linear comments still come in either way.">
+        <SettingRow label="Sync from Zippy to Linear" hint="Status changes, Zipper comments and PR links. Linear comments still come in either way.">
           {(p) => <Switch {...p} checked={org.linearPush} disabled={!org.linearConnected || setPush.isPending} onCheckedChange={(v) => setPush.mutate(v)} />}
         </SettingRow>
       </Card>
-      <Card title="Webhook (optional)" desc="So Linear comments reach agents.">
+      <Card title="Webhook (optional)" desc="So Linear comments reach Zippers.">
         <ol className="text-muted-foreground grid list-decimal gap-1.5 pl-4 text-xs">
           <li>Expose the server (e.g. a tunnel).</li>
           <li>
@@ -818,7 +818,7 @@ function KnowledgeBase() {
 
   return (
     <div className="grid gap-4">
-      <Card title="Add entry" desc="Short, imperative, one fact per entry. Pinned entries always reach agents.">
+      <Card title="Add entry" desc="Short, imperative, one fact per entry. Pinned entries always reach Zippers.">
         <form onSubmit={submit} className="grid gap-2 sm:grid-cols-[8rem_1fr_11rem_auto]" aria-label="New knowledge entry">
           <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v as KnowledgeInput["kind"] })}>
             <SelectTrigger aria-label="Kind" className="w-full min-w-0"><SelectValue className="truncate" /></SelectTrigger>
@@ -840,7 +840,7 @@ function KnowledgeBase() {
       </Card>
 
       {data.length === 0 ? (
-        <EmptyState icon={BookOpen} title="No knowledge yet" desc="Add your own entries, or let agents fill it as they work tickets and you correct them." />
+        <EmptyState icon={BookOpen} title="No knowledge yet" desc="Add your own entries, or let Zippers fill it as they work tickets and you correct them." />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
@@ -869,7 +869,7 @@ function KnowledgeBase() {
                   <div className="flex flex-wrap items-center gap-1.5 px-1.5">
                     {/^https?:\/\//i.test(k.url) && <a href={k.url} target="_blank" rel="noreferrer" className="truncate font-mono text-xs text-[#5e6ad2] hover:underline">{k.url}</a>}
                     <Chip>{folderName(k.workspaceId)}</Chip>
-                    {k.source === "agent" && <Chip><Bot aria-hidden className="inline size-3" /> agent</Chip>}
+                    {k.source === "agent" && <Chip><Bot aria-hidden className="inline size-3" /> Zipper</Chip>}
                     {k.uses > 0 && <Chip>used {k.uses}×</Chip>}
                   </div>
                 </div>

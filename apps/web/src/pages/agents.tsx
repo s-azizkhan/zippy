@@ -23,7 +23,7 @@ import { ago, cn } from "@/lib/utils";
 
 const TEMPLATE = `# Role
 
-You are a ... Describe what this agent is responsible for.
+You are a ... Describe what this Zipper is responsible for.
 
 # How you work
 
@@ -60,25 +60,25 @@ export function AgentsPage() {
   const navigate = useNavigate();
   const { data: agents = [], isLoading } = useAgents(org.id);
   const current = agents.find((a) => a.handle === handle);
-  if (handle === "new" || current) return <AgentStudio key={handle} agent={current} onClose={(a) => navigate(a ? `/agents/${a.handle}` : "/agents")} />;
-  if (handle) return isLoading ? null : <Navigate to="/agents" replace />;
+  if (handle === "new" || current) return <AgentStudio key={handle} agent={current} onClose={(a) => navigate(a ? `/zippers/${a.handle}` : "/zippers")} />;
+  if (handle) return isLoading ? null : <Navigate to="/zippers" replace />;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-6 py-10">
         <header className="mb-8 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Your team. Each agent has its own role, model and tools. Mention one as @handle on any ticket.</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Zippers</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Your team. Each Zipper has its own role, model and tools. Mention one as @handle on any ticket.</p>
           </div>
-          <Button onClick={() => navigate("/agents/new")}>
+          <Button onClick={() => navigate("/zippers/new")}>
             <Plus aria-hidden /> New agent
           </Button>
         </header>
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {agents.map((a, n) => (
             <motion.li key={a.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(n, 8) * 0.04 }}>
-              <Link to={`/agents/${a.handle}`} className="group agent-card lift bg-card hover:border-primary/40 hover:shadow-primary/5 relative grid h-full w-full gap-4 overflow-hidden rounded-2xl border p-5 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-lg">
+              <Link to={`/zippers/${a.handle}`} className="group agent-card lift bg-card hover:border-primary/40 hover:shadow-primary/5 relative grid h-full w-full gap-4 overflow-hidden rounded-2xl border p-5 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-lg">
                 <span aria-hidden className="absolute inset-x-0 top-0 h-24 opacity-[.14]" style={{ background: `linear-gradient(${paletteOf(a.color, a.id).a}, transparent)` }} />
                 <AgentAvatar agent={a} track className="relative size-20 transition group-hover:scale-105" />
                 <div className="relative min-w-0">
@@ -98,7 +98,7 @@ export function AgentsPage() {
             </motion.li>
           ))}
           <li>
-            <Link to="/agents/new" className="text-muted-foreground hover:border-primary/40 hover:text-primary grid h-full min-h-56 w-full place-items-center content-center gap-1 rounded-2xl border border-dashed p-5 text-sm transition">
+            <Link to="/zippers/new" className="text-muted-foreground hover:border-primary/40 hover:text-primary grid h-full min-h-56 w-full place-items-center content-center gap-1 rounded-2xl border border-dashed p-5 text-sm transition">
               <Plus className="size-5" aria-hidden /> New agent
             </Link>
           </li>
@@ -150,7 +150,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
       <div className="mx-auto grid max-w-3xl gap-6 px-6 pt-6 pb-28">
         <div className="flex items-center justify-between">
           <Button type="button" variant="ghost" size="sm" onClick={() => onClose(null)}>
-            <ChevronLeft aria-hidden /> Agents
+            <ChevronLeft aria-hidden /> Zippers
           </Button>
           {agent && (
             <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => confirm(`Delete ${agent.name}?`) && remove.mutate(undefined, { onSuccess: () => onClose(null) })}>
@@ -170,7 +170,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
           </motion.div>
           <div className="relative grid gap-3">
             <div>
-              <Input aria-label="Name" placeholder="Name your agent" value={form.name} aria-invalid={!!errors.name || undefined} autoFocus={!agent}
+              <Input aria-label="Name" placeholder="Name your Zipper" value={form.name} aria-invalid={!!errors.name || undefined} autoFocus={!agent}
                 onChange={(e) => {
                   const name = e.target.value;
                   setForm((f) => ({ ...f, name, ...(!handleTouched && { handle: slug(name) }), ...(!agent && !faceTouched && name.trim() && { color: faceFromName(name.trim().toLowerCase()) }) }));
@@ -298,12 +298,12 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
       {(dirty || !agent) && (
         <div className="bg-background/80 fixed inset-x-0 bottom-0 z-20 border-t backdrop-blur">
           <div className="mx-auto flex max-w-3xl items-center justify-end gap-2 px-6 py-3">
-            <span className="text-muted-foreground mr-auto text-xs">{agent ? "Unsaved changes" : "New agent"}</span>
+            <span className="text-muted-foreground mr-auto text-xs">{agent ? "Unsaved changes" : "New Zipper"}</span>
             <Button type="button" variant="ghost" onClick={() => (agent ? (setForm(initial), setErrors({})) : onClose(null))}>
               {agent ? "Discard" : "Cancel"}
             </Button>
             <Button type="submit" disabled={save.isPending || !dirty}>
-              {agent ? "Save changes" : "Create agent"}
+              {agent ? "Save changes" : "Create Zipper"}
             </Button>
           </div>
         </div>
@@ -314,7 +314,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
 
 function WorkList({ work }: { work: AgentWork[] | undefined }) {
   if (!work) return null;
-  if (!work.length) return <p className="text-muted-foreground rounded-2xl border border-dashed p-8 text-center text-sm">No tickets yet. Assign this agent or mention @handle on a ticket.</p>;
+  if (!work.length) return <p className="text-muted-foreground rounded-2xl border border-dashed p-8 text-center text-sm">No tickets yet. Assign this Zipper or mention @handle on a ticket.</p>;
   const cost = work.reduce((n, w) => n + w.costUsd, 0);
   return (
     <div className="grid gap-4">

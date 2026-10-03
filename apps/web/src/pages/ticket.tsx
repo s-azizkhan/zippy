@@ -131,7 +131,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const side = tab === "terminal" ? "terminal" : "changes";
   const head = (
     <div className="grid min-w-0 grid-cols-1 gap-3">
-      {!embedded && <title>{`${ticket.identifier} ${ticket.title} | Zippy - Agent coworkers for your tickets`}</title>}
+      {!embedded && <title>{`${ticket.identifier} ${ticket.title} | Zippy - Zipper coworkers for your tickets`}</title>}
       <TitleEditor ticket={ticket} />
       <DescriptionEditor ticket={ticket} />
     </div>
@@ -347,7 +347,7 @@ function GateBar({ ticket, pipeline }: { ticket: Ticket; pipeline: Pipeline }) {
           <span className="font-medium">{stage?.name}</span> waits for you.
         </span>
         <input
-          aria-label="Note for the agent (optional)"
+          aria-label="Note for the Zipper (optional)"
           placeholder="Optional note…"
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -513,7 +513,7 @@ function Properties(props: {
       )}
 
       {sessions.length > 0 && (
-        <PanelSection title="Agents">
+        <PanelSection title="Zippers">
           <ul className="grid grid-cols-[minmax(0,1fr)]">
             {sessions.map((s) => {
               const a = agents.find((x) => x.id === s.agentId);

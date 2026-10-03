@@ -13,10 +13,10 @@ import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { id: "org", label: "Organization", title: "Name your team", sub: "The home for your tickets, agents and pipelines." },
-  { id: "you", label: "You", title: "Who's the human?", sub: "Agents sign their commits as you and learn how you like to work." },
-  { id: "agents", label: "Agents", title: "Meet your coworkers", sub: "Pick the pre-built agents to bring along. Tweak or add more anytime." },
-  { id: "folder", label: "Folder", title: "Point them at some code", sub: "A git repo on this machine. Agents get their own worktree here." },
+  { id: "org", label: "Organization", title: "Name your team", sub: "The home for your tickets, Zippers and pipelines." },
+  { id: "you", label: "You", title: "Who's the human?", sub: "Zippers sign their commits as you and learn how you like to work." },
+  { id: "agents", label: "Zippers", title: "Meet your coworkers", sub: "Pick the pre-built Zippers to bring along. Tweak or add more anytime." },
+  { id: "folder", label: "Folder", title: "Point them at some code", sub: "A git repo on this machine. Zippers get their own worktree here." },
 ] as const;
 
 const kicker = "text-muted-foreground text-xs font-medium tracking-wide uppercase";
@@ -79,7 +79,7 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
         </div>
         <div className="relative grid gap-8">
           <h1 className="text-4xl leading-[1.1] font-bold tracking-tight text-balance">
-            Agent coworkers
+            Zipper coworkers
             <br />
             <span className="text-primary">for your tickets.</span>
           </h1>

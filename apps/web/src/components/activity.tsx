@@ -69,7 +69,7 @@ const hl = (children: ReactNode): ReactNode =>
       ? ch
       : ch.split(MENTION_RE).map((part, i) =>
           i % 2 ? (
-            <Link key={i} to={part[0] === "@" ? `/agents/${part.slice(1)}` : `/t/${part}`} className="bg-primary/10 text-primary hover:bg-primary/20 rounded px-1 font-medium no-underline">
+            <Link key={i} to={part[0] === "@" ? `/zippers/${part.slice(1)}` : `/t/${part}`} className="bg-primary/10 text-primary hover:bg-primary/20 rounded px-1 font-medium no-underline">
               {part}
             </Link>
           ) : (
@@ -141,7 +141,7 @@ export function Activity({ ticketId, comments, agents, running }: { ticketId: st
     const c = comments.findLast((x) => x.kind === "status" || x.kind === "approval" || x.kind === "question");
     if (!c) return "";
     if (c.kind === "status") return `Status: ${STATUS[(c.payload as StatusPayload).to as Ticket["status"]].label}`;
-    return `${agent(c.agentId)?.name ?? "Agent"} needs your input`;
+    return `${agent(c.agentId)?.name ?? "Zipper"} needs your input`;
   }, [comments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -501,7 +501,7 @@ export function MentionInput({
   return (
     <div className="relative" onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
       {matches.length > 0 && (
-        <ul id={listId} role="listbox" aria-label="Agents" className="bg-popover absolute bottom-full z-20 mb-2 w-64 overflow-hidden rounded-lg border p-1 shadow-lg">
+        <ul id={listId} role="listbox" aria-label="Zippers" className="bg-popover absolute bottom-full z-20 mb-2 w-64 overflow-hidden rounded-lg border p-1 shadow-lg">
           {matches.map((a, i) => (
             <li
               key={a.id}
@@ -565,7 +565,7 @@ function Composer({ ticketId, agents }: { ticketId: string; agents: Agent[] }) {
   const send = useApiMutation((body: string) => api.post(`/tickets/${ticketId}/comments`, { body }));
   return (
     <div className="bg-card mt-1 rounded-lg border px-4 py-3">
-      <MentionInput agents={agents} placeholder="Leave a comment… @mention an agent to put it to work" pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
+      <MentionInput agents={agents} placeholder="Leave a comment… @mention a Zipper to put it to work" pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
     </div>
   );
 }

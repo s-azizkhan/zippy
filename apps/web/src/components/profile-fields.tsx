@@ -20,17 +20,17 @@ export function ProfileFields({ profile, onChange }: { profile: Profile; onChang
         <Field label="GitHub username" error={errors.githubUsername}>
           {(p) => <Input {...p} {...bind("githubUsername")} placeholder="octocat" className="font-mono" />}
         </Field>
-        <Field label="GitHub email" hint="Author of agent commits." error={errors.githubEmail}>
+        <Field label="GitHub email" hint="Author of Zipper commits." error={errors.githubEmail}>
           {(p) => <Input {...p} {...bind("githubEmail")} type="email" placeholder="you@example.com" />}
         </Field>
         <Field label="Linear username" hint="Lists your issues in Linear.">
           {(p) => <Input {...p} {...bind("linearUser")} placeholder="aziz" />}
         </Field>
-        <Field label="Role" hint="Told to agents." error={errors.role}>
+        <Field label="Role" hint="Told to Zippers." error={errors.role}>
           {(p) => <Input {...p} {...bind("role")} placeholder="Backend engineer" />}
         </Field>
       </div>
-      <Field label="About you" hint="Working style agents should know: preferred PR size, stack, review habits." error={errors.about}>
+      <Field label="About you" hint="Working style Zippers should know: preferred PR size, stack, review habits." error={errors.about}>
         {(p) => <Textarea {...p} value={profile.about} onChange={(e) => onChange({ ...profile, about: e.target.value })} rows={3} />}
       </Field>
     </>

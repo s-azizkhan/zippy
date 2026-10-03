@@ -58,7 +58,7 @@ function CommentBox({ ctx, label, quote, onDone }: { ctx: Ctx; label: string; qu
       <MentionInput
         compact
         agents={ctx.agents}
-        placeholder={`Comment on ${label} · @mention an agent`}
+        placeholder={`Comment on ${label} · @mention a Zipper`}
         pending={send.isPending}
         onSend={(t, done) =>
           send.mutate(`**${ctx.folder}${ctx.branch ? ` (${ctx.branch})` : ""} · ${label}**\n${quote ? `\`\`\`\n${quote}\n\`\`\`\n` : ""}${t}`, {

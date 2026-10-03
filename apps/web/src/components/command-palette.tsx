@@ -31,7 +31,7 @@ export function CommandPalette({ org }: { org: Org }) {
           <CommandItem onSelect={run(() => navigate("/"))}>
             <ListTodo aria-hidden /> Go to tickets
           </CommandItem>
-          <CommandItem onSelect={run(() => navigate("/agents"))}>
+          <CommandItem onSelect={run(() => navigate("/zippers"))}>
             <Bot aria-hidden /> Go to agents
           </CommandItem>
           <CommandItem onSelect={run(() => navigate("/pipelines"))}>

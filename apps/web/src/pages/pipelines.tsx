@@ -57,7 +57,7 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
         <header className="mb-8 flex items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Pipelines</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Chain agents into loops that build, review, fix and repeat until the ticket is done.</p>
+            <p className="text-muted-foreground mt-1 text-sm">Chain Zippers into loops that build, review, fix and repeat until the ticket is done.</p>
           </div>
           <div className="flex gap-2">
             {pipelines.length > 0 && (
@@ -83,7 +83,7 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
             </div>
             <div>
               <h2 className="text-lg font-semibold">Build your first loop</h2>
-              <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">Plan, build, review: each stage is an agent, and failures can loop back until it passes.</p>
+              <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">Plan, build, review: each stage is a Zipper, and failures can loop back until it passes.</p>
             </div>
             <div className="flex gap-2">
               <Button onClick={() => createDefault.mutate(undefined)} disabled={createDefault.isPending}>
@@ -272,7 +272,7 @@ function PipelineEditor({ pipeline, onOpen }: { pipeline: Pipeline | null; onOpe
             </Reorder.Group>
             {stages.length === 0 && (
               <div className="text-muted-foreground mb-3 ml-11 rounded-xl border border-dashed px-4 py-8 text-center text-sm">
-                {noAgents ? "Create an agent first, then add it as a stage." : "No stages yet. Each stage hands the ticket to an agent."}
+                {noAgents ? "Create a Zipper first, then add it as a stage." : "No stages yet. Each stage hands the ticket to a Zipper."}
               </div>
             )}
             <div className="grid grid-cols-[2rem_1fr] gap-3">
@@ -361,9 +361,9 @@ function StageRow({ s, n, stages, agent, selected, canInsert, onSelect, onInsert
           <button type="button" onClick={onSelect} aria-pressed={selected} className="grid w-full gap-1.5 rounded-xl p-3.5 pl-5 text-left">
             <span className="flex items-baseline gap-2">
               <span className="text-[14px] font-semibold">{s.name || "Untitled"}</span>
-              <span className="text-muted-foreground text-xs">{agent?.name ?? "No agent"}</span>
+              <span className="text-muted-foreground text-xs">{agent?.name ?? "No Zipper"}</span>
             </span>
-            <span className="text-muted-foreground line-clamp-2 text-xs">{s.instruction || "Uses the agent's role prompt"}</span>
+            <span className="text-muted-foreground line-clamp-2 text-xs">{s.instruction || "Uses the Zipper's role prompt"}</span>
             <span className="flex flex-wrap gap-1.5 pt-0.5">
               {s.humanGate && <Chip icon={Hand}>Waits for approval</Chip>}
               {s.onPass !== "next" && <Chip icon={ArrowDown}>{routeText(s.onPass, n, stages)}</Chip>}
@@ -401,8 +401,8 @@ function Inspector({ s, i, count, stages, agents, set, move, del }: { s: Row; i:
         </Button>
       </div>
       <Field label="Name">{(p) => <Input {...p} value={s.name} onChange={(e) => set({ name: e.target.value })} />}</Field>
-      <Field label="Agent">{(p) => <AgentSelect id={p.id} agents={agents} value={s.agentId} onChange={(agentId) => set({ agentId })} />}</Field>
-      <Field label="Instruction" hint="Optional. The agent's role prompt still applies.">
+      <Field label="Zipper">{(p) => <AgentSelect id={p.id} agents={agents} value={s.agentId} onChange={(agentId) => set({ agentId })} />}</Field>
+      <Field label="Instruction" hint="Optional. The Zipper's role prompt still applies.">
         {(p) => <MdEditor id={p.id} placeholder="What should this stage do?" value={s.instruction} onChange={(instruction) => set({ instruction })} className="min-h-20" />}
       </Field>
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
@@ -419,7 +419,7 @@ function Inspector({ s, i, count, stages, agents, set, move, del }: { s: Row; i:
 function AgentSelect({ id, agents, value, onChange }: { id?: string; agents: Agent[]; value: string; onChange: (v: string) => void }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger id={id} aria-label="Agent" className="w-full min-w-0 *:data-[slot=select-value]:min-w-0">
+      <SelectTrigger id={id} aria-label="Zipper" className="w-full min-w-0 *:data-[slot=select-value]:min-w-0">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

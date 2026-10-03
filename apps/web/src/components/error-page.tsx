@@ -15,7 +15,7 @@ const COPY: Record<ErrorCode, { label: string; title: string; text: string; tone
   400: { label: "400", title: "That request made no sense", text: "Something in it was malformed. Go back and try again.", tone: "oops", action: "back" },
   401: { label: "401", title: "Sign in to continue", text: "Your session is gone or Claude is logged out. Log in again and retry.", tone: "locked", action: "settings" },
   403: { label: "403", title: "Not your door", text: "You don't have access to this. Ask an org admin if it should be yours.", tone: "locked", action: "home" },
-  404: { label: "404", title: "Page not found", text: "This page was moved, merged, or never existed. Even agents get lost.", tone: "lost", action: "home" },
+  404: { label: "404", title: "Page not found", text: "This page was moved, merged, or never existed. Even Zippers get lost.", tone: "lost", action: "home" },
   408: { label: "408", title: "That took too long", text: "The request timed out before it finished. Try again.", tone: "slow", action: "retry" },
   409: { label: "409", title: "Someone got there first", text: "This changed while you were looking at it. Reload to see the latest.", tone: "oops", action: "retry" },
   410: { label: "410", title: "Gone for good", text: "This was deleted and isn't coming back.", tone: "lost", action: "home" },

@@ -124,7 +124,7 @@ export function InboxPage() {
           {!isLoading && !list.length && (
             <li className="text-muted-foreground grid place-items-center gap-2 p-16 text-center text-[13px]">
               <InboxIcon className="size-6 opacity-60" aria-hidden />
-              {all.length ? "No matches." : "Nothing needs you. Agents are on it."}
+              {all.length ? "No matches." : "Nothing needs you. Zippers are on it."}
             </li>
           )}
           <AnimatePresence initial={false}>

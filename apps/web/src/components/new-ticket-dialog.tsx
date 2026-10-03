@@ -55,7 +55,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
           <span className="bg-accent rounded-md border px-1.5 py-0.5 font-medium">{org.key}</span>
           <ChevronRight className="text-muted-foreground size-3" aria-hidden />
           <DialogTitle className="text-xs font-normal">{linearRef === null ? "New issue" : "Import from Linear"}</DialogTitle>
-          <DialogDescription className="sr-only">Describe the work. Assign an agent to start it right away.</DialogDescription>
+          <DialogDescription className="sr-only">Describe the work. Assign a Zipper to start it right away.</DialogDescription>
           {org.linearConnected && (
             <button type="button" className="text-muted-foreground hover:text-foreground ml-3 underline underline-offset-4" onClick={() => setLinearRef(linearRef === null ? "" : null)}>
               {linearRef === null ? "Import from Linear instead" : "Write a new issue instead"}
