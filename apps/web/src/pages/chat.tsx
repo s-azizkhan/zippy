@@ -1,6 +1,7 @@
 import { Archive, ArchiveRestore, ChevronLeft, ChevronRight, MessageSquarePlus, Square, Ticket as TicketIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Link, useNavigate, useParams } from "react-router";
 import { Activity, Composer, MentionInput } from "@/components/activity";
 import { ErrorPage } from "@/components/error-page";
@@ -88,7 +89,7 @@ function NewChat() {
   const [draft, setDraft] = useState("");
   const agent = agents.find((a) => a.id === agentId) ?? agents[0];
   const workspaceIds = folders ?? (workspaces[0] ? [workspaces[0].id] : []);
-  const start = useApiMutation((message: string) => api.post<{ id: string }>(`/orgs/${org.id}/chats`, { agentId: agent?.id, workspaceIds, message }), [keys.res(org.id, "chats")]);
+  const start = useApiMutation((message: string) => api.post<{ id: string }>(`/orgs/${org.id}/chats`, { agentId: agent?.id, workspaceIds, message }, true), [keys.res(org.id, "chats")]);
   const go = (t: string, done: () => void = () => {}) => start.mutate(t, { onSuccess: (c) => (done(), navigate(`/chat/${c.id}`)) });
   const drag = useDragScroll(agents.length);
   const [hour] = useState(() => new Date().getHours());
@@ -145,7 +146,7 @@ function NewChat() {
 
         <div className="bg-card/80 rounded-3xl border px-5 py-4 shadow-xl backdrop-blur">
           {ready ? (
-            <MentionInput key={draft} initial={draft} agents={agents} placeholder={`Ask ${agent.name} anything… ⌘↵ to send`} pending={start.isPending} onSend={go} />
+            <MentionInput large key={draft} initial={draft} folders={workspaces} agents={agents} placeholder={`Ask ${agent.name} anything… ⌘↵ to send`} pending={start.isPending} onSend={go} />
           ) : (
             <p className="text-muted-foreground text-[13px]">Add a working folder and a Zipper first.</p>
           )}
@@ -182,9 +183,16 @@ function Thread({ id }: { id: string }) {
     end.current?.scrollIntoView({ block: "end" });
   }, [n]);
   const ticket = data?.ticket;
-  const makeTicket = useApiMutation(() => api.post(`/tickets/${id}/comments`, { body: "Create a ticket from this conversation." }));
+  const busy = !!data?.sessions.some((s) => s.running);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy) toast.success("Zipper finished replying");
+    wasBusy.current = busy;
+  }, [busy]);
+  const makeTicket = useApiMutation(() => api.post(`/tickets/${id}/comments`, { body: "Draft a ticket from this conversation for me to review." }, true));
   const stop = useApiMutation((agentId: string) => api.post(`/tickets/${id}/cancel`, { agentId }));
-  const archive = useApiMutation((archived: boolean) => api.patch(`/tickets/${id}`, { archived }), [keys.res(org.id, "chats"), keys.res(org.id, "chats-archived"), keys.ticket(id)]);
+  const folders = useApiMutation((workspaceIds: string[]) => api.patch(`/tickets/${id}`, { workspaceIds }, true), [keys.ticket(id)]);
+  const archive = useApiMutation((archived: boolean) => api.patch(`/tickets/${id}`, { archived }, true).then(() => void toast.success(archived ? "Chat archived" : "Chat unarchived")), [keys.res(org.id, "chats"), keys.res(org.id, "chats-archived"), keys.ticket(id)]);
 
   if (error) return <ErrorPage code={404} compact title="Chat not found" text="It may have been archived or belongs to another org." />;
   if (isLoading || !data || !ticket) return <div className="grid flex-1 content-start gap-3 p-10"><Skeleton className="h-7 w-1/3" /><Skeleton className="h-24" /></div>;
@@ -198,13 +206,14 @@ function Thread({ id }: { id: string }) {
         <span className="font-medium">{agent?.name}</span>
         <span className="text-muted-foreground min-w-0 truncate">{ticket.title}</span>
         <div className="ml-auto flex items-center gap-2">
+          {!ticket.archived && <FoldersPicker chip orgId={org.id} value={ticket.folders.map((f) => f.workspaceId)} onChange={(workspaceIds) => workspaceIds.length && folders.mutate(workspaceIds)} />}
           {running.map((agentId) => (
             <Button key={agentId} size="xs" variant="outline" onClick={() => stop.mutate(agentId)}>
               <Square className="size-2.5 fill-current" aria-hidden /> Stop
             </Button>
           ))}
           <Button size="xs" variant="outline" onClick={() => makeTicket.mutate(undefined)} disabled={makeTicket.isPending || running.length > 0 || ticket.archived}>
-            <TicketIcon className="size-3.5" aria-hidden /> Create ticket
+            <TicketIcon className="size-3.5" aria-hidden /> Draft ticket
           </Button>
           {ticket.archived ? (
             <Button size="xs" variant="outline" onClick={() => archive.mutate(false)}>
@@ -224,11 +233,11 @@ function Thread({ id }: { id: string }) {
         </div>
       </div>
       <div className="shrink-0 px-6 pb-4">
-        <div className="mx-auto max-w-[760px]">
+        <div className={cn("mx-auto max-w-[760px] rounded-2xl p-[1.5px] transition-[background] duration-500", running.length > 0 && "working-ring")}>
           {ticket.archived ? (
             <p className="text-muted-foreground bg-card rounded-2xl border px-4 py-3 text-center text-[13px]">This chat is archived. Unarchive it to send new messages.</p>
           ) : (
-            <Composer chat ticketId={id} agents={agents} />
+            <Composer chat ticketId={id} agents={agents} running={running} />
           )}
         </div>
       </div>

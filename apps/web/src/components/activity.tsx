@@ -1,4 +1,4 @@
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, FolderGit2, Loader2, Square } from "lucide-react";
 import { ArrowRightIcon as ArrowRight } from "@/components/ui/arrow-right";
 import { ArrowUpIcon as ArrowUp } from "@/components/ui/arrow-up";
 import { CheckIcon as Check } from "@/components/ui/check";
@@ -15,10 +15,12 @@ import type { Editor } from "@tiptap/react";
 import { MdEditor } from "@/components/md-editor";
 import { Link } from "react-router";
 import remarkGfm from "remark-gfm";
+import { folderHandle } from "@zippy/shared";
 import type {
   Agent,
   ApprovalPayload,
   Comment,
+  DraftPayload,
   HandoffPayload,
   LearningPayload,
   PlanPayload,
@@ -29,12 +31,14 @@ import type {
   TestPayload,
   Ticket,
   ToolPayload,
+  Workspace,
 } from "@zippy/shared";
 import { TestResult } from "@/components/changes";
 import { AgentAvatar, STATUS, StatusIcon, UserAvatar } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { api, useApiMutation } from "@/lib/api";
+import { api, useApiMutation, useTicket, useWorkspaces } from "@/lib/api";
+import { useUI } from "@/lib/store";
 import { useOrg } from "@/lib/org";
 import { ago, cn } from "@/lib/utils";
 
@@ -166,7 +170,20 @@ export function Activity({ ticketId, comments, agents, running, chat }: { ticket
           </li>
         ))}
       </ol>
-      {running.length > 0 && (
+      {running.length > 0 && chat && (
+        <div className="flex items-end gap-2" role="status">
+          <AgentAvatar agent={agent(running[0]!)} running />
+          <div className="bg-muted flex items-center gap-2.5 rounded-2xl rounded-bl-sm px-4 py-3">
+            <span className="flex gap-1" aria-hidden>
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="typing-dot bg-primary size-1.5 rounded-full" style={{ animationDelay: `${i * 0.15}s` }} />
+              ))}
+            </span>
+            <span className="shimmer text-sm font-medium">{agent(running[0]!)?.name} is thinking…</span>
+          </div>
+        </div>
+      )}
+      {running.length > 0 && !chat && (
         <p className="text-muted-foreground flex items-center gap-2 pl-1 text-xs">
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
           {running.map((id) => agent(id)?.name).join(", ")} working…
@@ -275,7 +292,7 @@ function Card({ c, replies, agent, agents, ticketId, chat }: { c: Comment; repli
     return (
       <div className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
         {!mine && <AgentAvatar agent={agent} />}
-        <div title={new Date(c.createdAt).toLocaleString()} className={cn("min-w-0 max-w-[85%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed", mine ? "bg-primary text-primary-foreground rounded-br-sm [&_a]:!bg-white/20 [&_a]:!text-inherit [&_code]:!bg-white/20" : "bg-muted rounded-bl-sm")}>
+        <div title={new Date(c.createdAt).toLocaleString()} className={cn("min-w-0 max-w-[85%] rounded-2xl px-4 py-2.5 text-[16px] leading-relaxed", mine ? "bg-primary text-primary-foreground rounded-br-sm [&_a]:!bg-white/20 [&_a]:!text-inherit [&_code]:!bg-white/20" : "bg-muted rounded-bl-sm")}>
           {md((c.payload as { text?: string }).text ?? "")}
         </div>
       </div>
@@ -337,6 +354,7 @@ function CardBody({ c, agent }: { c: Comment; agent?: Agent }) {
       </>
     );
   }
+  if (c.kind === "draft") return <DraftBody c={c} agent={agent} />;
   if (c.kind === "question") return <QuestionBody c={c} agent={agent} />;
   if (c.kind === "approval") return <ApprovalBody c={c} agent={agent} />;
   if (c.kind === "learning") return <LearningBody c={c} agent={agent} />;
@@ -387,6 +405,34 @@ function CardBody({ c, agent }: { c: Comment; agent?: Agent }) {
     <>
       <CardHeader agent={agent} author={p.author} iso={c.createdAt} />
       <div className="pl-7 text-[14px] leading-relaxed">{md(p.text ?? "")}</div>
+    </>
+  );
+}
+
+function DraftBody({ c, agent }: { c: Comment; agent?: Agent }) {
+  const p = c.payload as DraftPayload;
+  const { data } = useTicket(c.ticketId);
+  const open = useUI((s) => s.openTicketDraft);
+  return (
+    <>
+      <CardHeader agent={agent} iso={c.createdAt}>
+        <span className="text-primary text-xs">drafted a ticket</span>
+      </CardHeader>
+      <div className="bg-muted/50 ml-7 grid gap-1.5 rounded-xl border px-3.5 py-3">
+        <p className="text-[15px] font-semibold [overflow-wrap:anywhere]">{p.title}</p>
+        <div className="max-h-64 overflow-y-auto pr-1 text-[13px]">{md(p.body)}</div>
+      </div>
+      <div className="pl-7">
+        {p.identifier ? (
+          <Link to={`/t/${p.identifier}`} className="text-[13px] font-medium text-[#4cb782] hover:underline">
+            Created {p.identifier} →
+          </Link>
+        ) : (
+          <Button size="sm" onClick={() => open({ title: p.title, body: p.body, workspaceIds: data?.ticket.folders.map((f) => f.workspaceId) ?? [], commentId: c.id })}>
+            Review &amp; create
+          </Button>
+        )}
+      </div>
     </>
   );
 }
@@ -478,8 +524,14 @@ export function MentionInput({
   compact,
   pending,
   initial,
+  large,
+  folders,
+  onStop,
 }: {
   initial?: string; // prefilled (and focused) draft
+  large?: boolean;
+  onStop?: () => void; // agent is running: the send button becomes Stop
+  folders?: Workspace[]; // taggable with @folder-name (chats)
   agents: Agent[];
   onSend: (text: string, done: () => void) => void;
   placeholder: string;
@@ -492,17 +544,19 @@ export function MentionInput({
   const [active, setActive] = useState(0);
   const editor = useRef<Editor | null>(null);
   const listId = useId();
-  const matches = mention ? agents.filter((a) => a.handle.startsWith(mention.q) || a.name.toLowerCase().startsWith(mention.q)) : [];
+  const options = [...agents.map((a) => ({ id: a.id, handle: a.handle, name: a.name, agent: a })), ...(folders ?? []).map((w) => ({ id: w.id, handle: folderHandle(w.name), name: w.name, agent: undefined }))];
+  const rank = (o: (typeof options)[number], q: string) => (o.handle.startsWith(q) || o.name.toLowerCase().startsWith(q) ? 0 : o.handle.includes(q) || o.name.toLowerCase().includes(q) ? 1 : 2);
+  const matches = mention ? options.filter((o) => rank(o, mention.q) < 2).sort((a, b) => rank(a, mention.q) - rank(b, mention.q)) : []; // prefix hits first, then anywhere in the name
   const expanded = !compact || focused || !!text;
 
   function onChange(md: string) {
     setText(md);
     const { $from } = editor.current!.state.selection;
-    const m = /(?:^|\s)@([a-z-]*)$/.exec($from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc"));
+    const m = /(?:^|\s)@([a-z0-9-]*)$/.exec($from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc"));
     setMention(m ? { q: m[1]! } : null);
     setActive(0);
   }
-  function pick(a: Agent) {
+  function pick(a: { handle: string }) {
     const ed = editor.current;
     if (!ed || !mention) return;
     const to = ed.state.selection.from;
@@ -514,17 +568,20 @@ export function MentionInput({
   return (
     <div className="relative" onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>
       {matches.length > 0 && (
-        <ul id={listId} role="listbox" aria-label="Zippers" className="bg-popover absolute bottom-full z-20 mb-2 w-64 overflow-hidden rounded-lg border p-1 shadow-lg">
+        <ul id={listId} role="listbox" aria-label="Zippers and folders" className="bg-popover absolute bottom-full z-20 mb-2 max-h-64 w-72 overflow-y-auto rounded-lg border p-1 shadow-lg">
           {matches.map((a, i) => (
             <li
               key={a.id}
               id={`${listId}-${a.id}`}
               role="option"
               aria-selected={i === active}
+              ref={(el) => {
+                if (i === active) el?.scrollIntoView({ block: "nearest" });
+              }}
               onMouseDown={(e) => (e.preventDefault(), pick(a))}
               className={cn("flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px]", i === active && "bg-accent")}
             >
-              <AgentAvatar agent={a} /> {a.name} <span className="text-muted-foreground ml-auto text-xs">@{a.handle}</span>
+              {a.agent ? <AgentAvatar agent={a.agent} /> : <FolderGit2 className="text-muted-foreground size-5 p-0.5" aria-hidden />} {a.name} <span className="text-muted-foreground ml-auto text-xs">@{a.handle}</span>
             </li>
           ))}
         </ul>
@@ -550,17 +607,23 @@ export function MentionInput({
               }
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) return send(), true;
             }}
-            className="text-[14px] leading-relaxed"
+            className={cn("leading-relaxed", large ? "text-[16px]" : "text-[14px]")}
           />
         </div>
-        <button
-          onClick={send}
-          disabled={!text.trim() || pending}
-          aria-label="Send (Command Enter)"
-          className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full disabled:bg-muted disabled:text-muted-foreground"
-        >
-          <ArrowUp className="size-4" aria-hidden />
-        </button>
+        {onStop && !text.trim() ? (
+          <button onClick={onStop} aria-label="Stop" className="bg-foreground text-background flex size-7 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105">
+            <Square className="size-3 fill-current" aria-hidden />
+          </button>
+        ) : (
+          <button
+            onClick={send}
+            disabled={!text.trim() || pending}
+            aria-label="Send (Command Enter)"
+            className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full disabled:bg-primary/30 disabled:text-primary-foreground/70"
+          >
+            <ArrowUp className="size-4" aria-hidden />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -575,11 +638,13 @@ function ReplyBox({ ticketId, parentId, agents }: { ticketId: string; parentId: 
   );
 }
 
-export function Composer({ ticketId, agents, chat }: { ticketId: string; agents: Agent[]; chat?: boolean }) {
-  const send = useApiMutation((body: string) => api.post(`/tickets/${ticketId}/comments`, { body }));
+export function Composer({ ticketId, agents, chat, running = [] }: { ticketId: string; agents: Agent[]; chat?: boolean; running?: string[] }) {
+  const stop = useApiMutation(() => Promise.all(running.map((agentId) => api.post(`/tickets/${ticketId}/cancel`, { agentId }, true))));
+  const { data: workspaces } = useWorkspaces(useOrg().id);
+  const send = useApiMutation((body: string) => api.post(`/tickets/${ticketId}/comments`, { body }, chat));
   return (
     <div className={cn("bg-card mt-1 border px-4 py-3", chat ? "rounded-2xl shadow-lg" : "rounded-lg")}>
-      <MentionInput agents={agents} placeholder={chat ? "Message… @mention another Zipper to bring it in" : "Leave a comment… @mention a Zipper to put it to work"} pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
+      <MentionInput large={chat} onStop={running.length ? () => stop.mutate(undefined) : undefined} folders={chat ? workspaces : undefined} agents={agents} placeholder={chat ? "Message… @ a Zipper or folder to bring it in" : "Leave a comment… @mention a Zipper to put it to work"} pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
     </div>
   );
 }

@@ -118,6 +118,7 @@ type Live = {
   overBudget: boolean;
   idleTimer?: NodeJS.Timeout;
   orgId: string;
+  ticketId: string;
   idleMs: number;
 };
 
@@ -125,6 +126,14 @@ type Live = {
 
 const live = new Map<string, Live>(); // key: agent_sessions.id
 const pendingApprovals = new Map<string, (optionId: string | null) => void>(); // key: comment id
+
+/** Stop idle processes of a ticket so the next prompt restores them with its current folders. */
+export const dropIdle = (ticketId: string) =>
+  live.forEach((l, key) => {
+    if (l.ticketId !== ticketId || l.busy) return;
+    live.delete(key); // so the next prompt starts a fresh process, not this dying one
+    l.proc.kill();
+  });
 
 export const isRunning = (sessionRowId: string) => !!live.get(sessionRowId)?.busy;
 
@@ -238,7 +247,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     `# Team\nYour replies are posted as ticket comments.${others.length ? ` Others on this ticket: ${others.map((a) => `@${a.handle}`).join(", ")}.` : ""}`,
     agent.canWrite && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
     ...(ticket.kind === "chat"
-      ? ["# Chat\nThis is a free-form conversation with the user, not a ticket. Discuss, investigate (read-only) and advise. Call `create_ticket` only when the user asks for a ticket or agrees to your offer."]
+      ? ["# Chat\nThis is a free-form conversation with the user, not a ticket. Discuss, investigate (read-only) and advise. Call `propose_ticket` only when the user asks for a ticket or agrees to your offer; it shows a draft the user reviews and creates."]
       : [`# Ticket ${ticket.identifier}: ${ticket.title}`, ticket.linearUrl && `Linear: ${ticket.linearUrl}`, forAgent(ticket.body) || "(no description)"]),
   ]
     .filter(Boolean)
@@ -299,6 +308,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const l = {
     proc,
     orgId: ticket.orgId,
+    ticketId: ticket.id,
     idleMs: (org?.idleMinutes ?? 10) * 60_000,
     replaying: false,
     turn: Promise.resolve(),
@@ -406,7 +416,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const token = issueToken(ticket.id, agent.id);
   proc.on("exit", () => {
     revokeToken(token);
-    live.delete(sessionRow.id);
+    if (live.get(sessionRow.id) === l) live.delete(sessionRow.id);
     clearTimeout(l.idleTimer);
     emit(ticket.id, { type: "session", agentId: agent.id, running: false });
   });

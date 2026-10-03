@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
 import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
 import { PlusIcon as Plus } from "@/components/ui/plus";
@@ -19,7 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useSystem, useUsage, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useRunning, useSystem, useUsage, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 const Onboarding = lazy(() => import("@/pages/onboarding").then((m) => ({ default: m.Onboarding })));
@@ -158,6 +158,7 @@ function Sidebar() {
   const view = params.get("view");
   const { data: inboxItems = [] } = useInbox(org.id);
   const inbox = inboxItems.length;
+  const { data: running = [] } = useRunning(org.id);
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
@@ -241,6 +242,7 @@ function Sidebar() {
 
         <Section title="Workspace">
           <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
+          <NavItem to="/running" icon={ActivityIcon} color="#4cb782" label="Running" count={running.length} />
           <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
           <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
         </Section>
@@ -409,6 +411,7 @@ const router = createBrowserRouter([
       { path: "/inbox", ...page(() => import("@/pages/inbox"), "InboxPage"), handle: { title: "Inbox" } },
       { path: "/zippers", ...page(() => import("@/pages/agents"), "AgentsPage"), handle: { title: "Zippers" } },
       { path: "/zippers/:handle", ...page(() => import("@/pages/agents"), "AgentsPage"), handle: { title: "Zippers" } },
+      { path: "/running", ...page(() => import("@/pages/running"), "RunningPage"), handle: { title: "Running" } },
       { path: "/pipelines", ...page(() => import("@/pages/pipelines"), "PipelinesPage"), handle: { title: "Pipelines" } },
       { path: "/routines", ...page(() => import("@/pages/routines"), "RoutinesPage"), handle: { title: "Routines" } },
       { path: "/routines/new", ...page(() => import("@/pages/routines"), "RoutineEditor"), handle: { title: "New routine" } },

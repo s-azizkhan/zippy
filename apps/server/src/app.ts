@@ -8,6 +8,7 @@ import {
   agentInput,
   approvalDecision,
   commentInput,
+  folderHandle,
   labelInput,
   TICKET_ID_RE,
   linearImport,
@@ -18,6 +19,7 @@ import {
   type PipelineInput,
   type ApprovalPayload,
   type InboxItem,
+  type DraftPayload,
   type LearningPayload,
   type QuestionPayload,
   mcpServerInput,
@@ -43,7 +45,7 @@ import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownComme
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
-import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, isRunning, runAgent, setStatus } from "./runner.ts";
+import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
 
@@ -236,7 +238,10 @@ app.patch("/tickets/:id", async (c) => {
     .where(eq(tickets.id, c.req.param("id")))
     .returning();
   if (!t) return c.notFound();
-  if (workspaceIds) await setFolders(t.id, workspaceIds);
+  if (workspaceIds) {
+    await setFolders(t.id, workspaceIds);
+    dropIdle(t.id);
+  }
   if (patch.assigneeAgentId && patch.assigneeAgentId !== before?.agent) runAgent(t.id, patch.assigneeAgentId, "Start work on this ticket.").catch(console.error);
   return c.json(await emitTicket(t.id));
 });
@@ -260,6 +265,16 @@ async function humanComment(
   const comment = await addComment(ticket.id, null, "text", { text, ...(author && { author }) }, undefined, rest);
   resetHops(ticket.id);
   const handles = mentionedHandles(text);
+  if (ticket.kind === "chat") {
+    // @folder-name in a chat brings that folder in.
+    const have = (await foldersOf(ticket.id)).map((f) => f.ws.id);
+    const add = (await db.select().from(workspaces).where(eq(workspaces.orgId, ticket.orgId))).filter((w) => !have.includes(w.id) && handles.includes(folderHandle(w.name)));
+    if (add.length) {
+      await setFolders(ticket.id, [...have, ...add.map((w) => w.id)]);
+      dropIdle(ticket.id);
+      await emitTicket(ticket.id);
+    }
+  }
   const team = await db.select().from(agents).where(eq(agents.orgId, ticket.orgId));
   const [parent] = opts.parentId ? await db.select({ agentId: comments.agentId }).from(comments).where(eq(comments.id, opts.parentId)) : [];
   const fallback = parent?.agentId ?? ticket.assigneeAgentId;
@@ -267,6 +282,16 @@ async function humanComment(
   for (const a of targets) runAgent(ticket.id, a.id, text, comment.id).catch(console.error);
   return comment;
 }
+
+// The new-issue dialog reports the ticket it created from a chat draft.
+app.post("/comments/:id/created", async (c) => {
+  const { identifier } = await body(c, z.object({ identifier: z.string() }));
+  const [d] = await db.select().from(comments).where(and(eq(comments.id, c.req.param("id")), eq(comments.kind, "draft")));
+  if (!d) return c.notFound();
+  const [updated] = await db.update(comments).set({ payload: { ...(d.payload as DraftPayload), identifier } }).where(eq(comments.id, d.id)).returning();
+  emit(d.ticketId, { type: "comment", comment: updated });
+  return c.body(null, 204);
+});
 
 app.post("/comments/:id/answer", async (c) => {
   const { answer } = await body(c, z.object({ answer: z.string().min(1) }));
@@ -418,6 +443,16 @@ setInterval(async () => {
   const due = (await db.select().from(routines).where(eq(routines.enabled, true))).filter((r) => nextRunAt(r) <= new Date());
   for (const r of due) await runRoutine(r).catch((e) => console.error("[routine]", r.name, e.message));
 }, 60_000).unref();
+
+// Agent sessions mid-turn right now (tickets and chats).
+app.get("/orgs/:orgId/running", async (c) => {
+  const rows = await db
+    .select({ s: agentSessions, t: { id: tickets.id, identifier: tickets.identifier, title: tickets.title, kind: tickets.kind } })
+    .from(agentSessions)
+    .innerJoin(tickets, eq(tickets.id, agentSessions.ticketId))
+    .where(eq(tickets.orgId, c.req.param("orgId")));
+  return c.json(rows.filter((r) => isRunning(r.s.id)).map((r) => ({ agentId: r.s.agentId, ticket: r.t, costUsd: r.s.costUsd })));
+});
 
 // Tickets an agent is assigned to or has a session on, newest first.
 app.get("/agents/:id/work", async (c) => {

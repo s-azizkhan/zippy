@@ -5,14 +5,14 @@ import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js"
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { z } from "zod";
-import { KB_KINDS, httpUrl, type QuestionPayload } from "@zippy/shared";
+import { KB_KINDS, httpUrl, type DraftPayload, type QuestionPayload } from "@zippy/shared";
 import { agents, db, knowledge, orgs, ticketFolders, tickets } from "./db/index.ts";
 import { addKnowledge, byShortId, render, search } from "./kb.ts";
 import { commitsAhead, ensureWorktree, folderDiff, openPr } from "./git.ts";
 import { attachPr, createSubIssue } from "./linear.ts";
 import { emit } from "./bus.ts";
 import { notify } from "./notify.ts";
-import { autoStart, createTicket } from "./tickets.ts";
+import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
 
@@ -45,18 +45,14 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
   const server = new McpServer({ name: "zippy", version: "0.1.0" });
 
   if (chat) server.registerTool(
-    "create_ticket",
+    "propose_ticket",
     {
-      description: "Create a ticket from this chat, in the chat's working folders. Nobody is assigned unless the pipeline auto-starts.",
+      description: "Propose a ticket from this chat. It is shown to the user as a draft they review, edit and create themselves; nothing is created yet.",
       inputSchema: { title: z.string().min(1).max(200), body: z.string().describe("Markdown: context, scope and acceptance criteria") },
     },
     async ({ title, body }) => {
-      const [c] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
-      const workspaceIds = (await foldersOf(ticketId)).map((f) => f.ws.id);
-      const t = await createTicket(c!.orgId, { title, body, workspaceIds, assigneeAgentId: null, priority: "none", labelIds: [], status: "todo" });
-      await autoStart(t);
-      await addComment(ticketId, agentId, "text", { text: `Created ${t.identifier}: ${title}` });
-      return text(`Created ${t.identifier}.`);
+      await addComment(ticketId, agentId, "draft", { title, body } satisfies DraftPayload);
+      return text("Draft shown to the user, who reviews and creates the ticket. Do not say it was created.");
     },
   );
 

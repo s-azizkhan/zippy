@@ -15,10 +15,10 @@ type Draft = { title: string; body: string; status: TicketStatus; priority: Tick
 const EMPTY: Draft = { title: "", body: "", status: "todo", priority: "none", assigneeAgentId: null, assigneeHuman: false, labelIds: [], workspaceIds: null };
 
 export function NewTicketDialog({ org }: { org: Org }) {
-  const { newTicketOpen, setNewTicketOpen } = useUI();
+  const { newTicketOpen, setNewTicketOpen, ticketDraft } = useUI();
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const navigate = useNavigate();
-  const [d, setD] = useState<Draft>(EMPTY);
+  const [d, setD] = useState<Draft>(() => (ticketDraft ? { ...EMPTY, ...ticketDraft } : EMPTY));
   const [linearRef, setLinearRef] = useState<string | null>(null); // null = write a new issue
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,6 +35,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
         linearRef === null
           ? await api.post<Ticket>(`/orgs/${org.id}/tickets`, { ...d, workspaceIds })
           : await api.post<Ticket>(`/orgs/${org.id}/linear/import`, { ref: linearRef, workspaceIds, assigneeAgentId: d.assigneeAgentId });
+      if (ticketDraft) api.post(`/comments/${ticketDraft.commentId}/created`, { identifier: t.identifier }, true).catch(() => {});
       if (linearRef === null && d.assigneeAgentId) await api.post(`/tickets/${t.id}/run`, {});
       queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
       setD({ ...EMPTY, workspaceIds: d.workspaceIds });
@@ -50,7 +51,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
 
   return (
     <Dialog open={newTicketOpen} onOpenChange={setNewTicketOpen}>
-      <DialogContent showCloseButton className="top-[12%] translate-y-0 gap-0 p-0 sm:max-w-[720px]" onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), create())}>
+      <DialogContent showCloseButton className="top-[6%] max-h-[88vh] translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto_auto] gap-0 p-0 sm:max-w-[720px]" onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), create())}>
         <div className="flex items-center gap-1.5 px-4 pt-3.5 text-xs">
           <span className="bg-accent rounded-md border px-1.5 py-0.5 font-medium">{org.key}</span>
           <ChevronRight className="text-muted-foreground size-3" aria-hidden />
@@ -63,7 +64,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
           )}
         </div>
 
-        <div className="grid gap-1 px-4 pt-3 pb-2">
+        <div className="grid min-h-0 content-start gap-1 overflow-y-auto px-4 pt-3 pb-2">
           {linearRef !== null ? (
             <input
               aria-label="Linear issue ID or URL"

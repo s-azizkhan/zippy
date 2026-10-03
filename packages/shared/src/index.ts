@@ -192,7 +192,7 @@ export type PipelineInput = z.infer<typeof pipelineInput>;
 export type TicketInput = z.infer<typeof ticketInput>;
 export type RoutineInput = z.infer<typeof routineInput>;
 
-export type CommentKind = "text" | "tool" | "plan" | "approval" | "status" | "error" | "handoff" | "question" | "pr" | "stage" | "test" | "learning";
+export type CommentKind = "text" | "tool" | "plan" | "approval" | "status" | "error" | "handoff" | "question" | "pr" | "stage" | "test" | "learning" | "draft";
 
 // Comment payloads by kind.
 export type TextPayload = { text: string; author?: string }; // author: Linear user name for synced comments
@@ -206,6 +206,8 @@ export type ApprovalPayload = {
 };
 export type StatusPayload = { from?: string; to: string };
 export type HandoffPayload = { verdict: "pass" | "fail"; summary: string; notes?: string; stage: string; next?: string };
+// Ticket proposed in a chat; the user reviews it in the new-issue dialog. identifier is set once created.
+export type DraftPayload = { title: string; body: string; identifier?: string };
 export type QuestionPayload = { question: string; options: string[]; recommended?: string; answer?: string; action?: "risk" }; // risk: first option approves protected-path PRs
 export type PrPayload = { url: string; title: string };
 export type StagePayload = { name: string; loop: number };
@@ -227,6 +229,9 @@ export type InboxItem = {
 };
 
 export const AGENT_HANDLE_RE = /(?:^|\s)@([a-z][a-z0-9-]{1,30})\b/g;
+
+/** `@handle` a working folder is tagged by in chat. */
+export const folderHandle = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 export function mentionedHandles(body: string): string[] {
   return [...body.matchAll(AGENT_HANDLE_RE)].map((m) => m[1]!);

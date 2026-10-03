@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type TicketDraft = { title: string; body: string; workspaceIds: string[]; commentId: string };
+
 type UI = {
   orgId: string | null;
   setOrgId: (id: string | null) => void;
@@ -18,6 +20,8 @@ type UI = {
   setOnboardingOpen: (open: boolean) => void;
   newTicketOpen: boolean;
   setNewTicketOpen: (open: boolean) => void;
+  ticketDraft: TicketDraft | null; // prefill for the new-issue dialog (from a chat)
+  openTicketDraft: (d: TicketDraft) => void;
 };
 
 export const useUI = create<UI>()(
@@ -38,7 +42,9 @@ export const useUI = create<UI>()(
       onboardingOpen: false,
       setOnboardingOpen: (onboardingOpen) => set({ onboardingOpen }),
       newTicketOpen: false,
-      setNewTicketOpen: (newTicketOpen) => set({ newTicketOpen }),
+      setNewTicketOpen: (newTicketOpen) => set({ newTicketOpen, ticketDraft: null }),
+      ticketDraft: null,
+      openTicketDraft: (ticketDraft) => set({ newTicketOpen: true, ticketDraft }),
     }),
     { name: "zippy-ui", partialize: (s) => ({ orgId: s.orgId, collapsed: s.collapsed, split: s.split, hideProps: s.hideProps, favorites: s.favorites }) },
   ),

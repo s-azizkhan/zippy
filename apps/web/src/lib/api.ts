@@ -12,7 +12,7 @@ export const queryClient = new QueryClient({
 
 const OK: Record<string, string> = { POST: "Done", PATCH: "Saved", PUT: "Saved", DELETE: "Deleted" };
 
-async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function http<T>(method: string, path: string, body?: unknown, quiet?: boolean): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
@@ -22,14 +22,14 @@ async function http<T>(method: string, path: string, body?: unknown): Promise<T>
     const err = await res.json().catch(() => ({}));
     throw Object.assign(new Error(err.issues?.[0] ? `${err.issues[0].path.join(".")}: ${err.issues[0].message}` : (err.error ?? res.statusText)), { status: res.status });
   }
-  if (method !== "GET" && !/sync$|pick-folder$/.test(path)) toast.success(body && typeof body === "object" && "archived" in body ? (body.archived ? "Issue archived" : "Issue unarchived") : OK[method]);
+  if (method !== "GET" && !quiet && !/sync$|pick-folder$/.test(path)) toast.success(body && typeof body === "object" && "archived" in body ? (body.archived ? "Issue archived" : "Issue unarchived") : OK[method]);
   return res.status === 204 || res.status === 202 ? (undefined as T) : res.json();
 }
 
 export const api = {
   get: <T,>(p: string) => http<T>("GET", p),
-  post: <T,>(p: string, b: unknown = {}) => http<T>("POST", p, b),
-  patch: <T,>(p: string, b: unknown) => http<T>("PATCH", p, b),
+  post: <T,>(p: string, b: unknown = {}, quiet?: boolean) => http<T>("POST", p, b, quiet),
+  patch: <T,>(p: string, b: unknown, quiet?: boolean) => http<T>("PATCH", p, b, quiet),
   put: <T,>(p: string, b: unknown) => http<T>("PUT", p, b),
   del: (p: string) => http<void>("DELETE", p),
 };
@@ -62,6 +62,9 @@ export const useMcpServers = (orgId?: string) => useApiQuery<McpServer[]>(keys.r
 export const useAgents = (orgId?: string) => useApiQuery<Agent[]>(keys.res(orgId!, "agents"), orgId ? `/orgs/${orgId}/agents` : null);
 export const useTickets = (orgId?: string) => useApiQuery<Ticket[]>(keys.res(orgId!, "tickets"), orgId ? `/orgs/${orgId}/tickets` : null);
 export const useChats = (orgId?: string, archived = false) => useApiQuery<Ticket[]>(keys.res(orgId!, archived ? "chats-archived" : "chats"), orgId ? `/orgs/${orgId}/chats${archived ? "?archived=1" : ""}` : null);
+export type RunningItem = { agentId: string; ticket: { id: string; identifier: string; title: string; kind: "ticket" | "chat" }; costUsd: number };
+export const useRunning = (orgId?: string) =>
+  useQuery({ queryKey: keys.res(orgId!, "running"), queryFn: () => api.get<RunningItem[]>(`/orgs/${orgId}/running`), enabled: !!orgId, refetchInterval: 4000 });
 export const useInbox = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "inbox"), queryFn: () => api.get<InboxItem[]>(`/orgs/${orgId}/inbox`), enabled: !!orgId, refetchInterval: 15_000 });
 export const useDiff = (ticketId: string, enabled: boolean, merged = false) =>
