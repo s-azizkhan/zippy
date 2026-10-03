@@ -147,12 +147,12 @@ export function TicketsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
-        <h1 className="text-[13px] font-medium">{title}</h1>
+        <h1 className="shrink-0 text-[13px] font-medium">{title}</h1>
         {view !== "inbox" && (
           <div
             role="tablist"
             aria-label="Views"
-            className="flex items-center gap-1"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto overscroll-x-contain snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {TABS.filter((t) => (t.id !== "linear" || org.linearConnected) && (t.id !== "files" || folder)).map(
               (t) => (
@@ -167,7 +167,7 @@ export function TicketsPage() {
                     setParams(next);
                   }}
                   className={cn(
-                    "text-muted-foreground hover:text-foreground relative flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2 text-xs font-medium transition-colors",
+                    "text-muted-foreground hover:text-foreground relative flex h-6 shrink-0 snap-start items-center gap-1.5 rounded-md border border-transparent px-2 text-xs font-medium transition-colors",
                     tab.id === t.id && "text-foreground",
                   )}
                 >

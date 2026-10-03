@@ -12,6 +12,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches, useNavigate, useSearchParams } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
+import { MobileNav } from "@/components/mobile-nav";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LinearIssueModal } from "@/components/linear-issues";
@@ -165,7 +166,7 @@ function Sidebar() {
   const remove = useApiMutation((id: string) => api.del(`/workspaces/${id}`), [keys.res(org.id, "workspaces")]);
 
   return (
-    <aside className={cn("bg-sidebar/80 border-foreground/[0.07] relative m-2 mr-0 flex w-14 shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border px-2 py-2.5 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06)] backdrop-blur-xl transition-[width] duration-150 wide:w-60 wide:px-2.5", !collapsed && "sb-wide")} aria-label="Sidebar">
+    <aside className={cn("hidden md:flex bg-sidebar/80 border-foreground/[0.07] relative m-2 mr-0 w-14 shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border px-2 py-2.5 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06)] backdrop-blur-xl transition-[width] duration-150 wide:w-60 wide:px-2.5", !collapsed && "sb-wide")} aria-label="Sidebar">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(100%_100%_at_50%_0%,color-mix(in_oklab,var(--color-primary)_16%,transparent),transparent)]" />
 
       <div className="relative flex flex-col items-center gap-1 wide:flex-row wide:justify-between">
@@ -375,13 +376,13 @@ function Layout() {
   if (!org || onboardingOpen) return <Suspense fallback={null}><Onboarding onCancel={org ? () => setOnboardingOpen(false) : undefined} /></Suspense>;
 
   return (
-    <div className="bg-sidebar flex h-dvh">
+    <div className="bg-sidebar flex h-dvh max-md:bg-background">
       {title?.title && <title>{`${title.title} | Zippy - Zipper coworkers for your tickets`}</title>}
       <a href="#main" className="bg-background sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
         Skip to content
       </a>
       <Sidebar />
-      <main id="main" tabIndex={-1} className="bg-background relative m-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border outline-none">
+      <main id="main" tabIndex={-1} className="bg-background relative flex min-w-0 flex-1 flex-col overflow-hidden outline-none max-md:pt-[env(safe-area-inset-top)] max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:m-2 md:rounded-lg md:border">
         {system && !system.auth.loggedIn && (
           <div role="alert" className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-[13px] text-amber-800 dark:text-amber-300">
             <TerminalSquare className="size-4 shrink-0" aria-hidden />
@@ -392,6 +393,7 @@ function Layout() {
           <Outlet context={{ org }} />
         </motion.div>
       </main>
+      <MobileNav orgId={org.id} />
       <CommandPalette org={org} />
       {newTicketOpen && <Suspense fallback={null}><NewTicketDialog org={org} /></Suspense>}
       <LinearIssueModal />
@@ -431,7 +433,7 @@ export default function App() {
         <MotionConfig reducedMotion="user">
           <TooltipProvider delayDuration={400}>
             <RouterProvider router={router} />
-            <Toaster position="top-right" closeButton />
+            <Toaster position={innerWidth < 768 ? "top-center" : "top-right"} closeButton />
           </TooltipProvider>
         </MotionConfig>
       </QueryClientProvider>

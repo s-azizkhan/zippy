@@ -84,6 +84,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const { search } = useLocation();
   const [menu, setMenu] = useState<Menu>(null);
   const [tab, setTab] = useState<Tab>("activity");
+  const [sheet, setSheet] = useState(false);
   const { split: splitPref, toggleSplit, hideProps, toggleProps } = useUI();
   const split = splitPref && !embedded;
   const layout = useDefaultLayout({ id: "ticket-split", storage: localStorage });
@@ -172,6 +173,9 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
             </TooltipTrigger>
             <TooltipContent>Split view (\)</TooltipContent>
           </Tooltip>
+          <button aria-label="Properties" onClick={() => setSheet(true)} className="hover:bg-accent text-muted-foreground flex size-8 items-center justify-center rounded-md border lg:hidden">
+            <PanelRight className="size-4" aria-hidden />
+          </button>
           <Tooltip>
             <TooltipTrigger asChild>
               <button aria-label="Toggle properties" aria-pressed={!hideProps} onClick={toggleProps} className={cn("hover:bg-accent text-muted-foreground hover:text-foreground hidden size-7 items-center justify-center rounded-md border lg:flex", !hideProps && "bg-accent text-foreground")}>
@@ -224,7 +228,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
           )}
           {pipeline && ticket.stageId && ticket.status === "needs_input" && <GateBar ticket={ticket} pipeline={pipeline} />}
         </div>
-        {!hideProps && <Properties comments={comments} ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />}
+        {(!hideProps || sheet) && <Properties sheet={sheet} onClose={() => setSheet(false)} comments={comments} ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />}
       </div>
     </div>
   );
@@ -464,8 +468,10 @@ function Properties(props: {
   budgetUsd: number | null;
   menu: Menu;
   setMenu: (m: Menu) => void;
+  sheet: boolean;
+  onClose: () => void;
 }) {
-  const { comments, ticket, agents, sessions, pipeline, related, parent, subIssues, budgetUsd, menu, setMenu } = props;
+  const { sheet, onClose, comments, ticket, agents, sessions, pipeline, related, parent, subIssues, budgetUsd, menu, setMenu } = props;
   const spent = sessions.reduce((n, s) => n + s.costUsd, 0);
   const tokIn = sessions.reduce((n, s) => n + s.tokensIn, 0);
   const tokOut = sessions.reduce((n, s) => n + s.tokensOut, 0);
@@ -480,7 +486,9 @@ function Properties(props: {
   const sync = useLinearSync(ticket);
 
   return (
-    <aside className="border-foreground/[0.07] bg-card/40 relative m-2 ml-0 hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto rounded-2xl border px-3 py-4 text-[13px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)] lg:flex" aria-label="Issue properties">
+    <>
+    {sheet && <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm lg:hidden" onClick={onClose} aria-hidden />}
+    <aside className={cn("border-foreground/[0.07] bg-card/40 relative m-2 ml-0 hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto rounded-2xl border px-3 py-4 text-[13px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)] lg:flex", sheet && "glass-pop sheet-up max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-50 max-lg:m-0 max-lg:flex max-lg:max-h-[82dvh] max-lg:w-auto max-lg:rounded-b-none max-lg:rounded-t-3xl max-lg:pb-[calc(1rem+env(safe-area-inset-bottom))]")} aria-label="Issue properties">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(100%_100%_at_50%_0%,color-mix(in_oklab,var(--color-primary)_14%,transparent),transparent)]" />
       <div className="relative -mb-1 flex items-center justify-end gap-1.5">
         <span className="border-foreground/[0.07] bg-foreground/[0.04] mr-auto flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[11px]">
@@ -587,6 +595,7 @@ function Properties(props: {
         </PanelSection>
       )}
     </aside>
+    </>
   );
 }
 
