@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
-import { HUMAN, type Agent, type AgentSession, type Pipeline, type RelatedTicket, type Ticket } from "@zippy/shared";
+import { HUMAN, type Agent, type AgentSession, type Comment, type Pipeline, type RelatedTicket, type Ticket, type ToolPayload } from "@zippy/shared";
 import { Activity } from "@/components/activity";
 import { Changes } from "@/components/changes";
 import { Terminal } from "@/components/terminal";
@@ -215,7 +215,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
           )}
           {pipeline && ticket.stageId && ticket.status === "needs_input" && <GateBar ticket={ticket} pipeline={pipeline} />}
         </div>
-        <Properties ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />
+        <Properties comments={comments} ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />
       </div>
     </div>
   );
@@ -365,6 +365,38 @@ function GateBar({ ticket, pipeline }: { ticket: Ticket; pipeline: Pipeline }) {
   );
 }
 
+const TOOL_BY_KIND: Record<string, string> = { execute: "Bash", read: "Read", edit: "Edit", search: "Search", fetch: "Fetch", delete: "Delete", move: "Move", think: "Think" };
+
+/** Tool comments carry the call's title ("Read src/a.ts"); group by tool, not by arguments. */
+const toolName = (p: ToolPayload) => (/^mcp__|^\S+$/.test(p.title) ? p.title : (p.kind && TOOL_BY_KIND[p.kind]) || p.title.split(" ")[0]!);
+
+function ToolCalls({ comments }: { comments: Comment[] }) {
+  const [open, setOpen] = useState(false);
+  const counts = new Map<string, number>();
+  for (const c of comments) if (c.kind === "tool") counts.set(toolName(c.payload as ToolPayload), (counts.get(toolName(c.payload as ToolPayload)) ?? 0) + 1);
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  if (!total) return null;
+  return (
+    <div>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs tabular-nums transition">
+        <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} aria-hidden /> {total} tool call{total === 1 ? "" : "s"}
+      </button>
+      {open && (
+        <ul className="mt-1 grid gap-0.5 text-xs">
+          {[...counts].sort((a, b) => b[1] - a[1]).map(([name, n]) => (
+            <li key={name} className="flex items-center justify-between gap-3 pl-4">
+              <span className="truncate font-mono" title={name}>
+                {name.replace(/^mcp__/, "").replace("__", " · ")}
+              </span>
+              <span className="text-muted-foreground tabular-nums">{n}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function PanelSection({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section aria-label={title} className="grid grid-cols-[minmax(0,1fr)] gap-1">
@@ -412,6 +444,7 @@ function CopyBtn({ label, icon: Icon, onClick }: { label: string; icon: typeof C
 }
 
 function Properties(props: {
+  comments: Comment[];
   ticket: Ticket;
   agents: Agent[];
   sessions: AgentSession[];
@@ -423,7 +456,7 @@ function Properties(props: {
   menu: Menu;
   setMenu: (m: Menu) => void;
 }) {
-  const { ticket, agents, sessions, pipeline, related, parent, subIssues, budgetUsd, menu, setMenu } = props;
+  const { comments, ticket, agents, sessions, pipeline, related, parent, subIssues, budgetUsd, menu, setMenu } = props;
   const spent = sessions.reduce((n, s) => n + s.costUsd, 0);
   const tokIn = sessions.reduce((n, s) => n + s.tokensIn, 0);
   const tokOut = sessions.reduce((n, s) => n + s.tokensOut, 0);
@@ -494,7 +527,7 @@ function Properties(props: {
       <TicketLinks title="Sub-issues" items={subIssues} search={search} />
       <TicketLinks title="Related" items={related.filter((r) => r.id !== parent?.id && !subIssues.some((c) => c.id === r.id))} search={search} />
 
-      {(spent > 0 || tokIn + tokOut + tokCacheRead + tokCacheWrite > 0 || budgetUsd) && (
+      {(spent > 0 || tokIn + tokOut + tokCacheRead + tokCacheWrite > 0 || comments.some((c) => c.kind === "tool") || budgetUsd) && (
         <PanelSection title="Cost">
           <div className="grid gap-1.5 px-2">
             <p className="tabular-nums">
@@ -519,6 +552,7 @@ function Properties(props: {
               <span>{tok(tokCacheWrite)} cache write</span>
               <span>{tok(tokOut)} out</span>
             </p>
+            <ToolCalls comments={comments} />
           </div>
         </PanelSection>
       )}
