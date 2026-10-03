@@ -1,10 +1,10 @@
-import { Activity, Bot, Inbox, Layers, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Search, Settings, Workflow } from "lucide-react";
+import { Activity, Bot, Inbox, Layers, Check, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Search, Settings, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useInbox, useRunning, useWorkspaces } from "@/lib/api";
+import { useInbox, useOrgs, useRunning, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -61,11 +61,13 @@ function Item({ icon: Icon, label, color, on, count, to, onClick }: { icon: Icon
 
 export function MobileNav({ orgId }: { orgId: string }) {
   const { pathname, search } = useLocation();
-  const { setNewTicketOpen, setPaletteOpen } = useUI();
+  const { setNewTicketOpen, setPaletteOpen, setOrgId, setOnboardingOpen } = useUI();
+  const { data: orgs = [] } = useOrgs();
   const { data: inbox = [] } = useInbox(orgId);
   const { data: running = [] } = useRunning(orgId);
   const { data: folders = [] } = useWorkspaces(orgId);
   const [more, setMore] = useState(false);
+  const [orgOpen, setOrgOpen] = useState(false);
   const moreOn = MORE.some((m) => pathname.startsWith(m.to));
   const issuesOn = (pathname === "/" || pathname.startsWith("/t/")) && !search.includes("view=");
 
@@ -106,6 +108,30 @@ export function MobileNav({ orgId }: { orgId: string }) {
               </Link>
             ))}
           </div>
+          <section className="grid gap-1.5">
+            <button onClick={() => setOrgOpen(!orgOpen)} aria-expanded={orgOpen} className="text-muted-foreground flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wider uppercase">
+              Organization
+              <span className="text-foreground/80 normal-case tracking-normal">· {orgs.find((o) => o.id === orgId)?.name}</span>
+              <ChevronRight className={cn("ml-auto size-3.5 transition-transform", orgOpen && "rotate-90")} aria-hidden />
+            </button>
+            {orgOpen && <div className="glass sheet-up divide-border/60 divide-y overflow-hidden rounded-2xl">
+              {orgs.map((o) => (
+                <button key={o.id} onClick={() => (setOrgId(o.id), setMore(false))} className="active:bg-accent/60 flex w-full items-center gap-3 px-3 py-2.5 text-left text-[13px] font-medium">
+                  <span className="from-primary flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br to-cyan-500 text-xs font-bold text-white" aria-hidden>
+                    {o.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  {o.id === orgId && <Check className="text-primary size-4 shrink-0" aria-label="Current" />}
+                </button>
+              ))}
+              <button onClick={() => (setMore(false), setOnboardingOpen(true))} className="text-muted-foreground active:bg-accent/60 flex w-full items-center gap-3 px-3 py-2.5 text-left text-[13px] font-medium">
+                <span className="border-foreground/20 flex size-8 shrink-0 items-center justify-center rounded-lg border border-dashed">
+                  <Plus className="size-4" aria-hidden />
+                </span>
+                New organization
+              </button>
+            </div>}
+          </section>
           {folders.length > 0 && (
             <section className="grid gap-1.5">
               <h3 className="text-muted-foreground px-1 text-[11px] font-medium tracking-wider uppercase">Files · {folders.length}</h3>
