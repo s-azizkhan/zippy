@@ -134,7 +134,7 @@ export function TicketsPage() {
             {pill && (
               <span
                 aria-hidden
-                className="bg-accent border-border absolute top-0 h-6 rounded-md border [transition:left_300ms_cubic-bezier(.34,1.56,.64,1),width_460ms_cubic-bezier(.34,1.56,.64,1)]"
+                className="bg-accent border-border absolute top-0 h-6 rounded-md border motion-safe:[transition:left_300ms_cubic-bezier(.34,1.56,.64,1),width_460ms_cubic-bezier(.34,1.56,.64,1)]"
                 style={pill}
               />
             )}
