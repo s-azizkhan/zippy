@@ -1,6 +1,6 @@
-import { Archive, ArchiveRestore, ChevronDown } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, CircleDot, Folder, Layers, ListTodo, Waypoints } from "lucide-react";
 import { PlusIcon as Plus } from "@/components/ui/plus";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Agent, Ticket, TicketStatus } from "@zippy/shared";
 import { FileBrowser } from "@/components/file-browser";
@@ -22,16 +22,17 @@ import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 
 const TABS = [
-  { id: "all", label: "All issues", statuses: null },
+  { id: "all", label: "All issues", icon: Layers, statuses: null },
   {
     id: "active",
     label: "Active",
+    icon: CircleDot,
     statuses: ["needs_input", "in_review", "in_progress", "blocked", "todo"],
   },
-  { id: "backlog", label: "Backlog", statuses: ["backlog"] },
-  { id: "linear", label: "Linear", statuses: null },
-  { id: "archived", label: "Archived", statuses: null },
-  { id: "files", label: "Files", statuses: null },
+  { id: "backlog", label: "Backlog", icon: ListTodo, statuses: ["backlog"] },
+  { id: "linear", label: "Linear", icon: Waypoints, statuses: null },
+  { id: "archived", label: "Archived", icon: Archive, statuses: null },
+  { id: "files", label: "Files", icon: Folder, statuses: null },
 ] as const;
 
 const INBOX: TicketStatus[] = ["needs_input", "in_review"];
@@ -53,7 +54,7 @@ export function useOrderedTickets() {
         t.id === params.get("tab") &&
         (t.id !== "linear" || org.linearConnected) &&
         (t.id !== "files" || !!folder),
-    ) ?? TABS[0];
+    ) ?? TABS[1];
   const ordered = useMemo(() => {
     let rows = (tickets ?? []).filter((t) => t.archived === (tab.id === "archived"));
     if (folder)
@@ -101,6 +102,12 @@ export function TicketsPage() {
   const [params, setParams] = useSearchParams();
   const [closed, setClosed] = useState<Set<TicketStatus>>(new Set());
   useRowKeys();
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [pill, setPill] = useState<{ left: number; width: number }>();
+  useLayoutEffect(() => {
+    const el = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
+  }, [tab.id, org.linearConnected, folder, view]);
 
   const title =
     view === "inbox"
@@ -121,8 +128,16 @@ export function TicketsPage() {
           <div
             role="tablist"
             aria-label="Views"
-            className="flex items-center gap-1"
+            ref={tabsRef}
+            className="relative flex items-center gap-1"
           >
+            {pill && (
+              <span
+                aria-hidden
+                className="bg-accent border-border absolute top-0 h-6 rounded-md border [transition:left_300ms_cubic-bezier(.34,1.56,.64,1),width_460ms_cubic-bezier(.34,1.56,.64,1)]"
+                style={pill}
+              />
+            )}
             {TABS.filter((t) => (t.id !== "linear" || org.linearConnected) && (t.id !== "files" || folder)).map(
               (t) => (
                 <button
@@ -131,16 +146,16 @@ export function TicketsPage() {
                   aria-selected={tab.id === t.id}
                   onClick={() => {
                     const next = new URLSearchParams(params);
-                    if (t.id === "all") next.delete("tab");
+                    if (t.id === "active") next.delete("tab");
                     else next.set("tab", t.id);
                     setParams(next);
                   }}
                   className={cn(
-                    "text-muted-foreground hover:text-foreground h-6 rounded-md border border-transparent px-2 text-xs font-medium",
-                    tab.id === t.id &&
-                      "bg-accent text-foreground border-border",
+                    "text-muted-foreground hover:text-foreground relative flex h-6 items-center gap-1.5 rounded-md border border-transparent px-2 text-xs font-medium transition-colors",
+                    tab.id === t.id && "text-foreground",
                   )}
                 >
+                  <t.icon className="size-3.5" aria-hidden />
                   {t.label}
                 </button>
               ),
@@ -260,7 +275,7 @@ function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; 
         <span className="sr-only">{STATUS[t.status].label}:</span>
         <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
         <LabelChips orgId={orgId} ids={t.labelIds} className="hidden lg:flex" />
-        <span className="text-muted-foreground hidden w-14 text-right text-xs sm:inline">
+        <span className="text-muted-foreground hidden w-14 text-right text-xs group-hover/row:invisible sm:inline">
           {shortDate.format(new Date(t.createdAt))}
         </span>
         <AgentAvatar agent={agent} />
@@ -273,7 +288,7 @@ function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; 
           await api.patch(`/tickets/${t.id}`, { archived: !t.archived });
           queryClient.invalidateQueries({ queryKey: keys.res(orgId, "tickets") });
         }}
-        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-12 hidden -translate-y-1/2 rounded p-1 group-hover/row:block"
+        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-12 hidden -translate-y-1/2 rounded p-1 group-hover/row:block focus-visible:block"
       >
         {t.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
       </button>
