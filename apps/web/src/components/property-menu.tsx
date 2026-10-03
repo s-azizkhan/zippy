@@ -57,7 +57,7 @@ export function PropertyMenu(props: Props) {
       >
         {props.trigger}
       </PopoverTrigger>
-      <PopoverContent align={props.align ?? "start"} className={cn("w-64 p-0", props.contentClassName)}>
+      <PopoverContent align={props.align ?? "start"} className={cn("w-72 p-0", props.contentClassName)}>
         <Command
           onKeyDown={(e) => {
             if (props.numbered !== false && !search && /^[1-9]$/.test(e.key)) {
@@ -74,8 +74,8 @@ export function PropertyMenu(props: Props) {
                 {props.options.map((o, i) => (o.group ?? "") === g && (
                 <CommandItem key={o.value} value={`${o.label} ${o.value}`} onSelect={() => pick(o.value)} className="gap-2 text-[13px]">
                   {props.multi && (
-                    <span className={cn("flex size-3.5 items-center justify-center rounded-[3px] border", selected(o.value) && "border-primary bg-primary text-white")} aria-hidden>
-                      {selected(o.value) && <Check className="size-2.5" />}
+                    <span className={cn("flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-[4px] border", selected(o.value) && "border-primary bg-primary text-white")} aria-hidden>
+                      {selected(o.value) && <Check className="size-3 [&>svg]:block" />}
                     </span>
                   )}
                   {o.icon}
