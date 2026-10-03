@@ -51,7 +51,7 @@ export function PropertyMenu(props: Props) {
         id={props.id}
         aria-label={props.triggerLabel}
         className={cn(
-          "hover:bg-accent focus-visible:ring-ring/60 flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none focus-visible:ring-2",
+          "hover:bg-primary/[0.08] focus-visible:ring-ring/60 data-[state=open]:bg-primary/[0.12] flex h-8 min-w-0 items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2",
           props.className,
         )}
       >

@@ -406,14 +406,14 @@ function ToolCalls({ comments }: { comments: Comment[] }) {
   );
 }
 
-function PanelSection({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+function PanelSection({ title, children, action, card }: { title: string; children: React.ReactNode; action?: React.ReactNode; card?: boolean }) {
   return (
     <section aria-label={title} className="grid grid-cols-[minmax(0,1fr)] gap-1">
-      <h2 className="text-muted-foreground flex h-7 items-center justify-between px-2 text-xs font-medium">
+      <h2 className="text-muted-foreground/80 flex h-6 items-center justify-between px-2 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">
         {title}
         {action}
       </h2>
-      {children}
+      {card ? <div className="border-foreground/[0.07] bg-foreground/[0.03] grid gap-px rounded-xl border p-1">{children}</div> : children}
     </section>
   );
 }
@@ -427,7 +427,7 @@ function TicketLinks({ title, items, search }: { title: string; items: RelatedTi
       <ul className="grid grid-cols-[minmax(0,1fr)]">
         {items.map((r) => (
           <li key={r.id}>
-            <Link to={`/t/${r.identifier}${search}`} className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2">
+            <Link to={`/t/${r.identifier}${search}`} className="hover:bg-primary/[0.08] flex h-8 items-center gap-2 rounded-lg px-2 transition-colors">
               <StatusIcon status={r.status} />
               <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">{r.identifier}</span>
               <span className="truncate">{r.title}</span>
@@ -443,7 +443,7 @@ function CopyBtn({ label, icon: Icon, onClick }: { label: string; icon: typeof C
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button aria-label={label} onClick={onClick} className="bg-accent/50 text-muted-foreground hover:bg-accent hover:text-foreground flex size-8 items-center justify-center rounded-full">
+        <button aria-label={label} onClick={onClick} className="border-foreground/[0.07] bg-foreground/[0.04] text-muted-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary flex size-8 items-center justify-center rounded-xl border transition-all hover:-translate-y-px">
           <Icon className="size-4" aria-hidden />
         </button>
       </TooltipTrigger>
@@ -480,10 +480,11 @@ function Properties(props: {
   const sync = useLinearSync(ticket);
 
   return (
-    <aside className="hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto border-l px-3 py-5 text-[13px] lg:flex" aria-label="Issue properties">
-      <div className="-mb-2 flex items-center justify-end gap-2">
-        <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs">
-          <SourceIcon linear={!!ticket.linearId} /> {ticket.linearId ? "Linear" : "Zippy"}
+    <aside className="border-foreground/[0.07] bg-card/40 relative m-2 ml-0 hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto rounded-2xl border px-3 py-4 text-[13px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)] lg:flex" aria-label="Issue properties">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(100%_100%_at_50%_0%,color-mix(in_oklab,var(--color-primary)_14%,transparent),transparent)]" />
+      <div className="relative -mb-1 flex items-center justify-end gap-1.5">
+        <span className="border-foreground/[0.07] bg-foreground/[0.04] mr-auto flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[11px]">
+          <SourceIcon linear={!!ticket.linearId} /> {ticket.identifier}
         </span>
         <CopyBtn label="Copy link" icon={Link2} onClick={() => copy(location.href, "Link")} />
         <CopyBtn label="Copy ID" icon={Copy} onClick={() => copy(ticket.identifier, "ID")} />
@@ -500,7 +501,7 @@ function Properties(props: {
               return (
                 <li key={f.workspaceId}>
                   {f.prUrl ? (
-                    <a href={f.prUrl} target="_blank" rel="noreferrer" className="hover:bg-accent flex h-8 items-center gap-2 rounded-md px-2" title={label}>
+                    <a href={f.prUrl} target="_blank" rel="noreferrer" className="hover:bg-primary/[0.08] flex h-8 items-center gap-2 rounded-lg px-2 transition-colors" title={label}>
                       <Icon className={cn("size-4 shrink-0", color)} aria-hidden /> <span className="truncate">{label}</span>
                       <span className="sr-only">({f.prState?.toLowerCase() ?? "open"} pull request, opens in a new tab)</span>
                     </a>
@@ -516,7 +517,7 @@ function Properties(props: {
         </PanelSection>
       )}
 
-      <PanelSection title="Properties">
+      <PanelSection title="Properties" card>
         <StatusPicker {...ctl("status")} value={ticket.status} onChange={(status) => patch.mutate({ status })} />
         <PriorityPicker {...ctl("priority")} value={ticket.priority} onChange={(priority) => patch.mutate({ priority })} />
         <AssigneePicker {...ctl("assignee")} orgId={org.id} value={ticket.assigneeHuman ? HUMAN : ticket.assigneeAgentId} onChange={(v) => patch.mutate({ assigneeAgentId: v === HUMAN ? null : v, assigneeHuman: v === HUMAN })} />
@@ -540,7 +541,7 @@ function Properties(props: {
         <PanelSection title="Cost">
           <div className="grid gap-1.5 px-2">
             <p className="tabular-nums">
-              {usd(spent)}
+              <span className="font-mono text-lg font-semibold">{usd(spent)}</span>
               {budgetUsd ? <span className="text-muted-foreground"> of {usd(budgetUsd)} budget</span> : <span className="text-muted-foreground"> spent</span>}
             </p>
             {budgetUsd && (
@@ -550,9 +551,9 @@ function Properties(props: {
                 aria-valuemin={0}
                 aria-valuemax={budgetUsd}
                 aria-valuenow={Number(spent.toFixed(2))}
-                className="bg-muted h-1.5 overflow-hidden rounded-full"
+                className="bg-foreground/[0.08] h-1.5 overflow-hidden rounded-full"
               >
-                <div className={cn("h-full rounded-full", spent >= budgetUsd ? "bg-[#eb5757]" : spent >= budgetUsd * 0.8 ? "bg-[#f2994a]" : "bg-primary")} style={{ width: `${Math.min(100, (spent / budgetUsd) * 100)}%` }} />
+                <div className={cn("h-full rounded-full", spent >= budgetUsd ? "bg-[#eb5757]" : spent >= budgetUsd * 0.8 ? "bg-[#f2994a]" : "from-primary bg-gradient-to-r to-cyan-400 shadow-[0_0_8px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]")} style={{ width: `${Math.min(100, (spent / budgetUsd) * 100)}%` }} />
               </div>
             )}
             <p className="text-muted-foreground flex flex-wrap gap-x-3 text-xs tabular-nums" title={`${tokIn.toLocaleString()} new input, ${tokCacheRead.toLocaleString()} cache read, ${tokCacheWrite.toLocaleString()} cache write, ${tokOut.toLocaleString()} output`}>
@@ -618,7 +619,7 @@ function PipelineSection({ ticket, pipeline, agents }: { ticket: Ticket; pipelin
         {pipeline.stages.map((s) => {
           const state = s.position < currentPos ? "done" : s.position === currentPos ? "current" : "todo";
           return (
-            <li key={s.id} aria-current={state === "current" ? "step" : undefined} className={cn("flex h-8 items-center gap-2 rounded-md px-2", state === "current" && "bg-accent")}>
+            <li key={s.id} aria-current={state === "current" ? "step" : undefined} className={cn("flex h-8 items-center gap-2 rounded-lg px-2", state === "current" && "bg-[linear-gradient(90deg,color-mix(in_oklab,#f2c94c_16%,transparent),transparent)] ring-1 ring-[#f2c94c]/25")}>
               <span
                 aria-hidden
                 className={cn(
