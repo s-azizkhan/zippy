@@ -218,6 +218,7 @@ app.get("/tickets/:id", async (c) => {
 
 app.patch("/tickets/:id", async (c) => {
   const { workspaceIds, ...patch } = await body(c, ticketPatch);
+  const [before] = await db.select({ agent: tickets.assigneeAgentId }).from(tickets).where(eq(tickets.id, c.req.param("id")));
   const [t] = await db
     .update(tickets)
     .set({ ...patch, ...(patch.assigneeAgentId && { assigneeHuman: false }), ...(patch.assigneeHuman && { assigneeAgentId: null }), updatedAt: new Date() })
@@ -225,6 +226,7 @@ app.patch("/tickets/:id", async (c) => {
     .returning();
   if (!t) return c.notFound();
   if (workspaceIds) await setFolders(t.id, workspaceIds);
+  if (patch.assigneeAgentId && patch.assigneeAgentId !== before?.agent) runAgent(t.id, patch.assigneeAgentId, "Start work on this ticket.").catch(console.error);
   return c.json(await emitTicket(t.id));
 });
 

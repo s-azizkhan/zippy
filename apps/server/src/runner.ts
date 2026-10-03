@@ -188,10 +188,13 @@ const overBudgetNote = (ticketId: string) =>
     setStatus(ticketId, "needs_input"),
   );
 
+/** Zipper-driven moves that hand the ticket to a human; starting (in_progress) or cancelling (todo) keeps the assignee. */
+const HANDOFF = new Set<TicketStatus>(["in_review", "needs_input", "blocked"]);
+
 export async function setStatus(ticketId: string, to: TicketStatus) {
   const [prev] = await db.select({ status: tickets.status }).from(tickets).where(eq(tickets.id, ticketId));
   if (!prev || prev.status === to) return;
-  const [t] = await db.update(tickets).set({ status: to, updatedAt: new Date() }).where(eq(tickets.id, ticketId)).returning();
+  const [t] = await db.update(tickets).set({ status: to, ...(HANDOFF.has(to) && { assigneeAgentId: null, assigneeHuman: true }), updatedAt: new Date() }).where(eq(tickets.id, ticketId)).returning();
   const folders = (await foldersOf(ticketId)).map((f) => f.folder);
   emit(ticketId, { type: "ticket", ticket: { ...t, folders } });
   await addComment(ticketId, null, "status", { from: prev.status, to });
