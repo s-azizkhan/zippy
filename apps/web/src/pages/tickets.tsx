@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ChevronDown, ListFilter, ListTodo } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ListFilter, ListTodo, Star } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { FolderOpenIcon } from "@/components/ui/folder-open";
 import { LayersIcon } from "@/components/ui/layers";
@@ -57,6 +57,8 @@ export function useOrderedTickets() {
   const view = params.get("view");
   const who = params.get("who");
   const q = (params.get("q") ?? "").trim().toLowerCase();
+  const fav = params.get("fav") === "1";
+  const favorites = useUI((s) => s.favorites);
   const tab =
     TABS.find(
       (t) =>
@@ -71,6 +73,7 @@ export function useOrderedTickets() {
         t.folders.some((f) => f.workspaceId === folder),
       );
     if (who) rows = rows.filter((t) => (who === "agent" || who === "human" ? !!t.assigneeAgentId === (who === "agent") : t.assigneeAgentId === who));
+    if (fav) rows = rows.filter((t) => favorites.includes(t.id));
     if (q)
       rows = rows.filter((t) =>
         `${t.identifier} ${t.title}`.toLowerCase().includes(q),
@@ -81,8 +84,8 @@ export function useOrderedTickets() {
         (tab.statuses as readonly string[]).includes(t.status),
       );
     return STATUS_ORDER.flatMap((s) => rows.filter((t) => t.status === s));
-  }, [tickets, folder, view, tab, who, q]);
-  return { ordered, isLoading, folder, view, tab, who, q };
+  }, [tickets, folder, view, tab, who, q, fav, favorites]);
+  return { ordered, isLoading, folder, view, tab, who, q, fav };
 }
 
 /** j/k move focus between rows. */
@@ -109,7 +112,7 @@ function useRowKeys() {
 
 export function TicketsPage() {
   const org = useOrg();
-  const { ordered, isLoading, folder, view, tab, who, q } = useOrderedTickets();
+  const { ordered, isLoading, folder, view, tab, who, q, fav } = useOrderedTickets();
   const { data: agents = [] } = useAgents(org.id);
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const setNewTicketOpen = useUI((s) => s.setNewTicketOpen);
@@ -208,6 +211,15 @@ export function TicketsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <button
+              aria-label="Show favorites only"
+              aria-pressed={fav}
+              title="Favorites"
+              onClick={() => setParam("fav", fav ? "" : "1")}
+              className={cn("text-muted-foreground hover:text-foreground flex size-6 items-center justify-center rounded-md border", fav && "border-yellow-400/50")}
+            >
+              <Star className={cn("size-3.5", fav && "fill-yellow-400 text-yellow-400")} aria-hidden />
+            </button>
             <Input
               type="search"
               aria-label="Search issues"
@@ -317,6 +329,7 @@ export function TicketsPage() {
 }
 
 function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; i: number }) {
+  const fav = useUI((s) => s.favorites.includes(t.id));
   return (
     <li className="rise group/row relative" style={{ "--i": i } as React.CSSProperties}>
       <Link
@@ -336,6 +349,7 @@ function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; 
         <StatusIcon status={t.status} />
         <span className="sr-only">{STATUS[t.status].label}:</span>
         <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
+        {fav && <Star className="size-3.5 shrink-0 fill-yellow-400 text-yellow-400" aria-label="Favorite" />}
         <LabelChips orgId={orgId} ids={t.labelIds} className="hidden lg:flex" />
         <span className="text-muted-foreground hidden w-14 text-right text-xs group-hover/row:invisible sm:inline">
           {shortDate.format(new Date(t.createdAt))}
