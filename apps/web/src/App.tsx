@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Bot as BotIcon, ChevronDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { Bot as BotIcon, ChevronDown, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
 import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
 import { PlusIcon as Plus } from "@/components/ui/plus";
@@ -55,39 +55,56 @@ function useShortcuts() {
 
 const navCls = (active: boolean) =>
   cn(
-    "text-sidebar-foreground hover:bg-sidebar-accent flex h-7 items-center gap-2.5 rounded-md px-2 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-    active && "bg-sidebar-accent text-sidebar-accent-foreground",
+    "group relative flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/60",
+    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
   );
 
-function NavItem({ to, icon: Icon, label, count, match }: { to: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; count?: number; match?: boolean }) {
+function NavItem({ to, icon: Icon, label, count, match, color = "#7c87f0" }: { to: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; count?: number; match?: boolean; color?: string }) {
   return (
-    <NavLink to={to} end className={({ isActive }) => cn("group", navCls(match ?? isActive))} aria-current={match ? "page" : undefined}>
-      <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-      <span className="sr-only flex-1 truncate wide:not-sr-only">{label}</span>
-      {!!count && (
-        <span key={count} className="pop text-muted-foreground hidden text-xs tabular-nums wide:inline" aria-label={`${count} waiting`}>
-          {count}
-        </span>
-      )}
+    <NavLink to={to} end aria-current={match ? "page" : undefined} style={{ "--c": color } as React.CSSProperties} className={({ isActive }) => navCls(match ?? isActive)}>
+      {({ isActive }) => {
+        const on = match ?? isActive;
+        return (
+          <>
+            {on ? (
+              <motion.span layoutId="nav-active" transition={{ type: "spring", stiffness: 500, damping: 38 }} className="absolute inset-0 rounded-lg bg-[linear-gradient(90deg,color-mix(in_oklab,var(--c)_20%,transparent),color-mix(in_oklab,var(--c)_5%,transparent))] ring-1 ring-[color-mix(in_oklab,var(--c)_30%,transparent)]">
+                <span className="absolute top-2 bottom-2 -left-px w-0.5 rounded-full bg-[var(--c)] shadow-[0_0_10px_1px_var(--c)]" />
+              </motion.span>
+            ) : (
+              <span className="absolute inset-0 rounded-lg bg-[color-mix(in_oklab,var(--c)_10%,transparent)] opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+            )}
+            <Icon className={cn("relative size-4 shrink-0 transition-all duration-200 group-hover:-rotate-6 group-hover:scale-110 group-hover:text-[var(--c)]", on && "text-[var(--c)] drop-shadow-[0_0_6px_var(--c)]")} strokeWidth={1.75} aria-hidden />
+            <span className="sr-only relative flex-1 truncate wide:not-sr-only">{label}</span>
+            {!!count && (
+              <span key={count} className="pop relative bg-[color-mix(in_oklab,var(--c)_18%,transparent)] text-[var(--c)] hidden min-w-5 rounded-full px-1.5 text-center text-[11px] leading-5 font-semibold tabular-nums wide:inline" aria-label={`${count} waiting`}>
+                {count}
+              </span>
+            )}
+          </>
+        );
+      }}
     </NavLink>
   );
 }
 
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+const rail = "hidden wide:block";
+
+function Section({ title, action, rail: railHidden, children }: { title: string; action?: React.ReactNode; rail?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="hidden wide:block">
-      <div className="flex items-center justify-between">
+    <div className={cn(railHidden && rail)}>
+      <div className="bg-border mx-2 mb-2 h-px wide:hidden" />
+      <div className="hidden items-center justify-between wide:flex">
         <button
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="text-muted-foreground hover:text-foreground flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium"
+          className="text-muted-foreground/80 hover:text-foreground flex h-6 items-center gap-1 rounded-md px-2.5 font-mono text-[10px] font-medium tracking-[0.14em] uppercase"
         >
           {title} <ChevronDown className={cn("size-3 transition-transform", !open && "-rotate-90")} aria-hidden />
         </button>
         {action}
       </div>
-      {open && <div className="grid gap-px">{children}</div>}
+      <div className={cn("grid gap-0.5", !open && "wide:hidden")}>{children}</div>
     </div>
   );
 }
@@ -98,33 +115,35 @@ const left = (iso: string) => {
 };
 
 const WINDOWS = [
-  { k: "five_hour", title: "Session Usage", sub: "5-hour rolling window", ms: 5 * 3600_000 },
-  { k: "seven_day", title: "All models", sub: "Weekly", ms: 7 * 86400_000 },
+  { k: "five_hour", title: "Session · 5h", ms: 5 * 3600_000 },
+  { k: "seven_day", title: "Week · all models", ms: 7 * 86400_000 },
 ] as const;
 
 function UsageMeter() {
   const { data } = useUsage();
   if (!data) return null;
   return (
-    <div className="hidden gap-2 pb-1 wide:grid" aria-label="Claude usage">
-      {WINDOWS.map(({ k, title, sub, ms }) => {
+    <div className="border-foreground/[0.07] bg-foreground/[0.03] mb-1 hidden gap-3 rounded-xl border p-3 wide:grid" aria-label="Claude usage">
+      {WINDOWS.map(({ k, title, ms }) => {
         const w = data[k];
         if (!w) return null;
         const pct = Math.min(100, Math.round(w.utilization));
         const elapsed = Math.min(100, Math.max(0, 100 - ((Date.parse(w.resets_at) - Date.now()) / ms) * 100));
         const hot = pct >= 90;
         return (
-          <div key={k} className="border-border rounded-lg border px-3 py-2" title={`Resets ${new Date(w.resets_at).toLocaleString()}`}>
+          <div key={k} title={`Resets ${new Date(w.resets_at).toLocaleString()}`}>
             <div className="flex items-baseline justify-between">
-              <span className="text-[13px] font-semibold">{title}</span>
-              <span className={cn("text-[13px] font-semibold", hot ? "text-destructive" : "text-primary")}>{pct}%</span>
+              <span className="text-muted-foreground text-[11px] font-medium">{title}</span>
+              <span className={cn("font-mono text-[11px] font-semibold tabular-nums", hot ? "text-destructive" : "text-foreground")}>{pct}%</span>
             </div>
-            <div className="text-muted-foreground text-[11px]">{sub}</div>
-            <div className="bg-sidebar-accent relative my-2 h-1 rounded-full">
-              <div className={cn("h-full rounded-full", hot ? "bg-destructive" : "bg-primary")} style={{ width: `${pct}%` }} />
-              <div className="absolute -top-0.5 h-2 w-0.5 rounded-full bg-foreground/60" style={{ left: `${elapsed}%` }} />
+            <div className="bg-foreground/[0.08] relative mt-1.5 h-1 rounded-full">
+              <div
+                className={cn("h-full rounded-full", hot ? "bg-destructive shadow-[0_0_8px_var(--color-destructive)]" : "from-primary bg-gradient-to-r to-cyan-400 shadow-[0_0_8px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]")}
+                style={{ width: `${pct}%` }}
+              />
+              <div className="bg-foreground/50 absolute -top-0.5 h-2 w-px rounded-full" style={{ left: `${elapsed}%` }} />
             </div>
-            <div className="text-muted-foreground text-[11px]">Resets in {left(w.resets_at)}</div>
+            <div className="text-muted-foreground/70 mt-1 font-mono text-[10px]">resets {left(w.resets_at)}</div>
           </div>
         );
       })}
@@ -149,57 +168,61 @@ function Sidebar() {
   const remove = useApiMutation((id: string) => api.del(`/workspaces/${id}`), [keys.res(org.id, "workspaces")]);
 
   return (
-    <aside className={cn("bg-sidebar flex w-14 shrink-0 flex-col gap-4 px-2 py-2 transition-[width] duration-150 wide:w-60 wide:px-3", !collapsed && "sb-wide")} aria-label="Sidebar">
-      <div className="flex flex-col items-center gap-1 wide:flex-row wide:justify-between">
-        <Link to="/" className="hover:bg-sidebar-accent flex h-8 items-center gap-2 rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring/60" aria-label="Zippy home">
+    <aside className={cn("bg-sidebar/80 border-foreground/[0.07] relative m-2 mr-0 flex w-14 shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border px-2 py-2.5 shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06)] backdrop-blur-xl transition-[width] duration-150 wide:w-60 wide:px-2.5", !collapsed && "sb-wide")} aria-label="Sidebar">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(100%_100%_at_50%_0%,color-mix(in_oklab,var(--color-primary)_16%,transparent),transparent)]" />
+
+      <div className="relative flex flex-col items-center gap-1 wide:flex-row wide:justify-between">
+        <Link to="/" className="hover:bg-foreground/[0.05] flex h-8 items-center gap-2 rounded-lg px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring/60" aria-label="Zippy home">
           <img src="/favicon.svg" alt="" className="size-6 shrink-0" />
-          <span className="hidden text-base font-bold tracking-tight wide:inline">Zippy</span>
+          <span className="hidden text-[15px] font-bold tracking-tight wide:inline">Zippy</span>
         </Link>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={toggleCollapsed} className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground hidden size-7 items-center justify-center rounded-md md:flex">
+            <button aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={toggleCollapsed} className="text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground hidden size-7 items-center justify-center rounded-lg md:flex">
               {collapsed ? <PanelLeftOpen className="size-4" aria-hidden /> : <PanelLeftClose className="size-4" aria-hidden />}
             </button>
           </TooltipTrigger>
           <TooltipContent>{collapsed ? "Expand" : "Collapse"} ⌘B</TooltipContent>
         </Tooltip>
       </div>
-      <div className="flex items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger className="hover:bg-sidebar-accent focus-visible:ring-ring/60 flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-[13px] font-semibold outline-none focus-visible:ring-2">
-            <span className="bg-primary flex size-5 shrink-0 items-center justify-center rounded-[5px] text-[11px] font-bold text-white" aria-hidden>
-              {org.name.slice(0, 1)}
-            </span>
-            <span className="hidden truncate wide:inline">{org.name}</span>
-            <ChevronDown className="text-muted-foreground hidden size-3.5 wide:block" aria-hidden />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuLabel className="text-muted-foreground text-xs">Switch organization</DropdownMenuLabel>
-            {orgs.map((o) => (
-              <DropdownMenuItem key={o.id} onSelect={() => setOrgId(o.id)}>
-                {o.name}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuItem onSelect={() => setOnboardingOpen(true)}>
-              <Plus className="size-4" aria-hidden /> New organization
+
+      <DropdownMenu>
+        <DropdownMenuTrigger className="border-foreground/[0.07] bg-foreground/[0.03] hover:bg-foreground/[0.06] focus-visible:ring-ring/60 relative flex h-10 min-w-0 items-center justify-center gap-2.5 rounded-xl border px-1.5 text-left outline-none transition-colors focus-visible:ring-2 wide:justify-start">
+          <span className="from-primary flex size-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br to-cyan-500 text-[11px] font-bold text-white shadow-sm" aria-hidden>
+            {org.name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="hidden min-w-0 flex-1 leading-tight wide:block">
+            <span className="block truncate text-[13px] font-semibold">{org.name}</span>
+            <span className="text-muted-foreground block font-mono text-[10px]">organization</span>
+          </span>
+          <ChevronsUpDown className="text-muted-foreground hidden size-3.5 wide:block" aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel className="text-muted-foreground text-xs">Switch organization</DropdownMenuLabel>
+          {orgs.map((o) => (
+            <DropdownMenuItem key={o.id} onSelect={() => setOrgId(o.id)}>
+              {o.name}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link to="/settings">Settings</Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          ))}
+          <DropdownMenuItem onSelect={() => setOnboardingOpen(true)}>
+            <Plus className="size-4" aria-hidden /> New organization
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to="/settings">Settings</Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <div className="relative hidden items-center gap-1.5 wide:flex">
+        <button onClick={() => setPaletteOpen(true)} className="border-foreground/[0.07] text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/[0.06] bg-background/40 focus-visible:ring-ring/60 flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2">
+          <Search className="size-4 shrink-0" aria-hidden />
+          <span className="flex-1 truncate text-left">Search…</span>
+          <kbd className="bg-foreground/[0.06] rounded px-1.5 font-mono text-[10px]">⌘K</kbd>
+        </button>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button aria-label="Search" onClick={() => setPaletteOpen(true)} className="hover:bg-sidebar-accent hidden size-8 items-center justify-center rounded-md wide:flex">
-              <Search className="size-4 opacity-80" aria-hidden />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Search ⌘K</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className="bg-sidebar-accent hover:bg-accent hidden size-8 items-center justify-center rounded-md border wide:flex">
+            <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className="from-primary focus-visible:ring-ring/60 flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b to-[color-mix(in_oklab,var(--color-primary)_80%,black)] text-white shadow-[0_4px_14px_-4px_var(--color-primary),inset_0_1px_0_rgb(255_255_255/0.25)] outline-none transition-transform hover:-translate-y-px focus-visible:ring-2 active:translate-y-0">
               <SquarePen className="size-4" aria-hidden />
             </button>
           </TooltipTrigger>
@@ -207,51 +230,57 @@ function Sidebar() {
         </Tooltip>
       </div>
 
-      <nav className="grid gap-px" aria-label="Main">
-        <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className={cn(navCls(false), "wide:hidden")}>
-          <Plus className="size-4" aria-hidden />
-        </button>
-        <NavItem to="/inbox" icon={MailboxIcon} label="Inbox" count={inbox} />
-        <NavItem to="/" icon={LayersIcon} label="All issues" match={pathname === "/" && !view && !folder} />
-      </nav>
-
-      <Section title="Workspace">
-        <NavItem to="/zippers" icon={BotIcon} label="Zippers" match={pathname.startsWith("/zippers")} />
-        <NavItem to="/pipelines" icon={WorkflowIcon} label="Pipelines" />
-        <NavItem to="/routines" icon={RefreshCWIcon} label="Routines" />
-      </Section>
-
-      <Section
-        title="Your folders"
-        action={
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button aria-label="Add folder" onClick={() => setAdding(true)} className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground flex size-6 items-center justify-center rounded-md">
-                <Plus className="size-3.5" aria-hidden />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Add folder</TooltipContent>
-          </Tooltip>
-        }
-      >
-        {workspaces.map((w) => (
-          <div key={w.id} className="group relative">
-            <NavItem to={`/?folder=${w.id}`} icon={FolderGit2Icon} label={w.name} match={pathname === "/" && folder === w.id} />
-            <button
-              aria-label={`Remove ${w.name}`}
-              onClick={() => setRemoving(w)}
-              className="text-muted-foreground hover:text-destructive absolute top-1 right-1 flex size-5 items-center justify-center rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            >
-              <Trash2 className="size-3.5" aria-hidden />
-            </button>
-          </div>
-        ))}
-        {!workspaces.length && (
-          <button onClick={() => setAdding(true)} className="text-muted-foreground px-2 text-left text-xs hover:underline">
-            Add a working folder
+      <div className="relative -mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 [scrollbar-width:none]">
+        <nav className="grid gap-0.5" aria-label="Main">
+          <button aria-label="Search" onClick={() => setPaletteOpen(true)} className={cn(navCls(false), "wide:hidden")}>
+            <Search className="relative size-4" aria-hidden />
           </button>
-        )}
-      </Section>
+          <button aria-label="New issue" onClick={() => setNewTicketOpen(true)} className={cn(navCls(false), "wide:hidden")}>
+            <Plus className="relative size-4" aria-hidden />
+          </button>
+          <NavItem to="/inbox" icon={MailboxIcon} color="#f2994a" label="Inbox" count={inbox} />
+          <NavItem to="/" icon={LayersIcon} color="#7c87f0" label="All issues" match={pathname === "/" && !view && !folder} />
+        </nav>
+
+        <Section title="Workspace">
+          <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
+          <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
+          <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
+        </Section>
+
+        <Section
+          title="Folders"
+          rail
+          action={
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button aria-label="Add folder" onClick={() => setAdding(true)} className="text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground flex size-6 items-center justify-center rounded-md">
+                  <Plus className="size-3.5" aria-hidden />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Add folder</TooltipContent>
+            </Tooltip>
+          }
+        >
+          {workspaces.map((w) => (
+            <div key={w.id} className="group/f relative">
+              <NavItem to={`/?folder=${w.id}`} icon={FolderGit2Icon} color="#c084fc" label={w.name} match={pathname === "/" && folder === w.id} />
+              <button
+                aria-label={`Remove ${w.name}`}
+                onClick={() => setRemoving(w)}
+                className="text-muted-foreground hover:text-destructive absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded opacity-0 group-hover/f:opacity-100 focus-visible:opacity-100"
+              >
+                <Trash2 className="size-3.5" aria-hidden />
+              </button>
+            </div>
+          ))}
+          {!workspaces.length && (
+            <button onClick={() => setAdding(true)} className="text-muted-foreground border-foreground/10 hover:text-foreground mx-1 rounded-lg border border-dashed px-2.5 py-2 text-left text-xs transition-colors">
+              + Add a working folder
+            </button>
+          )}
+        </Section>
+      </div>
 
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
@@ -279,17 +308,13 @@ function Sidebar() {
         }
       />
 
-      <nav className="grid gap-px wide:hidden" aria-label="Workspace">
-        <NavItem to="/zippers" icon={BotIcon} label="Zippers" match={pathname.startsWith("/zippers")} />
-        <NavItem to="/pipelines" icon={WorkflowIcon} label="Pipelines" />
-        <NavItem to="/routines" icon={RefreshCWIcon} label="Routines" />
-      </nav>
-
-      <nav className="mt-auto grid gap-px" aria-label="Settings">
+      <div className="relative grid gap-1">
         <UsageMeter />
-        <NavItem to="/settings" icon={SettingsIcon} label="Settings" />
-        <ThemeToggle />
-      </nav>
+        <div className="border-foreground/[0.07] bg-foreground/[0.03] grid gap-px rounded-xl border p-1">
+          <NavItem to="/settings" icon={SettingsIcon} color="#94a3b8" label="Settings" />
+          <ThemeToggle />
+        </div>
+      </div>
     </aside>
   );
 }
@@ -357,7 +382,7 @@ function Layout() {
         Skip to content
       </a>
       <Sidebar />
-      <main id="main" tabIndex={-1} className="bg-background relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border outline-none">
+      <main id="main" tabIndex={-1} className="bg-background relative m-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border outline-none">
         {system && !system.auth.loggedIn && (
           <div role="alert" className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-[13px] text-amber-800 dark:text-amber-300">
             <TerminalSquare className="size-4 shrink-0" aria-hidden />
