@@ -220,7 +220,10 @@ function Detail({ r, workspaces }: { r: Routine; workspaces: Workspace[] }) {
   const [confirm, setConfirm] = useState(false);
   const folders = workspaces.filter((w) => r.workspaceIds.includes(w.id));
   const { data: all = [] } = useTickets(useOrg().id);
-  const runs = all.filter((t) => t.routineId === r.id).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  const [showArchived, setShowArchived] = useState(false);
+  const mine = all.filter((t) => t.routineId === r.id);
+  const archivedCount = mine.filter((t) => t.archived).length;
+  const runs = mine.filter((t) => t.archived === showArchived).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   return (
     <Page>
       <Back to="/routines">Routines</Back>
@@ -301,11 +304,15 @@ function Detail({ r, workspaces }: { r: Routine; workspaces: Workspace[] }) {
       </div>
 
       <section className="mt-6">
-        <h2 className="text-muted-foreground mb-2 px-1 text-xs font-medium tracking-wide uppercase">
-          Tickets created <span className="tabular-nums">· {runs.length}</span>
-        </h2>
+        <div className="text-muted-foreground mb-2 flex gap-4 px-1 text-xs font-medium tracking-wide uppercase">
+          {[false, true].map((a) => (
+            <button key={String(a)} type="button" onClick={() => setShowArchived(a)} className={cn("uppercase transition-colors", showArchived === a ? "text-foreground" : "hover:text-foreground")}>
+              {a ? "Archived" : "Tickets"} <span className="tabular-nums">({a ? archivedCount : mine.length - archivedCount})</span>
+            </button>
+          ))}
+        </div>
         {runs.length === 0 ? (
-          <p className="text-muted-foreground bg-card rounded-2xl border border-dashed px-5 py-8 text-center text-sm">No tickets yet. Run now or wait for the schedule.</p>
+          <p className="text-muted-foreground bg-card rounded-2xl border border-dashed px-5 py-8 text-center text-sm">{showArchived ? "No archived tickets." : "No tickets yet. Run now or wait for the schedule."}</p>
         ) : (
           <ul className="bg-card divide-y overflow-hidden rounded-2xl border shadow-xs">
             {runs.map((t) => (
