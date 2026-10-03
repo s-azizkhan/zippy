@@ -20,6 +20,8 @@ import {
   STATUS_ORDER,
   StatusIcon,
 } from "@/components/status";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, keys, queryClient, useAgents, useTickets, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
@@ -53,6 +55,8 @@ export function useOrderedTickets() {
   const [params] = useSearchParams();
   const folder = params.get("folder");
   const view = params.get("view");
+  const who = params.get("who");
+  const q = (params.get("q") ?? "").trim().toLowerCase();
   const tab =
     TABS.find(
       (t) =>
@@ -66,14 +70,19 @@ export function useOrderedTickets() {
       rows = rows.filter((t) =>
         t.folders.some((f) => f.workspaceId === folder),
       );
+    if (who) rows = rows.filter((t) => !!t.assigneeAgentId === (who === "agent"));
+    if (q)
+      rows = rows.filter((t) =>
+        `${t.identifier} ${t.title}`.toLowerCase().includes(q),
+      );
     if (view === "inbox") rows = rows.filter((t) => INBOX.includes(t.status));
     else if (tab.statuses)
       rows = rows.filter((t) =>
         (tab.statuses as readonly string[]).includes(t.status),
       );
     return STATUS_ORDER.flatMap((s) => rows.filter((t) => t.status === s));
-  }, [tickets, folder, view, tab]);
-  return { ordered, isLoading, folder, view, tab };
+  }, [tickets, folder, view, tab, who, q]);
+  return { ordered, isLoading, folder, view, tab, who, q };
 }
 
 /** j/k move focus between rows. */
@@ -100,7 +109,7 @@ function useRowKeys() {
 
 export function TicketsPage() {
   const org = useOrg();
-  const { ordered, isLoading, folder, view, tab } = useOrderedTickets();
+  const { ordered, isLoading, folder, view, tab, who, q } = useOrderedTickets();
   const { data: agents = [] } = useAgents(org.id);
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const setNewTicketOpen = useUI((s) => s.setNewTicketOpen);
@@ -115,6 +124,12 @@ export function TicketsPage() {
     prev.current = idx;
   }, [idx]);
 
+  const setParam = (k: string, v: string) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set(k, v);
+    else next.delete(k);
+    setParams(next, { replace: true });
+  };
   const title =
     view === "inbox"
       ? "Inbox"
@@ -170,6 +185,31 @@ export function TicketsPage() {
                 </button>
               ),
             )}
+          </div>
+        )}
+        {tab.id !== "files" && tab.id !== "linear" && (
+          <div className="ml-auto flex items-center gap-2">
+            <Select
+              value={who ?? "all"}
+              onValueChange={(v) => setParam("who", v === "all" ? "" : v)}
+            >
+              <SelectTrigger size="sm" aria-label="Filter by assignee type" className="h-6 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="agent">Agent</SelectItem>
+                <SelectItem value="human">Human</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="search"
+              aria-label="Search issues"
+              placeholder="Search…"
+              value={q}
+              onChange={(e) => setParam("q", e.target.value)}
+              className="h-6 w-40 text-xs"
+            />
           </div>
         )}
       </header>
