@@ -12,6 +12,7 @@ import {
   TICKET_ID_RE,
   linearImport,
   pipelineInput,
+  nextRunAt,
   routineInput,
   knowledgeInput,
   type PipelineInput,
@@ -400,10 +401,7 @@ app.post("/routines/:id/run", async (c) => {
 
 // ponytail: 1-minute tick, first run one interval after creation; "Run now" for immediate.
 setInterval(async () => {
-  const due = await db
-    .select()
-    .from(routines)
-    .where(and(eq(routines.enabled, true), sql`coalesce(${routines.lastRunAt}, ${routines.createdAt}) + make_interval(hours => ${routines.everyHours}) <= now()`));
+  const due = (await db.select().from(routines).where(eq(routines.enabled, true))).filter((r) => nextRunAt(r) <= new Date());
   for (const r of due) await runRoutine(r).catch((e) => console.error("[routine]", r.name, e.message));
 }, 60_000).unref();
 

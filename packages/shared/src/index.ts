@@ -144,8 +144,21 @@ export const routineInput = z.object({
   assigneeAgentId: z.string().uuid().nullable().default(null),
   pipelineId: z.string().uuid().nullable().default(null),
   everyHours: z.number().int().min(1).max(24 * 30).default(24),
+  runAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM").nullable().default(null), // local time of day; days = ceil(everyHours / 24)
   enabled: z.boolean().default(true),
 });
+
+type RunTimes = { everyHours: number; runAt: string | null; lastRunAt: string | Date | null; createdAt: string | Date };
+export function nextRunAt(r: RunTimes): Date {
+  const base = new Date(r.lastRunAt ?? r.createdAt);
+  if (!r.runAt) return new Date(+base + r.everyHours * 36e5);
+  const [h, m] = r.runAt.split(":").map(Number);
+  const d = new Date(base);
+  d.setHours(h!, m, 0, 0);
+  if (r.lastRunAt) d.setDate(d.getDate() + Math.ceil(r.everyHours / 24));
+  else if (d < base) d.setDate(d.getDate() + 1);
+  return d;
+}
 
 export const httpUrl = z.string().url().refine((u) => /^https?:\/\//i.test(u), "http(s) URL");
 export const KB_KINDS = ["do", "dont", "prefer", "fact", "command", "link"] as const;

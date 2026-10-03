@@ -4,7 +4,7 @@ import { PlayIcon as Play } from "@/components/ui/play";
 import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { routineInput, type Routine, type RoutineInput, type Ticket } from "@zippy/shared";
+import { nextRunAt, routineInput, type Routine, type RoutineInput, type Ticket } from "@zippy/shared";
 import { Field, fieldErrors } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { api, keys, useAgents, useApiMutation, usePipelines, useRoutines, useWor
 import { useOrg } from "@/lib/org";
 import { ago } from "@/lib/utils";
 
-const BLANK: RoutineInput = { name: "", title: "", body: "", workspaceIds: [], assigneeAgentId: null, pipelineId: null, everyHours: 24, enabled: true };
+const BLANK: RoutineInput = { name: "", title: "", body: "", workspaceIds: [], assigneeAgentId: null, pipelineId: null, everyHours: 24, runAt: null, enabled: true };
 const selectCls = "border-input bg-background h-8 w-full rounded-md border px-2 text-[13px]";
 
 export function RoutinesPage() {
@@ -71,6 +71,9 @@ function RoutineForm({ routine, onDone }: { routine?: Routine; onDone?: () => vo
         <Field label="Name" error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Weekly dependency bump" />}</Field>
         <Field label="Every (hours)" error={errors.everyHours}>
           {(p) => <Input {...p} type="number" min={1} value={form.everyHours} onChange={(e) => set("everyHours", Number(e.target.value))} />}
+        </Field>
+        <Field label="At (optional)" hint={routine ? `Local time of day. Next run: ${nextRunAt(routine).toLocaleString()}` : "Local time of day. Empty = every N hours from now."} error={errors.runAt}>
+          {(p) => <Input {...p} type="time" value={form.runAt ?? ""} onChange={(e) => set("runAt", e.target.value || null)} />}
         </Field>
       </div>
       <Field label="Ticket title" hint="The run date is appended." error={errors.title}>{(p) => <Input {...p} value={form.title} onChange={(e) => set("title", e.target.value)} />}</Field>

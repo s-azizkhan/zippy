@@ -196,6 +196,7 @@ export const routines = pgTable("routines", {
   assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id, { onDelete: "set null" }),
   pipelineId: uuid("pipeline_id").references(() => pipelines.id, { onDelete: "set null" }),
   everyHours: integer("every_hours").notNull().default(24),
+  runAt: text("run_at"),
   enabled: boolean("enabled").notNull().default(true),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   createdAt: createdAt(),
