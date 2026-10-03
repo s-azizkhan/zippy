@@ -1,5 +1,5 @@
 import { ErrorPage } from "@/components/error-page";
-import { Archive, ArchiveRestore, ChevronDown, Columns2, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Square, Star } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, Columns2, PanelRight, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Square, Star } from "lucide-react";
 import { CheckIcon as Check } from "@/components/ui/check";
 import { CopyIcon as Copy } from "@/components/ui/copy";
 import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
@@ -84,7 +84,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   const { search } = useLocation();
   const [menu, setMenu] = useState<Menu>(null);
   const [tab, setTab] = useState<Tab>("activity");
-  const { split: splitPref, toggleSplit } = useUI();
+  const { split: splitPref, toggleSplit, hideProps, toggleProps } = useUI();
   const split = splitPref && !embedded;
   const layout = useDefaultLayout({ id: "ticket-split", storage: localStorage });
   useTicketEvents(id, org.id);
@@ -109,6 +109,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
       if (m) return e.preventDefault(), setMenu(m);
       if (embedded) return;
       if (e.key === "\\") return e.preventDefault(), toggleSplit();
+      if (e.key === "]") return e.preventDefault(), toggleProps();
       if (e.key === "j") go(1);
       else if (e.key === "k") go(-1);
       else if (e.key === "Escape" && !menu) navigate(`/${search}`);
@@ -171,6 +172,14 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
             </TooltipTrigger>
             <TooltipContent>Split view (\)</TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button aria-label="Toggle properties" aria-pressed={!hideProps} onClick={toggleProps} className={cn("hover:bg-accent text-muted-foreground hover:text-foreground hidden size-7 items-center justify-center rounded-md border lg:flex", !hideProps && "bg-accent text-foreground")}>
+                <PanelRight className="size-4" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Properties (])</TooltipContent>
+          </Tooltip>
           {index >= 0 && !embedded && (
             <div className="text-muted-foreground flex items-center gap-1 text-xs tabular-nums">
               <span aria-label={`Issue ${index + 1} of ${ordered.length}`}>
@@ -215,7 +224,7 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
           )}
           {pipeline && ticket.stageId && ticket.status === "needs_input" && <GateBar ticket={ticket} pipeline={pipeline} />}
         </div>
-        <Properties comments={comments} ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />
+        {!hideProps && <Properties comments={comments} ticket={ticket} agents={agents} sessions={sessions} pipeline={pipeline} related={related} parent={parent} subIssues={children} budgetUsd={budgetUsd} menu={menu} setMenu={setMenu} />}
       </div>
     </div>
   );
