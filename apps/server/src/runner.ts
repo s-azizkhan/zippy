@@ -117,10 +117,11 @@ type Live = {
   costBase: number; // DB cost when this process started; ACP cost restarts at 0 per process
   overBudget: boolean;
   idleTimer?: NodeJS.Timeout;
+  orgId: string;
+  idleMs: number;
 };
 
 // ponytail: idle processes are killed; loadSession restores them on the next prompt.
-const IDLE_MS = 10 * 60_000;
 
 const live = new Map<string, Live>(); // key: agent_sessions.id
 const pendingApprovals = new Map<string, (optionId: string | null) => void>(); // key: comment id
@@ -274,10 +275,21 @@ const gitIdentity = (p?: Profile) => {
 
 const POLICY_AUTO_ALLOW = new Set(["read", "search", "think"]);
 
+// ponytail: oldest-started idle first, not LRU; concurrent starts can overshoot by a few.
+async function makeRoom(orgId: string, max: number) {
+  for (;;) {
+    const mine = [...live.values()].filter((x) => x.orgId === orgId);
+    if (!max || mine.length < max) return;
+    const victim = mine.find((x) => !x.busy) ?? mine[0]!;
+    if (!victim.busy) victim.proc.kill();
+    await new Promise((r) => victim.proc.once("exit", r));
+  }
+}
+
 async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Ticket, agent: Agent, dirs: Dir[]): Promise<Live> {
   const cwd = dirs[0]!.cwd;
   const additionalDirectories = dirs.slice(1).map((d) => d.cwd);
-  const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl }).from(orgs).where(eq(orgs.id, ticket.orgId));
+  const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl, idleMinutes: orgs.idleMinutes }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const proc = spawn(process.execPath, [ADAPTER], {
     stdio: ["pipe", "pipe", "inherit"],
     env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) },
@@ -285,6 +297,8 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const l = {
     proc,
+    orgId: ticket.orgId,
+    idleMs: (org?.idleMinutes ?? 10) * 60_000,
     replaying: false,
     turn: Promise.resolve(),
     work: Promise.resolve(),
@@ -481,7 +495,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
   try {
     let current = live.get(sessionRow!.id);
     if (!current) {
-      const [{ inPlace }] = await db.select({ inPlace: orgs.useActiveBranch }).from(orgs).where(eq(orgs.id, ticket.orgId));
+      const [{ inPlace, maxLive }] = await db.select({ inPlace: orgs.useActiveBranch, maxLive: orgs.maxLive }).from(orgs).where(eq(orgs.id, ticket.orgId));
       const dirs: Dir[] = await Promise.all(
         folders.map(async ({ folder, ws }) => {
           // Worktrees are created on demand by the create_worktree tool; reuse one that already exists.
@@ -490,6 +504,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
           return { ws, cwd, branch };
         }),
       );
+      await makeRoom(ticket.orgId, maxLive);
       current = await start(sessionRow!, ticket, agent, dirs);
     }
     l = current;
@@ -543,7 +558,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     .finally(() => {
       l.busy = false;
       emit(ticketId, { type: "session", agentId, running: false });
-      l.idleTimer = setTimeout(() => l.proc.kill(), IDLE_MS);
+      l.idleTimer = setTimeout(() => l.proc.kill(), l.idleMs);
     });
   return turn;
 }

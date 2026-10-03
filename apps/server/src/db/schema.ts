@@ -11,6 +11,8 @@ export const orgs = pgTable("orgs", {
   defaultModel: text("default_model").notNull().default("default"),
   defaultEffort: text("default_effort").notNull().default("default"),
   cacheTtl: text("cache_ttl").notNull().default("5m"), // prompt cache lifetime: 5m, or 1h (costlier writes, stays warm across slow replies)
+  idleMinutes: integer("idle_minutes").notNull().default(10), // kill idle agent process after this long; restored on next prompt
+  maxLive: integer("max_live").notNull().default(0), // max live agent processes for the org; 0 = no cap
   ticketSeq: integer("ticket_seq").notNull().default(0),
   toggles: jsonb("toggles").$type<Record<string, boolean>>().notNull().default({}),
   budgetUsd: real("budget_usd"), // per-ticket agent spend cap; null = no cap

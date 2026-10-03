@@ -199,7 +199,7 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, cacheTtl: org.cacheTtl, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, profile: org.profile };
+  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, cacheTtl: org.cacheTtl, idleMinutes: org.idleMinutes, maxLive: org.maxLive, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, profile: org.profile };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -267,6 +267,13 @@ function OrgSettings({ active }: { active: boolean }) {
         <Field label="Prompt cache" hint="1h keeps context cheap when Zippers are woken more than 5 minutes apart, but cache writes cost more.">
           {(p) => <OptionSelect id={p.id} label="Prompt cache" value={form.cacheTtl} onChange={(v) => setForm({ ...form, cacheTtl: v as "5m" | "1h" })} options={CACHE_TTLS.map((m) => ({ value: m, label: m }))} />}
         </Field>
+      </Card>
+      <Card title="Resources" desc="Each running Zipper is a separate process (~300-500 MB). Lower these on small machines; nothing is lost, idle Zippers resume on their next prompt.">
+        {([["Stop idle Zippers after (minutes)", "idleMinutes", 1, "Applies to Zippers started after saving."], ["Max running Zippers", "maxLive", 0, "0 = no limit. At the limit the oldest idle Zipper is stopped; if all are busy, new work waits."]] as const).map(([label, k, min, hint]) => (
+          <Field key={k} label={label} hint={hint} error={errors[k]}>
+            {(p) => <Input {...p} type="number" min={min} step={1} inputMode="numeric" value={form[k]} onChange={(e) => setForm({ ...form, [k]: Number(e.target.value) })} className="w-32" />}
+          </Field>
+        ))}
       </Card>
       <Card title="Budget" desc="Zippers stop and ask you when a ticket's total spend reaches this limit.">
         <Field label="Zipper budget per ticket (USD)" hint="Empty = no limit." error={errors.budgetUsd}>

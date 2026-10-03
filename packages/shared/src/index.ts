@@ -52,6 +52,8 @@ export const orgInput = z.object({
   defaultModel: z.string().default("default"),
   defaultEffort: z.string().default("default"),
   cacheTtl: z.enum(["5m", "1h"]).default("5m"),
+  idleMinutes: z.number().int().min(1).max(1440).default(10),
+  maxLive: z.number().int().min(0).max(64).default(0),
   budgetUsd: z.number().positive().nullable().default(null),
   slackWebhookUrl: z.union([z.literal(""), z.string().startsWith("https://hooks.slack.com/", "a Slack incoming webhook URL")]).default(""),
   notifyDesktop: z.boolean().default(true),
