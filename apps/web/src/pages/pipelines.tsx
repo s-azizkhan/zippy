@@ -59,9 +59,16 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
             <h1 className="text-2xl font-semibold tracking-tight">Pipelines</h1>
             <p className="text-muted-foreground mt-1 text-sm">Chain agents into loops that build, review, fix and repeat until the ticket is done.</p>
           </div>
-          <Button onClick={() => onOpen("new")}>
-            <Plus aria-hidden /> New pipeline
-          </Button>
+          <div className="flex gap-2">
+            {pipelines.length > 0 && (
+              <Button variant="outline" onClick={() => createDefault.mutate(undefined)} disabled={createDefault.isPending}>
+                <Zap aria-hidden /> Add starters
+              </Button>
+            )}
+            <Button onClick={() => onOpen("new")}>
+              <Plus aria-hidden /> New pipeline
+            </Button>
+          </div>
         </header>
 
         {pipelines.length === 0 ? (
@@ -80,7 +87,7 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
             </div>
             <div className="flex gap-2">
               <Button onClick={() => createDefault.mutate(undefined)} disabled={createDefault.isPending}>
-                <Zap aria-hidden /> Use the default pipeline
+                <Zap aria-hidden /> Add starter pipelines
               </Button>
               <Button variant="outline" onClick={() => onOpen("new")}>
                 Start from scratch
@@ -108,7 +115,7 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
                       </div>
                     ))}
                     {p.stages.length > 6 && <span className="text-muted-foreground ml-1.5 text-xs">+{p.stages.length - 6}</span>}
-                    {loops(p.stages) && <Undo2 className="text-[#d9822b] ml-2 size-3.5" />}
+                    {loops(p.stages) && <Undo2 className="text-[#d9822b] ml-2" size={14} />}
                   </div>
                   <p className="text-muted-foreground truncate text-xs">{p.stages.map((s) => s.name).join(" → ")}</p>
                   <div className="text-muted-foreground flex items-center justify-between border-t pt-3 text-xs">
@@ -233,7 +240,7 @@ function PipelineEditor({ pipeline, onOpen }: { pipeline: Pipeline | null; onOpe
               <Switch checked={form.autoStart} onCheckedChange={(autoStart) => setForm({ ...form, autoStart })} />
             </label>
             <div role="group" aria-label="Max fix loops" className="flex items-center gap-1 rounded-full border py-1 pr-1 pl-3">
-              <Undo2 className="size-3.5 text-[#d9822b]" aria-hidden /> Max fix loops
+              <Undo2 className="text-[#d9822b]" size={14} aria-hidden /> Max fix loops
               <Button type="button" size="icon-xs" variant="ghost" aria-label="Fewer loops" disabled={form.maxLoops <= 1} onClick={() => setForm({ ...form, maxLoops: form.maxLoops - 1 })}>
                 <Minus aria-hidden />
               </Button>
@@ -330,7 +337,7 @@ function Terminal({ icon: Icon, label, className }: { icon: IconType; label: str
 function Chip({ icon: Icon, tone, children }: { icon: IconType; tone?: "warn"; children: ReactNode }) {
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium", tone === "warn" ? "bg-[#f2994a]/12 text-[#d9822b]" : "bg-muted text-muted-foreground")}>
-      <Icon className="size-3" aria-hidden /> {children}
+      <Icon className="shrink-0 [&_svg]:size-3" aria-hidden /> {children}
     </span>
   );
 }

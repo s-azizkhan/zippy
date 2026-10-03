@@ -95,7 +95,7 @@ app.post("/orgs", async (c) => {
     if (chosen.length) await tx.insert(agents).values(chosen.map((a) => ({ ...a, orgId: o!.id })));
     return o!;
   });
-  await createDefaultPipeline(org.id);
+  await createStarterPipelines(org.id);
   return c.json(publicOrg(org), 201);
 });
 app.patch("/orgs/:id", async (c) => {
@@ -288,22 +288,53 @@ app.post("/approvals/:id", async (c) => {
 });
 
 // Pipelines
-const DEFAULT_PIPELINE: { name: string; handle: string; instruction: string; onPass: string; onFail: string }[] = [
-  { name: "Validate", handle: "validator", instruction: "Validate the ticket against the code. Add missing context and acceptance criteria.", onPass: "next", onFail: "human" },
-  { name: "Plan", handle: "planner", instruction: "Write the implementation plan.", onPass: "next", onFail: "human" },
-  { name: "Implement", handle: "executor", instruction: "Implement the plan in the worktree. Run the tests. Commit your work.", onPass: "next", onFail: "human" },
-  { name: "Review", handle: "reviewer", instruction: "Review the branch diff (`git diff origin/HEAD...HEAD` or against the base branch).", onPass: "next", onFail: "2" },
-  { name: "Security review", handle: "security", instruction: "Security-review the branch diff.", onPass: "next", onFail: "2" },
-  { name: "Open PR", handle: "executor", instruction: "All reviews passed. Make sure everything is committed, call open_pr, then hand off pass.", onPass: "done", onFail: "human" },
+type Preset = { name: string; stages: { name: string; handle: string; instruction: string; onPass?: string; onFail?: string; humanGate?: boolean }[] };
+const ST = {
+  validate: { name: "Validate", handle: "validator", instruction: "Validate the ticket against the code. Add missing context and acceptance criteria." },
+  plan: { name: "Plan", handle: "planner", instruction: "Write the implementation plan." },
+  implement: { name: "Implement", handle: "executor", instruction: "Implement the plan in the worktree. Run the tests. Commit your work." },
+  review: { name: "Review", handle: "reviewer", instruction: "Review the branch diff (`git diff origin/HEAD...HEAD` or against the base branch)." },
+  security: { name: "Security review", handle: "security", instruction: "Security-review the branch diff." },
+  pr: { name: "Open PR", handle: "executor", instruction: "All reviews passed. Make sure everything is committed, call open_pr, then hand off pass.", onPass: "done" },
+};
+// onFail: "human" (default) or the 0-based index of the stage to loop back to.
+const PRESETS: Preset[] = [
+  { name: "Default", stages: [ST.validate, ST.plan, ST.implement, { ...ST.review, onFail: "2" }, { ...ST.security, onFail: "2" }, ST.pr] },
+  { name: "Quick fix", stages: [ST.implement, { ...ST.review, onFail: "0" }, ST.pr] },
+  { name: "Plan and build", stages: [ST.plan, ST.implement, ST.pr] },
+  { name: "Secure build", stages: [ST.plan, ST.implement, { ...ST.security, onFail: "1" }, { ...ST.review, onFail: "1" }, ST.pr] },
+  {
+    name: "Debug and fix",
+    stages: [
+      { name: "Diagnose", handle: "debugger", instruction: "Reproduce the problem and find the root cause. Do not change code; write up the findings." },
+      { ...ST.implement, instruction: "Fix the root cause found in the diagnosis. Add a regression test. Run the tests. Commit your work." },
+      { name: "Test", handle: "tester", instruction: "Run the full test suite and try to break the fix.", onFail: "1" },
+      ST.pr,
+    ],
+  },
+  {
+    name: "Research and design",
+    stages: [
+      { name: "Research", handle: "researcher", instruction: "Research the problem, existing code and prior art. Summarize the findings." },
+      { name: "Design", handle: "architect", instruction: "Propose a design with trade-offs.", humanGate: true },
+      ST.implement,
+      { ...ST.review, onFail: "2" },
+      ST.pr,
+    ],
+  },
+  { name: "Docs", stages: [{ name: "Write docs", handle: "docs", instruction: "Write or update the documentation for this ticket. Commit your work." }, { ...ST.review, onFail: "0" }, ST.pr] },
 ];
 
-async function createDefaultPipeline(orgId: string) {
-  const team = await db.select().from(agents).where(eq(agents.orgId, orgId));
-  const stages = DEFAULT_PIPELINE.flatMap((s) => {
-    const a = team.find((x) => x.handle === s.handle);
-    return a ? [{ name: s.name, agentId: a.id, instruction: s.instruction, onPass: s.onPass, onFail: s.onFail, humanGate: false }] : [];
-  });
-  return savePipeline(orgId, null, { name: "Default", autoStart: false, maxLoops: 3, stages });
+// Adds the presets that don't exist yet; skips ones whose agents aren't on the team.
+async function createStarterPipelines(orgId: string) {
+  const [team, have] = await Promise.all([db.select().from(agents).where(eq(agents.orgId, orgId)), db.select({ name: pipelines.name }).from(pipelines).where(eq(pipelines.orgId, orgId))]);
+  const made = [];
+  for (const p of PRESETS) {
+    const stages = p.stages.map((s) => ({ name: s.name, agentId: team.find((a) => a.handle === s.handle)?.id, instruction: s.instruction, onPass: s.onPass ?? "next", onFail: s.onFail ?? "human", humanGate: s.humanGate ?? false }));
+    if (have.some((h) => h.name === p.name) || stages.some((s) => !s.agentId)) continue;
+    made.push(await savePipeline(orgId, null, { name: p.name, autoStart: false, maxLoops: 3, stages: stages as PipelineInput["stages"] }));
+  }
+  return made;
 }
 
 async function savePipeline(orgId: string, id: string | null, input: PipelineInput) {
@@ -329,7 +360,7 @@ app.get("/orgs/:orgId/pipelines", async (c) => {
   return c.json(await Promise.all(rows.map((r) => loadPipeline(r.id))));
 });
 app.post("/orgs/:orgId/pipelines", async (c) => c.json(await savePipeline(c.req.param("orgId"), null, await body(c, pipelineInput)), 201));
-app.post("/orgs/:orgId/pipelines/default", async (c) => c.json(await createDefaultPipeline(c.req.param("orgId")), 201));
+app.post("/orgs/:orgId/pipelines/default", async (c) => c.json(await createStarterPipelines(c.req.param("orgId")), 201));
 app.put("/pipelines/:id", async (c) => {
   const [p] = await db.select().from(pipelines).where(eq(pipelines.id, c.req.param("id")));
   return p ? c.json(await savePipeline(p.orgId, p.id, await body(c, pipelineInput))) : c.notFound();
