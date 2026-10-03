@@ -89,7 +89,7 @@ export function patchOf<T extends z.ZodRawShape>(schema: z.ZodObject<T>) {
   return z.object(shape) as unknown as z.ZodObject<{ [K in keyof T]: z.ZodOptional<T[K]> }>;
 }
 
-export const ticketPatch = patchOf(ticketInput);
+export const ticketPatch = patchOf(ticketInput).extend({ archived: z.boolean().optional() });
 
 export const commentInput = z.object({ body: z.string().min(1), parentId: z.string().uuid().nullable().default(null) });
 
@@ -227,6 +227,7 @@ export type Ticket = Row &
     stageId: string | null;
     loopCount: number;
     riskApproved: boolean;
+    archived: boolean;
     parentId: string | null;
     updatedAt: string;
     folders: TicketFolder[];

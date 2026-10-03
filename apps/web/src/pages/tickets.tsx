@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown } from "lucide-react";
 import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -16,7 +16,7 @@ import {
   StatusIcon,
 } from "@/components/status";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAgents, useTickets, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useAgents, useTickets, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
@@ -30,6 +30,7 @@ const TABS = [
   },
   { id: "backlog", label: "Backlog", statuses: ["backlog"] },
   { id: "linear", label: "Linear", statuses: null },
+  { id: "archived", label: "Archived", statuses: null },
   { id: "files", label: "Files", statuses: null },
 ] as const;
 
@@ -54,7 +55,7 @@ export function useOrderedTickets() {
         (t.id !== "files" || !!folder),
     ) ?? TABS[0];
   const ordered = useMemo(() => {
-    let rows = tickets ?? [];
+    let rows = (tickets ?? []).filter((t) => t.archived === (tab.id === "archived"));
     if (folder)
       rows = rows.filter((t) =>
         t.folders.some((f) => f.workspaceId === folder),
@@ -240,7 +241,7 @@ export function TicketsPage() {
 
 function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; i: number }) {
   return (
-    <li className="rise" style={{ "--i": i } as React.CSSProperties}>
+    <li className="rise group/row relative" style={{ "--i": i } as React.CSSProperties}>
       <Link
         to={`/t/${t.identifier}${location.search}`}
         data-row
@@ -265,6 +266,17 @@ function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; 
         <AgentAvatar agent={agent} />
         {agent && <span className="sr-only">assigned to {agent.name}</span>}
       </Link>
+      <button
+        aria-label={t.archived ? "Unarchive" : "Archive"}
+        title={t.archived ? "Unarchive" : "Archive"}
+        onClick={async () => {
+          await api.patch(`/tickets/${t.id}`, { archived: !t.archived });
+          queryClient.invalidateQueries({ queryKey: keys.res(orgId, "tickets") });
+        }}
+        className="text-muted-foreground hover:text-foreground absolute top-1/2 right-12 hidden -translate-y-1/2 rounded p-1 group-hover/row:block"
+      >
+        {t.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+      </button>
     </li>
   );
 }

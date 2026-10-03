@@ -37,7 +37,7 @@ import { browse, listFiles } from "./browse.ts";
 import { localizeImages, readCached } from "./files.ts";
 import { folderDiff, prState, runTests } from "./git.ts";
 import { checkPrs } from "./github.ts";
-import { authorizeUrl, completeOAuth, dropClient, fetchIssue, getIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
+import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
@@ -416,7 +416,10 @@ app.get("/orgs/:orgId/linear/issues", async (c) => {
 app.get("/orgs/:orgId/linear/issues/:id", async (c) => {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, c.req.param("orgId")));
   if (!org?.linearAuth?.tokens) return c.json({ error: "Connect Linear in Settings first." }, 400);
-  return c.json(await getIssue(org, c.req.param("id")));
+  const issue = await fetchIssue(org, c.req.param("id"));
+  const comments = await Promise.all(issue.comments.nodes.map(async (cm) => ({ id: cm.id, body: await localizeImages(cm.body), createdAt: cm.createdAt, author: cm.user?.name ?? null, parentId: cm.parentId })));
+  const x = issue as typeof issue & { status?: string; statusType?: string; priority?: { name: string }; assignee?: string; createdBy?: string; team?: string; dueDate?: string; createdAt?: string; attachments?: { id: string; title: string; url: string }[] };
+  return c.json({ uuid: issue.uuid, id: issue.id, title: issue.title, url: issue.url, status: x.status, statusType: x.statusType, priority: x.priority, assignee: x.assignee, createdBy: x.createdBy, team: x.team, dueDate: x.dueDate, createdAt: x.createdAt, labels: issue.labels.nodes.map((l) => l.name), links: (x.attachments ?? []).filter((a) => /^https?:\/\//i.test(a.url)), description: await localizeImages(issue.description ?? ""), comments });
 });
 app.post("/orgs/:orgId/linear/import", async (c) => {
   const { ref, workspaceIds, assigneeAgentId } = await body(c, linearImport);

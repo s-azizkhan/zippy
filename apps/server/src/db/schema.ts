@@ -105,6 +105,7 @@ export const tickets = pgTable("tickets", {
   stageId: uuid("stage_id").references(() => pipelineStages.id, { onDelete: "set null" }),
   loopCount: integer("loop_count").notNull().default(0),
   riskApproved: boolean("risk_approved").notNull().default(false),
+  archived: boolean("archived").notNull().default(false),
   parentId: uuid("parent_id"), // sub-issue of
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

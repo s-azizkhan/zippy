@@ -1,5 +1,5 @@
 import { ErrorPage } from "@/components/error-page";
-import { ChevronDown, Columns2, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Square, Star } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, Columns2, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Square, Star } from "lucide-react";
 import { CheckIcon as Check } from "@/components/ui/check";
 import { CopyIcon as Copy } from "@/components/ui/copy";
 import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
@@ -250,6 +250,8 @@ function FavoriteButton({ id }: { id: string }) {
 
 function TicketMenu({ ticket }: { ticket: Ticket }) {
   const sync = useLinearSync(ticket);
+  const org = useOrg();
+  const archive = useApiMutation(() => api.patch(`/tickets/${ticket.id}`, { archived: !ticket.archived }), [keys.ticket(ticket.id), keys.res(org.id, "tickets")]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger aria-label="Issue actions" className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-7 items-center justify-center rounded-md">
@@ -261,6 +263,9 @@ function TicketMenu({ ticket }: { ticket: Ticket }) {
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => copy(ticket.identifier, "ID")}>
           <Copy aria-hidden /> Copy ID
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => archive.mutate(undefined)}>
+          {ticket.archived ? <ArchiveRestore aria-hidden /> : <Archive aria-hidden />} {ticket.archived ? "Unarchive" : "Archive"}
         </DropdownMenuItem>
         {ticket.folders[0]?.branch && (
           <DropdownMenuItem onSelect={() => copy(ticket.folders[0]!.branch!, "Branch name")}>
