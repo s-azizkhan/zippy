@@ -1,10 +1,10 @@
-import { Activity, Bot, Inbox, Layers, MessageSquare, MoreHorizontal, Plus, RefreshCw, Settings, Workflow } from "lucide-react";
+import { Activity, Bot, Inbox, Layers, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Search, Settings, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useInbox, useRunning } from "@/lib/api";
+import { useInbox, useRunning, useWorkspaces } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +64,7 @@ export function MobileNav({ orgId }: { orgId: string }) {
   const { setNewTicketOpen, setPaletteOpen } = useUI();
   const { data: inbox = [] } = useInbox(orgId);
   const { data: running = [] } = useRunning(orgId);
+  const { data: folders = [] } = useWorkspaces(orgId);
   const [more, setMore] = useState(false);
   const moreOn = MORE.some((m) => pathname.startsWith(m.to));
   const issuesOn = (pathname === "/" || pathname.startsWith("/t/")) && !search.includes("view=");
@@ -86,24 +87,41 @@ export function MobileNav({ orgId }: { orgId: string }) {
 
       <Dialog open={more} onOpenChange={setMore}>
         <DialogContent showCloseButton={false} className="md:hidden">
-          <DialogTitle className="sr-only">More</DialogTitle>
-          <div className="grid grid-cols-3 gap-2.5 pt-1">
-            {MORE.map(({ to, label, icon: I, color }) => (
-              <Link key={to} to={to} onClick={() => setMore(false)} style={{ "--c": color } as React.CSSProperties} className="glass sheet-up flex flex-col items-center gap-2 rounded-2xl py-4 text-xs font-medium active:scale-95">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--c)_18%,transparent)] text-[var(--c)]">
-                  <I className="size-5" aria-hidden />
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-lg font-semibold tracking-tight">More</DialogTitle>
+            <ThemeToggle />
+          </div>
+          <button onClick={() => (setMore(false), setPaletteOpen(true))} className="glass sheet-up text-muted-foreground flex h-11 items-center gap-2.5 rounded-2xl px-3.5 text-sm active:scale-[0.98]">
+            <Search className="size-4" aria-hidden />
+            Search or jump to…
+          </button>
+          <div className="grid grid-cols-4 gap-y-4">
+            {MORE.map(({ to, label, icon: I, color }, i) => (
+              <Link key={to} to={to} onClick={() => setMore(false)} style={{ "--c": color, animationDelay: `${i * 40}ms` } as React.CSSProperties} className="sheet-up flex flex-col items-center gap-1.5 text-[11px] font-medium active:scale-90">
+                <span className="relative flex size-14 items-center justify-center rounded-[1.1rem] bg-[linear-gradient(145deg,color-mix(in_oklab,var(--c)_32%,transparent),color-mix(in_oklab,var(--c)_10%,transparent))] text-[var(--c)] shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_6px_16px_-6px_var(--c)] ring-1 ring-white/10">
+                  <I className="size-6" strokeWidth={1.8} aria-hidden />
+                  {label === "Running" && running.length > 0 && <span className="bg-destructive absolute -top-1 -right-1 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold text-white">{running.length}</span>}
                 </span>
                 {label}
               </Link>
             ))}
-            <button onClick={() => (setMore(false), setPaletteOpen(true))} className="glass sheet-up flex flex-col items-center gap-2 rounded-2xl py-4 text-xs font-medium active:scale-95">
-              <span className="bg-foreground/10 flex size-10 items-center justify-center rounded-xl">⌘</span>
-              Search
-            </button>
           </div>
-          <div className="glass rounded-2xl p-1">
-            <ThemeToggle />
-          </div>
+          {folders.length > 0 && (
+            <section className="grid gap-1.5">
+              <h3 className="text-muted-foreground px-1 text-[11px] font-medium tracking-wider uppercase">Files · {folders.length}</h3>
+              <div className="glass divide-border/60 divide-y overflow-hidden rounded-2xl">
+                {folders.map((w) => (
+                  <Link key={w.id} to={`/?folder=${w.id}&tab=files`} onClick={() => setMore(false)} className="active:bg-accent/60 flex items-center gap-3 px-3 py-2.5 text-[13px] font-medium">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#c084fc]/15 text-[#c084fc]">
+                      <FolderGit2 className="size-4" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{w.name}</span>
+                    <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
         </DialogContent>
       </Dialog>
     </>

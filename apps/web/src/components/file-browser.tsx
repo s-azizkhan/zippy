@@ -157,10 +157,15 @@ export function FileBrowser({ id }: { id: string }) {
   return (
     <div className="flex min-h-0 flex-1">
       <QuickOpen id={id} onPick={setSel} />
-      <div className="w-64 shrink-0 overflow-y-auto border-r p-1.5">
+      <div className={cn("w-full shrink-0 overflow-y-auto border-r p-1.5 md:w-64", sel && "max-md:hidden")}>
         <Tree id={id} path="" depth={0} sel={sel} onSel={setSel} />
       </div>
-      <div className="min-w-0 flex-1 overflow-auto">
+      <div className={cn("min-w-0 flex-1 overflow-auto", !sel && "max-md:hidden")}>
+        {sel && (
+          <button onClick={() => setSel("")} className="text-muted-foreground hover:text-foreground flex items-center gap-1 border-b px-4 py-2 text-xs font-medium md:hidden">
+            <ChevronRight className="size-3 rotate-180" aria-hidden /> Files
+          </button>
+        )}
         {sel ? <Viewer id={id} path={sel} /> : <p className="text-muted-foreground p-4 text-[13px]">Select a file to view.</p>}
       </div>
     </div>

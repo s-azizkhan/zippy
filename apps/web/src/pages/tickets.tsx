@@ -146,13 +146,13 @@ export function TicketsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
+      <header className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-4 max-md:py-1.5 md:h-11">
         <h1 className="shrink-0 text-[13px] font-medium">{title}</h1>
         {view !== "inbox" && (
           <div
             role="tablist"
             aria-label="Views"
-            className="flex min-w-0 items-center gap-1 overflow-x-auto overscroll-x-contain snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex-none overscroll-x-contain snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {TABS.filter((t) => (t.id !== "linear" || org.linearConnected) && (t.id !== "files" || folder)).map(
               (t) => (
@@ -191,7 +191,7 @@ export function TicketsPage() {
           </div>
         )}
         {tab.id !== "files" && tab.id !== "linear" && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-2 max-md:w-full md:ml-auto">
             <Select
               value={who ?? "all"}
               onValueChange={(v) => setParam("who", v === "all" ? "" : v)}
@@ -226,7 +226,7 @@ export function TicketsPage() {
               placeholder="Search…"
               value={q}
               onChange={(e) => setParam("q", e.target.value)}
-              className="h-6 w-40 text-xs"
+              className="h-6 text-xs max-md:min-w-0 max-md:flex-1 md:w-40"
             />
           </div>
         )}
