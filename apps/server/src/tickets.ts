@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { TicketInput } from "@zippy/shared";
 import { db, orgs, pipelines, ticketFolders, tickets } from "./db/index.ts";
@@ -31,17 +32,17 @@ export async function autoStart(ticket: TicketRow) {
 export async function createTicket(
   orgId: string,
   { workspaceIds, ...input }: TicketInput,
-  extra: { parentId?: string | null; routineId?: string; linear?: { identifier: string; linearId: string; linearUrl: string } } = {},
+  extra: { parentId?: string | null; routineId?: string; chat?: boolean; linear?: { identifier: string; linearId: string; linearUrl: string } } = {},
 ) {
   const ticket = await db.transaction(async (tx) => {
-    let identifier = extra.linear?.identifier;
+    let identifier = extra.linear?.identifier ?? (extra.chat ? `chat-${randomUUID().slice(0, 8)}` : undefined); // chats don't use the org's ticket sequence
     while (!identifier) {
       const [o] = await tx.update(orgs).set({ ticketSeq: sql`${orgs.ticketSeq} + 1` }).where(eq(orgs.id, orgId)).returning();
       const next = `${o!.key}-${o!.ticketSeq}`;
       // skip ids already taken in this org (e.g. a Linear ticket with the same key)
       if (!(await tx.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.orgId, orgId), eq(tickets.identifier, next))).limit(1)).length) identifier = next;
     }
-    const [t] = await tx.insert(tickets).values({ ...input, orgId, identifier, parentId: extra.parentId ?? null, routineId: extra.routineId, linearId: extra.linear?.linearId, linearUrl: extra.linear?.linearUrl }).returning();
+    const [t] = await tx.insert(tickets).values({ ...input, orgId, identifier, kind: extra.chat ? "chat" : "ticket", parentId: extra.parentId ?? null, routineId: extra.routineId, linearId: extra.linear?.linearId, linearUrl: extra.linear?.linearUrl }).returning();
     return t!;
   });
   await setFolders(ticket.id, workspaceIds);

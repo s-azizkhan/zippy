@@ -258,6 +258,7 @@ export type TicketFolder = {
 export type Ticket = Row &
   Omit<TicketInput, "workspaceIds"> & {
     orgId: string;
+    kind: "ticket" | "chat";
     identifier: string;
     linearId: string | null;
     linearUrl: string | null;

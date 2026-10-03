@@ -235,3 +235,22 @@
 button, [role="button"], a { transition-property: background-color, color, border-color, box-shadow, transform, opacity; transition-duration: 0.15s; }
 button:active:not(:disabled) { transform: scale(0.97); }
 circle { transition: stroke 0.3s, fill 0.3s, stroke-dasharray 0.4s ease; }
+
+/* New-chat backdrop: drifting color blobs, tinted by the picked Zipper */
+@property --aurora { syntax: "<color>"; inherits: true; initial-value: #6366f1; }
+.aurora {
+  transition: --aurora 0.7s;
+  background:
+    radial-gradient(40% 50% at 20% 30%, color-mix(in oklab, var(--aurora) 42%, transparent), transparent 70%),
+    radial-gradient(35% 45% at 80% 25%, rgb(34 211 238 / 0.28), transparent 70%),
+    radial-gradient(45% 50% at 60% 85%, color-mix(in oklab, var(--aurora) 30%, rgb(232 121 249 / 0.6)), transparent 70%);
+  background-size: 140% 140%;
+  filter: blur(40px);
+  animation: aurora 18s ease-in-out infinite alternate;
+}
+@keyframes aurora {
+  0% { background-position: 0% 0%; transform: scale(1) rotate(0deg); }
+  50% { background-position: 100% 40%; transform: scale(1.15) rotate(6deg); }
+  100% { background-position: 30% 100%; transform: scale(1.05) rotate(-5deg); }
+}
+@media (prefers-reduced-motion: reduce) { .aurora { animation: none; } }

@@ -12,7 +12,7 @@ import { commitsAhead, ensureWorktree, folderDiff, openPr } from "./git.ts";
 import { attachPr, createSubIssue } from "./linear.ts";
 import { emit } from "./bus.ts";
 import { notify } from "./notify.ts";
-import { createTicket } from "./tickets.ts";
+import { autoStart, createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
 
@@ -41,8 +41,24 @@ async function humanOf(orgId: string, handle: string) {
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 
-function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPlace: boolean) {
+function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPlace: boolean, chat: boolean) {
   const server = new McpServer({ name: "zippy", version: "0.1.0" });
+
+  if (chat) server.registerTool(
+    "create_ticket",
+    {
+      description: "Create a ticket from this chat, in the chat's working folders. Nobody is assigned unless the pipeline auto-starts.",
+      inputSchema: { title: z.string().min(1).max(200), body: z.string().describe("Markdown: context, scope and acceptance criteria") },
+    },
+    async ({ title, body }) => {
+      const [c] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+      const workspaceIds = (await foldersOf(ticketId)).map((f) => f.ws.id);
+      const t = await createTicket(c!.orgId, { title, body, workspaceIds, assigneeAgentId: null, priority: "none", labelIds: [], status: "todo" });
+      await autoStart(t);
+      await addComment(ticketId, agentId, "text", { text: `Created ${t.identifier}: ${title}` });
+      return text(`Created ${t.identifier}.`);
+    },
+  );
 
   server.registerTool(
     "handoff",
@@ -274,11 +290,12 @@ export async function handleMcp(c: Context) {
   const who = token && tokens.get(token);
   if (!who) return c.json({ error: "unauthorized" }, 401);
   const [agent] = await db.select({ canWrite: agents.canWrite }).from(agents).where(eq(agents.id, who.agentId));
-  const [org] = await db.select({ useActiveBranch: orgs.useActiveBranch }).from(orgs).innerJoin(tickets, eq(tickets.orgId, orgs.id)).where(eq(tickets.id, who.ticketId));
+  const [org] = await db.select({ useActiveBranch: orgs.useActiveBranch, kind: tickets.kind }).from(orgs).innerJoin(tickets, eq(tickets.orgId, orgs.id)).where(eq(tickets.id, who.ticketId));
   // Newer clients send a protocol revision the SDK rejects with 404; fall back to the default.
   const v = c.req.header("mcp-protocol-version");
   if (v && !SUPPORTED_PROTOCOL_VERSIONS.includes(v)) c.req.raw.headers.delete("mcp-protocol-version");
   const transport = new StreamableHTTPTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  await buildServer(who.ticketId, who.agentId, !!agent?.canWrite, !!org?.useActiveBranch).connect(transport);
+  const chat = org?.kind === "chat";
+  await buildServer(who.ticketId, who.agentId, !!agent?.canWrite && !chat, !!org?.useActiveBranch, chat).connect(transport);
   return transport.handleRequest(c);
 }

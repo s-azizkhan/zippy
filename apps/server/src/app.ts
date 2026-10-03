@@ -184,8 +184,19 @@ async function related(t: TicketRow) {
 }
 
 app.get("/orgs/:orgId/tickets", async (c) =>
-  c.json(await withFolders(await db.select().from(tickets).where(eq(tickets.orgId, c.req.param("orgId"))).orderBy(desc(tickets.updatedAt)))),
+  c.json(await withFolders(await db.select().from(tickets).where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "ticket"))).orderBy(desc(tickets.updatedAt)))),
 );
+
+// Chats: conversations with one agent, kept off the board. Tickets come out of them via the create_ticket tool.
+app.get("/orgs/:orgId/chats", async (c) =>
+  c.json(await db.select().from(tickets).where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "chat"), eq(tickets.archived, c.req.query("archived") === "1"))).orderBy(desc(tickets.createdAt))),
+);
+app.post("/orgs/:orgId/chats", async (c) => {
+  const { agentId, workspaceIds, message } = await body(c, z.object({ agentId: z.string().uuid(), workspaceIds: z.array(z.string().uuid()).min(1), message: z.string().min(1) }));
+  const chat = await createTicket(c.req.param("orgId"), { title: message.split("\n")[0]!.slice(0, 60), body: "", workspaceIds, assigneeAgentId: agentId, priority: "none", labelIds: [], status: "todo" }, { chat: true });
+  await humanComment(chat, message);
+  return c.json(chat, 201);
+});
 app.post("/orgs/:orgId/tickets", async (c) => {
   const ticket = await createTicket(c.req.param("orgId"), await body(c, ticketInput));
   await autoStart(ticket);
@@ -235,6 +246,7 @@ app.post("/tickets/:id/comments", async (c) => {
   const { body: text, parentId } = await body(c, commentInput);
   const [ticket] = await db.select().from(tickets).where(eq(tickets.id, c.req.param("id")));
   if (!ticket) return c.notFound();
+  if (ticket.kind === "chat" && ticket.archived) return c.json({ error: "This chat is archived. Unarchive it to continue." }, 409);
   return c.json(await humanComment(ticket, text, { parentId }), 201);
 });
 
@@ -414,7 +426,7 @@ app.get("/agents/:id/work", async (c) => {
     .select({ ticket: { id: tickets.id, identifier: tickets.identifier, title: tickets.title, status: tickets.status, updatedAt: tickets.updatedAt }, assigned: tickets.assigneeAgentId, session: { id: agentSessions.id, costUsd: agentSessions.costUsd, tokensIn: agentSessions.tokensIn, tokensOut: agentSessions.tokensOut } })
     .from(tickets)
     .leftJoin(agentSessions, and(eq(agentSessions.ticketId, tickets.id), eq(agentSessions.agentId, id)))
-    .where(or(eq(tickets.assigneeAgentId, id), isNotNull(agentSessions.id)))
+    .where(and(eq(tickets.kind, "ticket"), or(eq(tickets.assigneeAgentId, id), isNotNull(agentSessions.id))))
     .orderBy(desc(tickets.updatedAt))
     .limit(100);
   return c.json(rows.map((r) => ({ ticket: r.ticket, assigned: r.assigned === id, running: !!r.session && isRunning(r.session.id), costUsd: r.session?.costUsd ?? 0, tokens: (r.session?.tokensIn ?? 0) + (r.session?.tokensOut ?? 0) })));

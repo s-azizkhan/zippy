@@ -61,6 +61,7 @@ export const useWorkspaces = (orgId?: string) => useApiQuery<Workspace[]>(keys.r
 export const useMcpServers = (orgId?: string) => useApiQuery<McpServer[]>(keys.res(orgId!, "mcp"), orgId ? `/orgs/${orgId}/mcp` : null);
 export const useAgents = (orgId?: string) => useApiQuery<Agent[]>(keys.res(orgId!, "agents"), orgId ? `/orgs/${orgId}/agents` : null);
 export const useTickets = (orgId?: string) => useApiQuery<Ticket[]>(keys.res(orgId!, "tickets"), orgId ? `/orgs/${orgId}/tickets` : null);
+export const useChats = (orgId?: string, archived = false) => useApiQuery<Ticket[]>(keys.res(orgId!, archived ? "chats-archived" : "chats"), orgId ? `/orgs/${orgId}/chats${archived ? "?archived=1" : ""}` : null);
 export const useInbox = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "inbox"), queryFn: () => api.get<InboxItem[]>(`/orgs/${orgId}/inbox`), enabled: !!orgId, refetchInterval: 15_000 });
 export const useDiff = (ticketId: string, enabled: boolean, merged = false) =>

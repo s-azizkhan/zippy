@@ -101,6 +101,7 @@ export const tickets = pgTable("tickets", {
   assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id, { onDelete: "set null" }),
   assigneeHuman: boolean("assignee_human").notNull().default(false),
   identifier: text("identifier").notNull(),
+  kind: text("kind").$type<"ticket" | "chat">().notNull().default("ticket"), // chat = free-form conversation with an agent, hidden from the board
   title: text("title").notNull(),
   body: text("body").notNull().default(""),
   status: text("status").notNull().default("todo"),

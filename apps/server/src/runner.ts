@@ -193,8 +193,8 @@ const overBudgetNote = (ticketId: string) =>
 const HANDOFF = new Set<TicketStatus>(["in_review", "needs_input", "blocked"]);
 
 export async function setStatus(ticketId: string, to: TicketStatus) {
-  const [prev] = await db.select({ status: tickets.status }).from(tickets).where(eq(tickets.id, ticketId));
-  if (!prev || prev.status === to) return;
+  const [prev] = await db.select({ status: tickets.status, kind: tickets.kind }).from(tickets).where(eq(tickets.id, ticketId));
+  if (!prev || prev.kind === "chat" || prev.status === to) return; // chats have no board status
   const [t] = await db.update(tickets).set({ status: to, ...(HANDOFF.has(to) && { assigneeAgentId: null, assigneeHuman: true }), updatedAt: new Date() }).where(eq(tickets.id, ticketId)).returning();
   const folders = (await foldersOf(ticketId)).map((f) => f.folder);
   emit(ticketId, { type: "ticket", ticket: { ...t, folders } });
@@ -237,9 +237,9 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     !agent.canWrite && "You are read-only. Do not edit files.",
     `# Team\nYour replies are posted as ticket comments.${others.length ? ` Others on this ticket: ${others.map((a) => `@${a.handle}`).join(", ")}.` : ""}`,
     agent.canWrite && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
-    `# Ticket ${ticket.identifier}: ${ticket.title}`,
-    ticket.linearUrl && `Linear: ${ticket.linearUrl}`,
-    forAgent(ticket.body) || "(no description)",
+    ...(ticket.kind === "chat"
+      ? ["# Chat\nThis is a free-form conversation with the user, not a ticket. Discuss, investigate (read-only) and advise. Call `create_ticket` only when the user asks for a ticket or agrees to your offer."]
+      : [`# Ticket ${ticket.identifier}: ${ticket.title}`, ticket.linearUrl && `Linear: ${ticket.linearUrl}`, forAgent(ticket.body) || "(no description)"]),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -287,6 +287,7 @@ async function makeRoom(orgId: string, max: number) {
 }
 
 async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Ticket, agent: Agent, dirs: Dir[]): Promise<Live> {
+  if (ticket.kind === "chat") agent = { ...agent, canWrite: false };
   const cwd = dirs[0]!.cwd;
   const additionalDirectories = dirs.slice(1).map((d) => d.cwd);
   const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl, idleMinutes: orgs.idleMinutes }).from(orgs).where(eq(orgs.id, ticket.orgId));

@@ -134,7 +134,7 @@ function Time({ iso }: { iso: string }) {
   );
 }
 
-export function Activity({ ticketId, comments, agents, running }: { ticketId: string; comments: Comment[]; agents: Agent[]; running: string[] }) {
+export function Activity({ ticketId, comments, agents, running, chat }: { ticketId: string; comments: Comment[]; agents: Agent[]; running: string[]; chat?: boolean }) {
   const items = useMemo(() => build(comments), [comments]);
   const agent = (id: string | null) => agents.find((a) => a.id === id);
   const announce = useMemo(() => {
@@ -146,7 +146,7 @@ export function Activity({ ticketId, comments, agents, running }: { ticketId: st
 
   return (
     <section aria-labelledby="activity-h" className="grid min-w-0 grid-cols-1 gap-3">
-      <h2 id="activity-h" className="text-[14px] font-semibold">
+      <h2 id="activity-h" className={chat ? "sr-only" : "text-[14px] font-semibold"}>
         Activity
       </h2>
       <ol className="grid grid-cols-1 gap-3">
@@ -160,7 +160,7 @@ export function Activity({ ticketId, comments, agents, running }: { ticketId: st
               it.c.kind === "test" ? (
                 <TestResult p={it.c.payload as TestPayload} iso={it.c.createdAt} />
               ) : (
-                <Card c={it.c} replies={it.replies} agent={agent(it.c.agentId)} agents={agents} ticketId={ticketId} />
+                <Card c={it.c} replies={it.replies} agent={agent(it.c.agentId)} agents={agents} ticketId={ticketId} chat={chat} />
               )
             )}
           </li>
@@ -175,7 +175,7 @@ export function Activity({ ticketId, comments, agents, running }: { ticketId: st
       <div aria-live="polite" className="sr-only">
         {announce}
       </div>
-      <Composer ticketId={ticketId} agents={agents} />
+      {!chat && <Composer ticketId={ticketId} agents={agents} />}
     </section>
   );
 }
@@ -269,7 +269,18 @@ function CardHeader({ agent, author: linearAuthor, iso, children }: { agent?: Ag
   );
 }
 
-function Card({ c, replies, agent, agents, ticketId }: { c: Comment; replies: Comment[]; agent?: Agent; agents: Agent[]; ticketId: string }) {
+function Card({ c, replies, agent, agents, ticketId, chat }: { c: Comment; replies: Comment[]; agent?: Agent; agents: Agent[]; ticketId: string; chat?: boolean }) {
+  if (chat && c.kind === "text") {
+    const mine = !c.agentId;
+    return (
+      <div className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
+        {!mine && <AgentAvatar agent={agent} />}
+        <div title={new Date(c.createdAt).toLocaleString()} className={cn("min-w-0 max-w-[85%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed", mine ? "bg-primary text-primary-foreground rounded-br-sm [&_a]:!bg-white/20 [&_a]:!text-inherit [&_code]:!bg-white/20" : "bg-muted rounded-bl-sm")}>
+          {md((c.payload as { text?: string }).text ?? "")}
+        </div>
+      </div>
+    );
+  }
   const tone =
     c.kind === "handoff"
       ? (c.payload as HandoffPayload).verdict === "pass"
@@ -298,7 +309,7 @@ function Card({ c, replies, agent, agents, ticketId }: { c: Comment; replies: Co
           })}
         </ol>
       )}
-      <ReplyBox ticketId={ticketId} parentId={c.id} agents={agents} />
+      {!chat && <ReplyBox ticketId={ticketId} parentId={c.id} agents={agents} />}
     </article>
   );
 }
@@ -466,14 +477,16 @@ export function MentionInput({
   placeholder,
   compact,
   pending,
+  initial,
 }: {
+  initial?: string; // prefilled (and focused) draft
   agents: Agent[];
   onSend: (text: string, done: () => void) => void;
   placeholder: string;
   compact?: boolean;
   pending?: boolean;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initial ?? "");
   const [focused, setFocused] = useState(false);
   const [mention, setMention] = useState<{ q: string } | null>(null);
   const [active, setActive] = useState(0);
@@ -523,6 +536,7 @@ export function MentionInput({
             value={text}
             label={placeholder}
             placeholder={placeholder}
+            autoFocus={!!initial}
             onEditor={(e) => (editor.current = e)}
             onChange={onChange}
             onKeyDown={(e) => {
@@ -561,11 +575,11 @@ function ReplyBox({ ticketId, parentId, agents }: { ticketId: string; parentId: 
   );
 }
 
-function Composer({ ticketId, agents }: { ticketId: string; agents: Agent[] }) {
+export function Composer({ ticketId, agents, chat }: { ticketId: string; agents: Agent[]; chat?: boolean }) {
   const send = useApiMutation((body: string) => api.post(`/tickets/${ticketId}/comments`, { body }));
   return (
-    <div className="bg-card mt-1 rounded-lg border px-4 py-3">
-      <MentionInput agents={agents} placeholder="Leave a comment… @mention a Zipper to put it to work" pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
+    <div className={cn("bg-card mt-1 border px-4 py-3", chat ? "rounded-2xl shadow-lg" : "rounded-lg")}>
+      <MentionInput agents={agents} placeholder={chat ? "Message… @mention another Zipper to bring it in" : "Leave a comment… @mention a Zipper to put it to work"} pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
     </div>
   );
 }
