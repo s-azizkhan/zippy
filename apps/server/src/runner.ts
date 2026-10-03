@@ -209,7 +209,7 @@ const activeRules = (org: { toggles: Record<string, boolean> } | undefined, agen
 
 async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
   const [org] = await db.select().from(orgs).where(eq(orgs.id, ticket.orgId));
-  const team = await db.select({ handle: agents.handle, name: agents.name }).from(agents).where(eq(agents.orgId, ticket.orgId));
+  const others = (await db.select({ handle: agents.handle, id: agents.id }).from(agents).where(eq(agents.orgId, ticket.orgId))).filter((a) => a.id !== agent.id);
   const kb = await kbPrompt(ticket.orgId, dirs.map((d) => d.ws.id), `${ticket.title} ${ticket.body}`);
   const inPlace = !!org!.useActiveBranch;
   const tagHuman = activeRules(org, agent).some((r) => r.id === "tag-human");
@@ -234,8 +234,7 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     `# Rules\n${activeRules(org, agent).map((r) => `- ${r.text}`).join("\n")}`,
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",
     !agent.canWrite && "You are read-only. Do not edit files.",
-    `# Team\nYou work on a shared ticket with: ${team.map((a) => `@${a.handle} (${a.name})`).join(", ")}. Your replies are posted as ticket comments.`,
-    `# Zippy tools\nThe zippy MCP server gives you: \`handoff\` (finish a pipeline stage), \`ask_user\` (a decision only the user can make), \`mention\` (ask another agent or the human by handle), \`assign\` (assign the ticket to an agent or the human by handle), ${inPlace ? "" : "`create_worktree` (get the isolated worktree before changing code), "}\`create_subtickets\` (split big work into sub-issues), \`propose_learning\` (a durable lesson for future tickets; the user accepts it into context)${agent.canWrite ? ", `open_pr` (push and open the PR)" : ""}.`,
+    `# Team\nYour replies are posted as ticket comments.${others.length ? ` Others on this ticket: ${others.map((a) => `@${a.handle}`).join(", ")}.` : ""}`,
     agent.canWrite && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
     `# Ticket ${ticket.identifier}: ${ticket.title}`,
     ticket.linearUrl && `Linear: ${ticket.linearUrl}`,
