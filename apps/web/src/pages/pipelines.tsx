@@ -1,5 +1,6 @@
 import type { IconType } from "@/lib/anim-icon";
 import { MdEditor } from "@/components/md-editor";
+import { OptionSelect } from "@/components/property-menu";
 import { AnimatePresence, motion, Reorder, useDragControls } from "motion/react";
 import { ChevronRight, Flag, Minus, Trash2 } from "lucide-react";
 import { ArrowDownIcon as ArrowDown } from "@/components/ui/arrow-down";
@@ -17,7 +18,6 @@ import { Field, SettingRow } from "@/components/field";
 import { AgentAvatar } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { api, keys, useAgents, useApiMutation, usePipelines } from "@/lib/api";
@@ -418,18 +418,7 @@ function Inspector({ s, i, count, stages, agents, set, move, del }: { s: Row; i:
 
 function AgentSelect({ id, agents, value, onChange }: { id?: string; agents: Agent[]; value: string; onChange: (v: string) => void }) {
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger id={id} aria-label="Zipper" className="w-full min-w-0 *:data-[slot=select-value]:min-w-0">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {agents.map((a) => (
-          <SelectItem key={a.id} value={a.id}>
-            <AgentAvatar agent={a} className="size-4" /> {a.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <OptionSelect id={id} label="Zipper" value={value} onChange={onChange} options={agents.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar agent={a} className="size-4" /> }))} />
   );
 }
 
@@ -437,25 +426,16 @@ function RouteSelect(props: { label: string; value: string; onChange: (v: string
   return (
     <div className="grid min-w-0 gap-1.5 text-[13px]">
       <span className="font-medium">{props.label}</span>
-      <Select value={props.value} onValueChange={props.onChange}>
-        <SelectTrigger size="sm" aria-label={props.label} className="w-full min-w-0 *:data-[slot=select-value]:min-w-0">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {props.fixed.map(([v, l]) => (
-            <SelectItem key={v} value={v}>
-              {l}
-            </SelectItem>
-          ))}
-          {props.stages.map((s, pos) =>
-            pos === props.self ? null : (
-              <SelectItem key={pos} value={String(pos)}>
-                {pos < props.self ? "Back to" : "Skip to"} {pos + 1}. {s.name}
-              </SelectItem>
-            ),
-          )}
-        </SelectContent>
-      </Select>
+      <OptionSelect
+        size="sm"
+        label={props.label}
+        value={props.value}
+        onChange={props.onChange}
+        options={[
+          ...props.fixed.map(([v, l]) => ({ value: v, label: l })),
+          ...props.stages.flatMap((s, pos) => (pos === props.self ? [] : [{ value: String(pos), label: `${pos < props.self ? "Back to" : "Skip to"} ${pos + 1}. ${s.name}` }])),
+        ]}
+      />
     </div>
   );
 }

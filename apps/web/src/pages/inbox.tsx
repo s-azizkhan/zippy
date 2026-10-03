@@ -1,5 +1,6 @@
 import { Lightbulb } from "lucide-react";
 import { BadgeAlertIcon as CircleAlert } from "@/components/ui/badge-alert";
+import { OptionSelect } from "@/components/property-menu";
 import { SearchIcon as Search } from "@/components/ui/search";
 import { EyeIcon as Eye } from "@/components/ui/eye";
 import { MailboxIcon as InboxIcon } from "@/components/ui/mailbox";
@@ -106,19 +107,7 @@ export function InboxPage() {
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" aria-hidden />
             <Input aria-label="Search inbox" placeholder="Search inbox…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 pl-7 text-[13px]" />
           </div>
-          <select
-            aria-label="Filter by type"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as typeof kind)}
-            className="bg-background h-8 rounded-md border px-2 text-[13px]"
-          >
-            <option value="all">All types</option>
-            {Object.entries(KIND).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v.label}
-              </option>
-            ))}
-          </select>
+          <OptionSelect label="Filter by type" value={kind} onChange={(v) => setKind(v as typeof kind)} options={[{ value: "all", label: "All types" }, ...Object.entries(KIND).map(([k, v]) => ({ value: k, label: v.label }))]} className="w-40 shrink-0" />
         </div>
         <ul className="flex-1 overflow-y-auto" aria-label="Waiting on you">
           {!isLoading && !list.length && (

@@ -21,11 +21,11 @@ import { toast } from "sonner";
 import { EFFORTS, KB_KINDS, KB_LABELS, MODELS, knowledgeInput, mcpServerInput, orgInput, patchOf, workspaceInput, type KnowledgeInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
 import { Field, fieldErrors, SettingRow } from "@/components/field";
 import { FoldersPicker } from "@/components/pickers";
+import { OptionSelect } from "@/components/property-menu";
 import { ToggleList } from "@/components/toggle-list";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api, keys, useApiMutation, useAcp, useKnowledge, useMcpServers, useSystem, useWorkspaces } from "@/lib/api";
@@ -260,13 +260,7 @@ function OrgSettings({ active }: { active: boolean }) {
         {([["Model", "defaultModel", MODELS], ["Thinking level", "defaultEffort", EFFORTS]] as const).map(([label, k, opts]) => (
           <Field key={k} label={label}>
             {(p) => (
-              <select {...p} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
-                {(opts.includes(form[k]) ? opts : [...opts, form[k]]).map((m) => (
-                  <option key={m} value={m} className="bg-background">
-                    {m}
-                  </option>
-                ))}
-              </select>
+              <OptionSelect id={p.id} label={label} value={form[k]} onChange={(v) => setForm({ ...form, [k]: v })} options={(opts.includes(form[k]) ? opts : [...opts, form[k]]).map((m) => ({ value: m, label: m }))} />
             )}
           </Field>
         ))}
@@ -634,15 +628,7 @@ function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }
         <Field label="Name" error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
         <Field label="Transport">
           {(p) => (
-            <Select value={form.transport} onValueChange={(v) => setForm({ ...form, transport: v as "stdio" | "http" })}>
-              <SelectTrigger {...p} className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="stdio">stdio</SelectItem>
-                <SelectItem value="http">http</SelectItem>
-              </SelectContent>
-            </Select>
+            <OptionSelect id={p.id} label="Transport" value={form.transport} onChange={(v) => setForm({ ...form, transport: v as "stdio" | "http" })} options={[{ value: "stdio", label: "stdio" }, { value: "http", label: "http" }]} />
           )}
         </Field>
         <Field label="Folders" hint="None = all folders.">{() => <FoldersPicker orgId={org.id} value={form.workspaceIds} onChange={(workspaceIds) => setForm({ ...form, workspaceIds })} />}</Field>
@@ -820,18 +806,9 @@ function KnowledgeBase() {
     <div className="grid gap-4">
       <Card title="Add entry" desc="Short, imperative, one fact per entry. Pinned entries always reach Zippers.">
         <form onSubmit={submit} className="grid gap-2 sm:grid-cols-[8rem_1fr_11rem_auto]" aria-label="New knowledge entry">
-          <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v as KnowledgeInput["kind"] })}>
-            <SelectTrigger aria-label="Kind" className="w-full min-w-0"><SelectValue className="truncate" /></SelectTrigger>
-            <SelectContent>{KB_KINDS.map((k) => <SelectItem key={k} value={k}>{KB_LABELS[k]}</SelectItem>)}</SelectContent>
-          </Select>
+          <OptionSelect label="Kind" value={form.kind} onChange={(v) => setForm({ ...form, kind: v as KnowledgeInput["kind"] })} options={KB_KINDS.map((k) => ({ value: k, label: KB_LABELS[k] }))} />
           <Input aria-label="Text" value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} placeholder={form.kind === "link" ? "What it is" : "e.g. Run pnpm db:push after schema changes"} />
-          <Select value={form.workspaceId ?? "org"} onValueChange={(v) => setForm({ ...form, workspaceId: v === "org" ? null : v })}>
-            <SelectTrigger aria-label="Scope" className="w-full min-w-0"><SelectValue className="truncate" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="org">Whole org</SelectItem>
-              {folders.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <OptionSelect label="Scope" value={form.workspaceId ?? "org"} onChange={(v) => setForm({ ...form, workspaceId: v === "org" ? null : v })} options={[{ value: "org", label: "Whole org" }, ...folders.map((f) => ({ value: f.id, label: f.name }))]} />
           <Button type="submit" disabled={add.isPending}><Plus aria-hidden /> Add</Button>
           {form.kind === "link" && (
             <Input aria-label="URL" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://" className="font-mono text-[13px] sm:col-span-4" />

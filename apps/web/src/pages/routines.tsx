@@ -5,6 +5,7 @@ import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { nextRunAt, routineInput, type Routine, type RoutineInput, type Ticket } from "@zippy/shared";
+import { OptionSelect } from "@/components/property-menu";
 import { Field, fieldErrors } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,6 @@ import { useOrg } from "@/lib/org";
 import { ago } from "@/lib/utils";
 
 const BLANK: RoutineInput = { name: "", title: "", body: "", workspaceIds: [], assigneeAgentId: null, pipelineId: null, everyHours: 24, runAt: null, enabled: true };
-const selectCls = "border-input bg-background h-8 w-full rounded-md border px-2 text-[13px]";
 
 export function RoutinesPage() {
   const org = useOrg();
@@ -96,26 +96,12 @@ function RoutineForm({ routine, onDone }: { routine?: Routine; onDone?: () => vo
       <div className="grid grid-cols-2 gap-4">
         <Field label="Pipeline" hint="Needs at least one folder.">
           {(p) => (
-            <select {...p} value={form.pipelineId ?? ""} onChange={(e) => set("pipelineId", e.target.value || null)} className={selectCls}>
-              <option value="">None</option>
-              {pipelines.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
+            <OptionSelect id={p.id} label="Pipeline" value={form.pipelineId ?? ""} onChange={(v) => set("pipelineId", v || null)} options={[{ value: "", label: "None" }, ...pipelines.map((x) => ({ value: x.id, label: x.name }))]} />
           )}
         </Field>
         <Field label="Or Zipper" hint="Used when no pipeline is set.">
           {(p) => (
-            <select {...p} value={form.assigneeAgentId ?? ""} onChange={(e) => set("assigneeAgentId", e.target.value || null)} className={selectCls}>
-              <option value="">Nobody (ticket only)</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} (@{a.handle})
-                </option>
-              ))}
-            </select>
+            <OptionSelect id={p.id} label="Zipper" value={form.assigneeAgentId ?? ""} onChange={(v) => set("assigneeAgentId", v || null)} options={[{ value: "", label: "Nobody (ticket only)" }, ...agents.map((a) => ({ value: a.id, label: `${a.name} (@${a.handle})` }))]} />
           )}
         </Field>
       </div>

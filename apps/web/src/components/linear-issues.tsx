@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDownToLine } from "lucide-react";
+import { OptionSelect } from "@/components/property-menu";
 import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
 import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
 import { XIcon as X } from "@/components/ui/x";
@@ -407,17 +408,7 @@ export function LinearIssues() {
               Open
             </Button>
           </form>
-          <select
-            aria-label="Filter by status"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="bg-background h-6 rounded-md border px-1"
-          >
-            <option value="">All statuses</option>
-            {statuses.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
+          <OptionSelect label="Filter by status" size="sm" value={status} onChange={setStatus} options={[{ value: "", label: "All statuses" }, ...statuses.map((s) => ({ value: s, label: s }))]} className="h-6 w-36 shrink-0 text-xs" />
           <button
             aria-label="Refresh from Linear"
             title={

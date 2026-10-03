@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { ChevronDownIcon } from "lucide-react";
 
 export type MenuOption = { value: string; label: string; icon?: ReactNode; group?: string };
 
@@ -12,6 +13,9 @@ type Props = {
   placeholder: string; // search box text, e.g. "Change status…"
   trigger: ReactNode;
   triggerLabel: string; // accessible name for the trigger
+  id?: string;
+  numbered?: boolean; // show 1-9 pick hints (default on)
+  contentClassName?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCreate?: (name: string) => void; // shows "Create …" for unmatched search text
@@ -44,6 +48,7 @@ export function PropertyMenu(props: Props) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        id={props.id}
         aria-label={props.triggerLabel}
         className={cn(
           "hover:bg-accent focus-visible:ring-ring/60 flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none focus-visible:ring-2",
@@ -52,10 +57,10 @@ export function PropertyMenu(props: Props) {
       >
         {props.trigger}
       </PopoverTrigger>
-      <PopoverContent align={props.align ?? "start"} className="w-64 p-0">
+      <PopoverContent align={props.align ?? "start"} className={cn("w-64 p-0", props.contentClassName)}>
         <Command
           onKeyDown={(e) => {
-            if (!search && /^[1-9]$/.test(e.key)) {
+            if (props.numbered !== false && !search && /^[1-9]$/.test(e.key)) {
               const o = props.options[Number(e.key) - 1];
               if (o) (e.preventDefault(), pick(o.value));
             }
@@ -76,7 +81,7 @@ export function PropertyMenu(props: Props) {
                   {o.icon}
                   <span className="flex-1 truncate">{o.label}</span>
                   {!props.multi && selected(o.value) && <Check className="size-3.5" aria-label="selected" />}
-                  {i < 9 && <span className="text-muted-foreground text-xs tabular-nums">{i + 1}</span>}
+                  {props.numbered !== false && i < 9 && <span className="text-muted-foreground text-xs tabular-nums">{i + 1}</span>}
                 </CommandItem>
                 ))}
               </CommandGroup>
@@ -92,5 +97,32 @@ export function PropertyMenu(props: Props) {
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Form select: searchable PropertyMenu with an input-style trigger. Replaces native/Radix selects. */
+export function OptionSelect({ value, onChange, options, label, id, placeholder, size = "default", className }: { value: string; onChange: (v: string) => void; options: MenuOption[]; label: string; id?: string; placeholder?: string; size?: "sm" | "default"; className?: string }) {
+  const sel = options.find((o) => o.value === value);
+  return (
+    <PropertyMenu
+      id={id}
+      numbered={false}
+      value={value}
+      onChange={onChange}
+      options={options}
+      triggerLabel={label}
+      placeholder={placeholder ?? `Search ${label.toLowerCase()}…`}
+      contentClassName="w-(--radix-popover-trigger-width) min-w-44"
+      className={cn("border-input dark:bg-input/30 w-full justify-between gap-1.5 border bg-transparent text-sm", size === "sm" ? "h-7" : "h-8", className)}
+      trigger={
+        <>
+          <span className="flex min-w-0 items-center gap-1.5">
+            {sel?.icon}
+            <span className="truncate">{sel?.label ?? value}</span>
+          </span>
+          <ChevronDownIcon className="text-muted-foreground pointer-events-none size-4 shrink-0" aria-hidden />
+        </>
+      }
+    />
   );
 }

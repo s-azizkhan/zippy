@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { FoldersPicker } from "@/components/pickers";
+import { OptionSelect } from "@/components/property-menu";
 import { api, keys, useAgentWork, useAgents, useApiMutation, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { ago, cn } from "@/lib/utils";
@@ -270,13 +271,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
             </div>
             <Field label="Model" hint="default uses the org default (Settings).">
               {(p) => (
-                <select {...p} value={form.model} onChange={(e) => set("model", e.target.value)} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm dark:bg-input/30">
-                  {(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => (
-                    <option key={m} value={m} className="bg-background">
-                      {m}
-                    </option>
-                  ))}
-                </select>
+                <OptionSelect id={p.id} label="Model" value={form.model} onChange={(v) => set("model", v)} options={(MODELS.includes(form.model) ? MODELS : [...MODELS, form.model]).map((m) => ({ value: m, label: m }))} />
               )}
             </Field>
             <Field label="Role prompt" hint="Markdown. Added to the Claude Code system prompt, after org and folder context.">

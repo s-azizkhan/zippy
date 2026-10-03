@@ -18,12 +18,12 @@ import { HUMAN, type Agent, type AgentSession, type Pipeline, type RelatedTicket
 import { Activity } from "@/components/activity";
 import { Changes } from "@/components/changes";
 import { Terminal } from "@/components/terminal";
+import { OptionSelect } from "@/components/property-menu";
 import { AssigneePicker, FoldersPicker, LabelChips, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
 import { MdEditor } from "@/components/md-editor";
 import { AgentAvatar, SourceIcon, StatusIcon } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, keys, useAgents, useApiMutation, usePipelines, useTicket, useTicketEvents, useTickets, useWorkspaces } from "@/lib/api";
@@ -547,18 +547,7 @@ function PipelineSection({ ticket, pipeline, agents }: { ticket: Ticket; pipelin
     return (
       <PanelSection title={pipeline ? `${pipeline.name} pipeline finished` : "Pipeline"}>
         <div className="flex gap-2 px-2">
-          <Select value={chosen} onValueChange={setChoice}>
-            <SelectTrigger size="sm" aria-label="Pipeline" className="min-w-0 flex-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {pipelines.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <OptionSelect size="sm" label="Pipeline" value={chosen ?? ""} onChange={setChoice} options={pipelines.map((p) => ({ value: p.id, label: p.name }))} className="min-w-0 flex-1" />
           <Button size="sm" variant="outline" onClick={() => chosen && start.mutate(chosen)} disabled={!chosen || start.isPending || !ticket.folders.length}>
             <Play className="size-3 fill-current" aria-hidden /> {pipeline ? "Rerun" : "Start"}
           </Button>
