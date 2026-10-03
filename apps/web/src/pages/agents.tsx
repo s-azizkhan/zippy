@@ -223,7 +223,8 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
           </div>
         </section>
 
-        <details ref={labRef} open={lab} onToggle={(e) => setLab(e.currentTarget.open)} className="bg-card rounded-2xl border p-4">
+        {lab && (
+        <details ref={labRef} className="bg-card rounded-2xl border p-4">
           <summary className="cursor-pointer text-[13px] font-medium select-none">Build the face</summary>
           <div className="mt-4 grid gap-4">
             {(Object.keys(FACE_PARTS) as FacePart[]).map((k) => (
@@ -241,6 +242,7 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
             ))}
           </div>
         </details>
+        )}
 
         {!agent && (
           <div className="flex flex-wrap items-center gap-2">
