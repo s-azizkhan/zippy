@@ -146,7 +146,7 @@ function NewChat() {
 
         <div className="bg-card/80 rounded-3xl border px-5 py-4 shadow-xl backdrop-blur">
           {ready ? (
-            <MentionInput large key={draft} initial={draft} folders={workspaces} agents={agents} placeholder={`Ask ${agent.name} anything… ⌘↵ to send`} pending={start.isPending} onSend={go} />
+            <MentionInput large key={draft} initial={draft} folders={workspaces} agents={agents} placeholder={`Ask ${agent.name} anything…`} pending={start.isPending} onSend={go} />
           ) : (
             <p className="text-muted-foreground text-[13px]">Add a working folder and a Zipper first.</p>
           )}

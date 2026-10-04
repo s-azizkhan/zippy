@@ -141,6 +141,8 @@ function Time({ iso }: { iso: string }) {
 export function Activity({ ticketId, comments, agents, running, chat }: { ticketId: string; comments: Comment[]; agents: Agent[]; running: string[]; chat?: boolean }) {
   const items = useMemo(() => build(comments), [comments]);
   const agent = (id: string | null) => agents.find((a) => a.id === id);
+  const thread = useMemo(() => comments.findLast((c) => c.kind === "text" || c.kind === "tool")?.parentId ?? null, [comments]); // thread the run is replying in
+  const working = running.map((id) => agent(id)?.name).join(", ");
   const announce = useMemo(() => {
     const c = comments.findLast((x) => x.kind === "status" || x.kind === "approval" || x.kind === "question");
     if (!c) return "";
@@ -164,7 +166,7 @@ export function Activity({ ticketId, comments, agents, running, chat }: { ticket
               it.c.kind === "test" ? (
                 <TestResult p={it.c.payload as TestPayload} iso={it.c.createdAt} />
               ) : (
-                <Card c={it.c} replies={it.replies} agent={agent(it.c.agentId)} agents={agents} ticketId={ticketId} chat={chat} />
+                <Card c={it.c} replies={it.replies} agent={agent(it.c.agentId)} agents={agents} ticketId={ticketId} chat={chat} working={running.length && thread === it.c.id ? working : ""} />
               )
             )}
           </li>
@@ -183,10 +185,10 @@ export function Activity({ ticketId, comments, agents, running, chat }: { ticket
           </div>
         </div>
       )}
-      {running.length > 0 && !chat && (
+      {running.length > 0 && !chat && !thread && (
         <p className="text-muted-foreground flex items-center gap-2 pl-1 text-xs">
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          {running.map((id) => agent(id)?.name).join(", ")} working…
+          {working} working…
         </p>
       )}
       <div aria-live="polite" className="sr-only">
@@ -286,7 +288,7 @@ function CardHeader({ agent, author: linearAuthor, iso, children }: { agent?: Ag
   );
 }
 
-function Card({ c, replies, agent, agents, ticketId, chat }: { c: Comment; replies: Comment[]; agent?: Agent; agents: Agent[]; ticketId: string; chat?: boolean }) {
+function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?: string; c: Comment; replies: Comment[]; agent?: Agent; agents: Agent[]; ticketId: string; chat?: boolean }) {
   if (chat && c.kind === "text") {
     const mine = !c.agentId;
     return (
@@ -315,9 +317,14 @@ function Card({ c, replies, agent, agents, ticketId, chat }: { c: Comment; repli
       </div>
       {replies.length > 0 && (
         <ol className="grid gap-3 border-t px-4 py-3">
-          {replies.map((r) => {
+          {replies.reduce<Comment[][]>((g, r) => (r.kind === "tool" && g.at(-1)?.[0]!.kind === "tool" ? g.at(-1)!.push(r) : g.push([r]), g), []).map((g) => {
+            const r = g[0]!;
             const ra = agents.find((a) => a.id === r.agentId);
-            return (
+            return r.kind === "tool" ? (
+              <li key={r.id}>
+                <ToolRun items={g} agent={ra} />
+              </li>
+            ) : (
               <li key={r.id} className="grid gap-1.5">
                 <CardHeader agent={ra} author={(r.payload as { author?: string }).author} iso={r.createdAt} />
                 <div className="pl-7 text-[14px]">{md((r.payload as { text?: string }).text ?? "")}</div>
@@ -325,6 +332,12 @@ function Card({ c, replies, agent, agents, ticketId, chat }: { c: Comment; repli
             );
           })}
         </ol>
+      )}
+      {working && (
+        <p className="text-muted-foreground flex items-center gap-2 border-t px-4 py-2 text-xs">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          {working} working…
+        </p>
       )}
       {!chat && <ReplyBox ticketId={ticketId} parentId={c.id} agents={agents} />}
     </article>
@@ -605,7 +618,7 @@ export function MentionInput({
                 if (e.key === "Enter" || e.key === "Tab") return pick(matches[active]!), true;
                 if (e.key === "Escape") return setMention(null), true;
               }
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) return send(), true;
+              if (e.key === "Enter" && !e.shiftKey && !e.isComposing) return send(), true;
             }}
             className={cn("leading-relaxed", large ? "text-[16px]" : "text-[14px]")}
           />
@@ -618,7 +631,7 @@ export function MentionInput({
           <button
             onClick={send}
             disabled={!text.trim() || pending}
-            aria-label="Send (Command Enter)"
+            aria-label="Send (Enter)"
             className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full disabled:bg-primary/30 disabled:text-primary-foreground/70"
           >
             <ArrowUp className="size-4" aria-hidden />

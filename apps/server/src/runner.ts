@@ -110,6 +110,7 @@ type Live = {
   turn: Promise<unknown>; // serializes prompts
   work: Promise<unknown>; // serializes update handling
   text: { id: string; text: string; createdAt: Date } | null;
+  replyTo: string | null;
   tools: Map<string, string>; // toolCallId -> comment id
   planId: string | null;
   flush: () => Promise<void>; // persist the streamed text comment
@@ -334,7 +335,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
     if (!l.text) return;
     const { id, text, createdAt } = l.text;
     l.text = null;
-    if (text.trim()) await addComment(ticket.id, agent.id, "text", { text }, id, { createdAt });
+    if (text.trim()) await addComment(ticket.id, agent.id, "text", { text }, id, { createdAt, parentId: l.replyTo });
   });
 
   const trackCost = async (amount: number) => {
@@ -376,7 +377,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
           await flushText();
           const id = randomUUID();
           l.tools.set(update.toolCallId, id);
-          await addComment(ticket.id, agent.id, "tool", { toolCallId: update.toolCallId, title: update.title, kind: update.kind, status: update.status } satisfies ToolPayload, id);
+          await addComment(ticket.id, agent.id, "tool", { toolCallId: update.toolCallId, title: update.title, kind: update.kind, status: update.status } satisfies ToolPayload, id, { parentId: l.replyTo });
         } else if (update.sessionUpdate === "tool_call_update") {
           const id = l.tools.get(update.toolCallId);
           if (!id) return;
@@ -550,6 +551,8 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     l.overBudget = false;
     l.busy = true;
     emit(ticketId, { type: "session", agentId, running: true });
+    const [trig] = triggerCommentId ? await db.select({ id: comments.id, parentId: comments.parentId, agentId: comments.agentId }).from(comments).where(eq(comments.id, triggerCommentId)) : [];
+    l.replyTo = trig && !trig.agentId ? (trig.parentId ?? trig.id) : null; // reply in the human's thread
     const preamble = await catchUp(sessionRow!, ticketId, agentId, triggerCommentId);
     await db.update(agentSessions).set({ lastSeenAt: new Date() }).where(eq(agentSessions.id, sessionRow!.id));
     await setStatus(ticketId, "in_progress");
