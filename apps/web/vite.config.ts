@@ -14,6 +14,14 @@ const server = {
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
+  build: {
+    chunkSizeWarningLimit: 800, // lazy md-editor ~714 kB
+    rolldownOptions: {
+      output: {
+        codeSplitting: { groups: [{ name: "react", test: /node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/ }] },
+      },
+    },
+  },
   server,
   preview: server,
 });
