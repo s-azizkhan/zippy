@@ -3,10 +3,12 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+try { process.loadEnvFile(path.resolve(import.meta.dirname, "../../.env")); } catch {}
+
 const server = {
-  port: 5199,
+  port: Number(process.env.WEB_PORT ?? 5199),
   ...(process.env.EXPOSE && { host: true, allowedHosts: true }),
-  proxy: { "/api": "http://127.0.0.1:3301" },
+  proxy: { "/api": `http://127.0.0.1:${process.env.PORT ?? 3001}` },
 };
 
 export default defineConfig({

@@ -13,18 +13,26 @@ servers.forEach((s) => s.stderr.pipe(process.stderr));
 const stop = (code = 0) => (servers.forEach((s) => s.kill()), tunnel.kill(), process.exit(code));
 
 log("starting tunnel...");
-const tunnel = run("cloudflared", ["tunnel", "--url", "http://localhost:5199"]);
-tunnel.on("error", (e) => (log(`cannot start cloudflared: ${e.message} (brew install cloudflared)`), stop(1)));
-tunnel.on("exit", (c) => (log(`cloudflared exited (code ${c}) before a URL was ready`), stop(1)));
+try { process.loadEnvFile(); } catch {} // optional .env
+const WEB_PORT = process.env.WEB_PORT ?? "5199";
+const NGROK_URL = process.env.NGROK_URL;
+if (process.argv[2] === "ngrok" && !NGROK_URL) (log("set NGROK_URL (e.g. https://x.ngrok-free.app)"), process.exit(1));
+const [name, cmd, args, urlRe] =
+  process.argv[2] === "ngrok"
+    ? ["ngrok", "ngrok", ["http", "--url", NGROK_URL, "--log", "stderr", WEB_PORT], new RegExp(NGROK_URL)]
+    : ["cloudflared", "cloudflared", ["tunnel", "--url", `http://localhost:${WEB_PORT}`], /https:\/\/(?!api\.)[\w-]+\.trycloudflare\.com/];
+const tunnel = run(cmd, args);
+tunnel.on("error", (e) => (log(`cannot start ${name}: ${e.message} (brew install ${name === "ngrok" ? "ngrok/ngrok/ngrok" : name})`), stop(1)));
+tunnel.on("exit", (c) => (log(`${name} exited (code ${c}) before a URL was ready`), stop(1)));
 
 let shown = false;
 createInterface({ input: tunnel.stderr }).on("line", (line) => {
-  const url = !shown && /https:\/\/(?!api\.)[\w-]+\.trycloudflare\.com/.exec(line)?.[0];
+  const url = !shown && urlRe.exec(line)?.[0];
   if (url) {
     shown = true;
     qr.generate(url, { small: true }, (code) => console.log(`\n${code}\n${url}\n`));
-  } else if (/\b(ERR|WRN)\b|failed/.test(line)) log(`cloudflared: ${line}`);
-  else if (!shown) log(`cloudflared: ${line}`);
+  } else if (/\b(ERR|WRN)\b|failed/.test(line)) log(`${name}: ${line}`);
+  else if (!shown) log(`${name}: ${line}`);
 });
 
 for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => stop());
