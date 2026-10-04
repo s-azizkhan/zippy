@@ -617,7 +617,6 @@ function McpItem({ server }: { server: McpServer }) {
 
 function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }) {
   const org = useOrg();
-  const { data: workspaces = [] } = useWorkspaces(org.id);
   const [form, setForm] = useState<McpServerInput>(server ?? BLANK_MCP);
   const [envText, setEnvText] = useState(envToText(form.env));
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -625,7 +624,6 @@ function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }
   const inv = [keys.res(org.id, "mcp")];
   const save = useApiMutation((v: Partial<McpServerInput>) => (server ? api.patch(`/mcp/${server.id}`, v) : api.post(`/orgs/${org.id}/mcp`, v)), inv);
   const remove = useApiMutation(() => api.del(`/mcp/${server!.id}`), inv);
-  const ALL = "all";
 
   function submit(e: React.FormEvent) {
     e.preventDefault();

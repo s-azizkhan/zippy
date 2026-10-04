@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
     "db:push": "pnpm --filter @zippy/server db:push",
     "typecheck": "pnpm -r typecheck",
     "share": "node scripts/share.mjs"

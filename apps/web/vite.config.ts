@@ -7,7 +7,7 @@ try { process.loadEnvFile(path.resolve(import.meta.dirname, "../../.env")); } ca
 
 const server = {
   port: Number(process.env.WEB_PORT ?? 5199),
-  ...(process.env.EXPOSE && { host: true, allowedHosts: true }),
+  ...(process.env.EXPOSE && { host: true, allowedHosts: true as const }),
   proxy: { "/api": `http://127.0.0.1:${process.env.PORT ?? 3001}` },
 };
 

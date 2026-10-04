@@ -328,6 +328,7 @@ export function LinearIssues() {
     enabled: !!linearUser,
     staleTime: 30 * 60_000,
   });
+  const { data: full, error: fullError } = useLinearIssue(org.id, sel);
   const statuses = [...new Set(all.issues.map((i) => i.status))];
   const issues = status
     ? all.issues.filter((i) => i.status === status)
@@ -371,7 +372,6 @@ export function LinearIssues() {
       </form>
     );
 
-  const { data: full, error: fullError } = useLinearIssue(org.id, sel);
   const current = all.issues.find((i) => i.id === sel);
   const imported = (id: string) => tickets.some((t) => t.identifier === id);
 

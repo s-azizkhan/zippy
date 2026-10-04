@@ -101,7 +101,7 @@ const Status = ({ on }: { on: boolean }) => (
 
 const Tile = ({ className }: { className?: string }) => (
   <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl bg-[#f2c94c]/15 text-[#c9a227]", className)} aria-hidden>
-    <Refresh size={18} />
+    <Refresh className="size-[18px]" />
   </span>
 );
 
