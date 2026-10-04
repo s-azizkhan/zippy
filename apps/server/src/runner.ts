@@ -17,7 +17,7 @@ import { issueToken, revokeToken } from "./mcp.ts";
 import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
 import { afterTurn } from "./pipeline.ts";
-import { agentSessions, agents, comments, db, mcpServers, orgs, ticketFolders, tickets, workspaces } from "./db/index.ts";
+import { agentSessions, agents, comments, db, mcpServers, orgs, runs, ticketFolders, tickets, workspaces } from "./db/index.ts";
 
 const ADAPTER = createRequire(import.meta.url).resolve("@agentclientprotocol/claude-agent-acp/dist/index.js");
 
@@ -115,6 +115,7 @@ type Live = {
   flush: () => Promise<void>; // persist the streamed text comment
   busy: boolean; // a prompt turn is in flight
   costBase: number; // DB cost when this process started; ACP cost restarts at 0 per process
+  ctx: number; // context tokens, from the last usage_update
   overBudget: boolean;
   idleTimer?: NodeJS.Timeout;
   orgId: string;
@@ -259,7 +260,9 @@ async function mcpFor(ticket: Ticket, agent: Agent, token: string, dirs: Dir[]):
   const builtIn: acp.McpServer[] = [
     { type: "http", name: "zippy", url: `http://127.0.0.1:${process.env.PORT ?? 3001}/api/mcp`, headers: [{ name: "Authorization", value: `Bearer ${token}` }] },
   ];
-  const linear = org && (await agentToken(org).catch((e) => void console.error("[linear]", e.message)));
+  // Linear's 81 tools cost ~32k tokens a turn: opt-in via the mcp:linear toggle.
+  const linearOn = isOn({ id: "mcp:linear", defaultOn: false }, org?.toggles ?? {}, agent.toggles);
+  const linear = linearOn && org && (await agentToken(org).catch((e) => void console.error("[linear]", e.message)));
   if (linear) builtIn.push({ type: "http", name: "linear", url: LINEAR_MCP_URL, headers: [{ name: "Authorization", value: `Bearer ${linear}` }] });
   const rows = (await db.select().from(mcpServers).where(and(eq(mcpServers.orgId, ticket.orgId), eq(mcpServers.enabled, true)))).filter(
     (m) => !m.workspaceIds.length || m.workspaceIds.some((id) => dirs.some((d) => d.ws.id === id)),
@@ -283,6 +286,11 @@ const gitIdentity = (p?: Profile) => {
 };
 
 const POLICY_AUTO_ALLOW = new Set(["read", "search", "think"]);
+
+// Skills and Claude Code MCPs are opt-in (org/agent toggles): each adds prompt tokens every turn.
+const ALWAYS_ON = new Set(["skill:caveman:caveman"]); // named in the system prompt
+// Past this many context tokens a session restarts fresh (resends of a huge history dominate cost).
+const ROTATE_CTX = Number(process.env.ZIPPY_ROTATE_CTX ?? 150_000);
 
 // ponytail: oldest-started idle first, not LRU; concurrent starts can overshoot by a few.
 async function makeRoom(orgId: string, max: number) {
@@ -317,6 +325,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
     tools: new Map(),
     planId: null,
     costBase: sessionRow.costUsd,
+    ctx: sessionRow.ctxTokens,
     overBudget: false,
   } as unknown as Live;
   const queue = (fn: () => Promise<unknown>) => (l.work = l.work.then(fn).catch((e) => console.error("[runner]", e)));
@@ -341,6 +350,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
     async sessionUpdate({ update }) {
       if (l.replaying) return;
       if (update.sessionUpdate === "usage_update") {
+        l.ctx = update.used;
         const amount = update.cost?.amount;
         if (amount != null) queue(() => trackCost(amount));
         return;
@@ -423,10 +433,10 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
 
   await l.conn.initialize({ protocolVersion: acp.PROTOCOL_VERSION, clientCapabilities: {} });
   const mcp = await mcpFor(ticket, agent, token, dirs);
-  const items = scanCatalog().items.map((i) => ({ i, on: isOn(i, org?.toggles ?? {}, agent.toggles) }));
+  const items = scanCatalog().items.map((i) => ({ i, on: isOn({ id: i.id, defaultOn: ALWAYS_ON.has(i.id) }, org?.toggles ?? {}, agent.toggles) }));
   const offMcp = items.filter((x) => x.i.kind === "mcp" && !x.on && x.i.source === "Claude Code").map((x) => `mcp__${x.i.name}`);
   const offSkill = items.some((x) => x.i.kind === "skill" && !x.on);
-  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "mcp__zippy__open_pr"]), ...activeRules(org, agent).flatMap((r) => r.blocks ?? []), ...offMcp];
+  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "Agent", "TodoWrite", "mcp__zippy__open_pr"]), ...activeRules(org, agent).flatMap((r) => r.blocks ?? []), ...offMcp];
   const meta = {
     systemPrompt: { append: await systemPrompt(ticket, agent, dirs) },
     claudeCode: {
@@ -475,7 +485,7 @@ async function catchUp(sessionRow: typeof agentSessions.$inferSelect, ticketId: 
     .where(and(eq(comments.ticketId, ticketId), eq(comments.kind, "text"), gt(comments.createdAt, since)))
     .orderBy(asc(comments.createdAt));
   const lines = rows
-    .filter((r) => r.agentId !== agentId && r.id !== excludeId)
+    .filter((r) => (!sessionRow.acpSessionId || r.agentId !== agentId) && r.id !== excludeId) // fresh session never saw its own replies
     .map((r) => {
       const p = r.payload as { text: string; author?: string };
       return `**${r.handle ? `@${r.handle}` : (p.author ?? "User")}:** ${forAgent(p.text)}`;
@@ -497,6 +507,14 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     .select()
     .from(agentSessions)
     .where(and(eq(agentSessions.ticketId, ticketId), eq(agentSessions.agentId, agentId)));
+
+  if (sessionRow!.ctxTokens > ROTATE_CTX && !live.get(sessionRow!.id)?.busy) {
+    const old = live.get(sessionRow!.id);
+    live.delete(sessionRow!.id);
+    old?.proc.kill();
+    Object.assign(sessionRow!, { acpSessionId: null, ctxTokens: 0 });
+    await db.update(agentSessions).set({ acpSessionId: null, ctxTokens: 0 }).where(eq(agentSessions.id, sessionRow!.id));
+  }
 
   // Show the Zipper as working before the slow worktree/process startup.
   emit(ticketId, { type: "session", agentId, running: true });
@@ -535,6 +553,15 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     const preamble = await catchUp(sessionRow!, ticketId, agentId, triggerCommentId);
     await db.update(agentSessions).set({ lastSeenAt: new Date() }).where(eq(agentSessions.id, sessionRow!.id));
     await setStatus(ticketId, "in_progress");
+    const costBefore = (await db.select({ c: agentSessions.costUsd }).from(agentSessions).where(eq(agentSessions.id, sessionRow!.id)))[0]!.c;
+    const record = async (outcome: string, u?: { inputTokens: number; outputTokens: number; cachedReadTokens?: number | null; cachedWriteTokens?: number | null }) => {
+      const [{ c }] = await db.select({ c: agentSessions.costUsd }).from(agentSessions).where(eq(agentSessions.id, sessionRow!.id));
+      await db.update(agentSessions).set({ ctxTokens: l.ctx }).where(eq(agentSessions.id, sessionRow!.id));
+      await db.insert(runs).values({
+        agentSessionId: sessionRow!.id, outcome, ctxTokens: l.ctx, costUsd: Math.max(0, c - costBefore), model: agent.model,
+        tokensIn: u?.inputTokens ?? 0, tokensOut: u?.outputTokens ?? 0, tokensCacheRead: u?.cachedReadTokens ?? 0, tokensCacheWrite: u?.cachedWriteTokens ?? 0,
+      });
+    };
     try {
       const res = await l.conn
         .prompt({ sessionId: l.acpSessionId, prompt: [{ type: "text", text: preamble + message }] })
@@ -551,6 +578,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
           .where(eq(agentSessions.id, sessionRow!.id));
       }
       await l.work; // cost updates land before the budget decision
+      await record(res.stopReason, res.usage ?? undefined);
       if (l.overBudget) return overBudgetNote(ticketId);
       if (res.stopReason === "cancelled") return setStatus(ticketId, "todo");
       if (await afterTurn(ticketId, agentId)) return;
@@ -558,6 +586,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
       if (res.stopReason === "end_turn" && now?.status === "in_progress") await setStatus(ticketId, "in_review");
     } catch (e) {
       const msg = (e as Error).message;
+      await record("error").catch(console.error);
       await addComment(ticketId, agent.id, "error", {
         text: /auth/i.test(msg) ? "Claude is not logged in. Run `claude auth login` in a terminal, then retry." : msg,
       });

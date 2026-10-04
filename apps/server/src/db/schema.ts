@@ -159,12 +159,28 @@ export const agentSessions = pgTable(
     tokensCacheRead: integer("tokens_cache_read").notNull().default(0),
     tokensCacheWrite: integer("tokens_cache_write").notNull().default(0),
     costUsd: real("cost_usd").notNull().default(0), // cumulative, from ACP usage_update
+    ctxTokens: integer("ctx_tokens").notNull().default(0), // context size after the last turn; drives session rotation
     // Timeline comments after this are fed to the agent on its next prompt.
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("agent_sessions_ticket_agent").on(t.ticketId, t.agentId)],
 );
+
+// One row per agent turn: what it cost and how big the context was.
+export const runs = pgTable("runs", {
+  id: id(),
+  agentSessionId: uuid("agent_session_id").notNull().references(() => agentSessions.id, { onDelete: "cascade" }),
+  model: text("model").notNull().default(""),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  tokensCacheRead: integer("tokens_cache_read").notNull().default(0),
+  tokensCacheWrite: integer("tokens_cache_write").notNull().default(0),
+  ctxTokens: integer("ctx_tokens").notNull().default(0),
+  costUsd: real("cost_usd").notNull().default(0),
+  outcome: text("outcome").notNull(), // ACP stopReason, or "error"
+  createdAt: createdAt(),
+});
 
 export const comments = pgTable("comments", {
   id: id(),

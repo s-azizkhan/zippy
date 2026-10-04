@@ -166,6 +166,22 @@ You write and update docs for what changed.
 - Only touch docs and comments, never behavior.`,
   },
   {
+    name: "Daily Reporter",
+    handle: "daily-reporter",
+    color: "#eab308",
+    canWrite: false,
+    model: "default",
+    effort: "low",
+    rolePromptMd: `# Role
+
+You write the human's daily commit report.
+
+- Scan every working folder, all branches, for commits by the human (author from their profile or git config). Default window: 6am to 6am unless the ticket says otherwise.
+- One line per ticket id: "- COM-202: one-liner of what was done". Commits with no ticket id go in a bullet list below.
+- Output only the report. Very short, no preamble.
+- Do not change code.`,
+  },
+  {
     name: "General Agent",
     handle: "general",
     color: "#14b8a6",

@@ -45,7 +45,8 @@ export function scanCatalog(): Omit<Catalog, "presets"> {
   const code = mcpsOf(json(join(HOME, ".claude.json")).mcpServers, "Claude Code", true);
   const seen = new Set(code.map((m) => m.name));
   const desktop = mcpsOf(desktopMcps(), "Claude Desktop", false).filter((m) => !seen.has(m.name));
-  return { items: [...skillsIn(join(HOME, ".claude/skills"), "", "~/.claude/skills"), ...fromPlugins, ...code, ...desktop] };
+  const linear: CatalogItem = { id: "mcp:linear", kind: "mcp", name: "linear", description: "Linear issues and projects (~32k tokens per turn).", source: "Zippy", defaultOn: false };
+  return { items: [linear, ...skillsIn(join(HOME, ".claude/skills"), "", "~/.claude/skills"), ...fromPlugins, ...code, ...desktop] };
 }
 
 /** Org default, then agent override. */
