@@ -33,6 +33,7 @@ import {
   type TicketEvent,
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
+import { reqlog } from "./reqlog.ts";
 import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, workspaces } from "./db/index.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
@@ -48,6 +49,7 @@ import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
+app.use(reqlog);
 
 app.onError((e, c) => {
   if (e instanceof ZodError) return c.json({ error: "invalid input", issues: e.issues }, 400);
