@@ -88,11 +88,11 @@ export function AgentsPage() {
                 </div>
                 <p className="text-muted-foreground line-clamp-2 min-h-8 text-xs">{blurb(a.rolePromptMd)}</p>
                 <div className="text-muted-foreground flex items-center gap-2 border-t pt-3 text-xs">
-                  <span className="bg-muted inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium">
+                  <span className="bg-muted inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 font-medium">
                     {a.canWrite ? <Pencil className="size-3" aria-hidden /> : <Eye className="size-3" aria-hidden />}
                     {a.canWrite ? "Can edit" : "Read-only"}
                   </span>
-                  <span className="truncate font-mono">{a.effort !== "default" ? `${a.model} · ${a.effort}` : a.model}</span>
+                  <span className="min-w-0 truncate font-mono" title={a.model}>{a.effort !== "default" ? `${a.model} · ${a.effort}` : a.model}</span>
                   <ChevronRight className="ml-auto size-4 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" aria-hidden />
                 </div>
               </Link>
