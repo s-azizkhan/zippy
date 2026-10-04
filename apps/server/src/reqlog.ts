@@ -1,10 +1,31 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readdir, rm, stat } from "node:fs/promises";
 import type { MiddlewareHandler } from "hono";
 import { routePath } from "hono/route";
 
 const dir = new URL("../../../logs/", import.meta.url);
 const SECRET_KEY = /token|secret|key|password|authorization/i;
 const MAX = 10_000;
+const FILE_MAX = 10 * 1024 * 1024;
+const KEEP_MS = 7 * 864e5;
+let prunedDay = "";
+
+// roll to log-DAY.N.txt past FILE_MAX; drop files older than KEEP_MS once per day
+async function write(day: string, line: string) {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  if (prunedDay !== day) {
+    prunedDay = day;
+    for (const f of await readdir(dir)) {
+      const u = new URL(f, dir);
+      if (/^log-.*\.txt$/.test(f) && Date.now() - (await stat(u)).mtimeMs > KEEP_MS) await rm(u);
+    }
+  }
+  let file: URL;
+  for (let n = 0; ; n++) {
+    file = new URL(`log-${day}${n ? `.${n}` : ""}.txt`, dir);
+    if ((await stat(file).then((x) => x.size, () => 0)) < FILE_MAX) break;
+  }
+  await appendFile(file, line + "\n", { mode: 0o600 });
+}
 const SECRET = /"([^"]*(token|secret|key|password|authorization)[^"]*)"\s*:\s*"(?:[^"\\]|\\.)*"/gi;
 
 // scrub secrets, single-line, truncate
@@ -31,7 +52,5 @@ export const reqlog: MiddlewareHandler = async (c, next) => {
     `[${new Date(t).toISOString()}]:${level}:${id}:${c.req.method}:"${url.pathname}${qs && `?${qs}`}"("${route}"):${status}:${Date.now() - t}:${stream ? "[stream]" : body(res)}` +
     (req ? ` req=${body(req)}` : "") +
     (c.error ? ` err=${JSON.stringify(c.error.stack ?? c.error.message)}` : "");
-  mkdir(dir, { recursive: true, mode: 0o700 })
-    .then(() => appendFile(new URL(`log-${new Date(t).toISOString().slice(0, 10)}.txt`, dir), line + "\n", { mode: 0o600 }))
-    .catch(() => { });
+  write(new Date(t).toISOString().slice(0, 10), line).catch(() => {});
 };
