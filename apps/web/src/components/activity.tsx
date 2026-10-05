@@ -8,12 +8,14 @@ import { GitPullRequestIcon as GitPullRequest } from "@/components/ui/git-pull-r
 import { WorkflowIcon as Workflow } from "@/components/ui/workflow";
 import { WrenchIcon as Wrench } from "@/components/ui/wrench";
 import { XIcon as X } from "@/components/ui/x";
-import { Children, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Children, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import hljs from "highlight.js/lib/common";
 import Markdown from "react-markdown";
 import type { Editor } from "@tiptap/react";
 import { MdEditor } from "@/components/md-editor";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
+import { toast } from "sonner";
+import { Link2Icon as Link2 } from "@/components/ui/link-2";
 import remarkGfm from "remark-gfm";
 import { folderHandle } from "@zippy/shared";
 import type {
@@ -138,8 +140,34 @@ function Time({ iso }: { iso: string }) {
   );
 }
 
+const anchor = (id: string) => `c-${id.slice(0, 8)}`;
+
+/** Copies a permalink to one comment. */
+function CopyLink({ id, className }: { id: string; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-label="Copy link to comment"
+      title="Copy link"
+      onClick={() => navigator.clipboard.writeText(`${location.origin}${location.pathname}#${anchor(id)}`).then(() => toast.success("Comment link copied"))}
+      className={cn("text-muted-foreground hover:text-foreground focus-visible:ring-ring/60 rounded p-1 opacity-0 outline-none group-hover/c:opacity-100 focus-visible:opacity-100 focus-visible:ring-2", className)}
+    >
+      <Link2 className="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
 export function Activity({ ticketId, comments, agents, running, chat }: { ticketId: string; comments: Comment[]; agents: Agent[]; running: string[]; chat?: boolean }) {
   const items = useMemo(() => build(comments), [comments]);
+  const { hash } = useLocation();
+  const scrolled = useRef("");
+  useEffect(() => {
+    const el = hash.length > 1 && scrolled.current !== hash ? document.getElementById(hash.slice(1)) : null;
+    if (!el) return;
+    scrolled.current = hash; // once per link, not on every poll
+    el.scrollIntoView({ block: "center" });
+    el.animate([{ backgroundColor: "color-mix(in oklab, var(--primary) 18%, transparent)" }, { backgroundColor: "transparent" }], { duration: 2000 });
+  }, [hash, comments]);
   const agent = (id: string | null) => agents.find((a) => a.id === id);
   const thread = useMemo(() => comments.findLast((c) => c.kind === "text" || c.kind === "tool")?.parentId ?? null, [comments]); // thread the run is replying in
   const working = running.map((id) => agent(id)?.name).join(", ");
@@ -328,7 +356,8 @@ function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?
           ? "border-destructive/40"
           : "";
   return (
-    <article className={cn("bg-card overflow-hidden rounded-lg border", tone)} aria-label={`Comment by ${agent?.name ?? (c.payload as { author?: string }).author ?? "you"}`}>
+    <article id={anchor(c.id)} className={cn("group/c bg-card relative overflow-hidden rounded-lg border", tone)} aria-label={`Comment by ${agent?.name ?? (c.payload as { author?: string }).author ?? "you"}`}>
+      <CopyLink id={c.id} className="absolute top-2 right-2" />
       <div className="grid min-w-0 grid-cols-1 gap-2 px-4 py-3">
         <CardBody c={c} agent={agent} />
       </div>
@@ -342,7 +371,8 @@ function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?
                 <ToolRun items={g} agent={ra} />
               </li>
             ) : (
-              <li key={r.id} className="grid min-w-0 grid-cols-1 gap-1.5">
+              <li key={r.id} id={anchor(r.id)} className="group/c relative grid min-w-0 grid-cols-1 gap-1.5">
+                <CopyLink id={r.id} className="absolute top-0 right-0" />
                 <CardHeader agent={ra} author={(r.payload as { author?: string }).author} iso={r.createdAt} />
                 <div className="pl-7 text-[14px]">{md((r.payload as { text?: string }).text ?? "")}</div>
               </li>
