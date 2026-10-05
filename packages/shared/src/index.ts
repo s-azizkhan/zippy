@@ -42,6 +42,7 @@ export const profileInput = z.object({
   githubEmail: z.union([z.literal(""), z.email("an email address")]).default(""),
   linearUser: z.string().default(""),
   about: z.string().max(2000).default(""), // working style, shown to agents
+  dayStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM").default("00:00"), // when the Todo day rolls over
 });
 export type Profile = z.infer<typeof profileInput>;
 
@@ -164,6 +165,22 @@ export function nextRunAt(r: RunTimes): Date {
   if (r.lastRunAt) d.setDate(d.getDate() + Math.ceil(r.everyHours / 24));
   else if (d < base) d.setDate(d.getDate() + 1);
   return d;
+}
+
+export const todoInput = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // work day (see workDay)
+  title: z.string().trim().min(1).max(300),
+  bodyMd: z.string().default(""), // attachments live here as markdown links
+  ref: z.string().max(40).default(""), // Zippy or Linear issue identifier
+  done: z.boolean().default(false),
+});
+export type TodoInput = z.infer<typeof todoInput>;
+
+/** Local YYYY-MM-DD of the work day `now` falls in, for a day that starts at `start` (HH:MM). */
+export function workDay(now: Date, start: string): string {
+  const [h, m] = start.split(":").map(Number);
+  const d = new Date(+now - (h! * 60 + m!) * 6e4);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export const httpUrl = z.string().url().refine((u) => /^https?:\/\//i.test(u), "http(s) URL");

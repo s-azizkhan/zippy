@@ -19,7 +19,7 @@ export const orgs = pgTable("orgs", {
   linearAuth: jsonb("linear_auth").$type<import("../linear.ts").LinearAuth>(), // Linear MCP OAuth client + tokens
   linearWorkspace: text("linear_workspace"),
   linearPush: boolean("linear_push").notNull().default(true),
-  profile: jsonb("profile").$type<import("@zippy/shared").Profile>().notNull().default({ name: "", handle: "", role: "", githubUsername: "", githubEmail: "", linearUser: "", about: "" }),
+  profile: jsonb("profile").$type<import("@zippy/shared").Profile>().notNull().default({ name: "", handle: "", role: "", githubUsername: "", githubEmail: "", linearUser: "", about: "", dayStart: "00:00" }),
   slackWebhookUrl: text("slack_webhook_url").notNull().default(""),
   notifyDesktop: boolean("notify_desktop").notNull().default(true),
   useActiveBranch: boolean("use_active_branch").notNull().default(false), // work in the folder on its checked-out branch, no worktree
@@ -225,5 +225,17 @@ export const routines = pgTable("routines", {
   runAt: text("run_at"),
   enabled: boolean("enabled").notNull().default(true),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+// Per-day dev todos. `day` is the work day (profile.dayStart), so past days are just earlier keys.
+export const todos = pgTable("todos", {
+  id: id(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  day: text("day").notNull(),
+  title: text("title").notNull(),
+  bodyMd: text("body_md").notNull().default(""),
+  ref: text("ref").notNull().default(""),
+  done: boolean("done").notNull().default(false),
   createdAt: createdAt(),
 });

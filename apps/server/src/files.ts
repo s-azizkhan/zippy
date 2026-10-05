@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 // Linear upload URLs are signed for ~5 minutes, so images are copied here at sync time.
 export const FILES_DIR = join(homedir(), ".zippy", "files");
+const UPLOADS_DIR = join(FILES_DIR, "uploads");
 export const FILE_KEY_RE = /^[a-f0-9]{32}\.(png|jpg|gif|webp|bin)$/;
 
 // No SVG: it can carry script and would run on Zippy's origin.
@@ -57,4 +58,21 @@ export async function readCached(key: string) {
   const path = join(FILES_DIR, key);
   if (!existsSync(path)) return null;
   return { body: await readFile(path), type: TYPE[key.split(".")[1]!] ?? "application/octet-stream" };
+}
+
+// User uploads (any type). Only raster images and PDF render inline; everything else downloads, so uploaded HTML/SVG never runs on Zippy's origin.
+const UPLOAD_RE = /^[a-f0-9]{32}-[\w.-]{1,100}$/;
+const INLINE: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", pdf: "application/pdf" };
+
+export async function saveUpload(name: string, body: ArrayBuffer) {
+  const key = `${randomUUID().replaceAll("-", "")}-${name.replace(/[^\w.-]/g, "_").slice(-100) || "file"}`;
+  await mkdir(UPLOADS_DIR, { recursive: true });
+  await writeFile(join(UPLOADS_DIR, key), Buffer.from(body));
+  return { key, inline: key.split(".").pop()!.toLowerCase() in INLINE };
+}
+
+export async function readUpload(key: string) {
+  if (!UPLOAD_RE.test(key) || !existsSync(join(UPLOADS_DIR, key))) return null;
+  const type = INLINE[key.split(".").pop()!.toLowerCase()];
+  return { body: await readFile(join(UPLOADS_DIR, key)), type: type ?? "application/octet-stream", name: key.slice(33), inline: !!type };
 }

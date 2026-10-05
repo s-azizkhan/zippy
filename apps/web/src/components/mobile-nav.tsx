@@ -1,4 +1,4 @@
-import { Activity, Bot, Inbox, Layers, Check, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Search, Settings, Workflow } from "lucide-react";
+import { Activity, Bot, Inbox, Layers, ListChecks, Check, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Plus, RefreshCw, Search, Settings, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
@@ -12,6 +12,7 @@ type Icon = React.ComponentType<{ className?: string; strokeWidth?: number }>;
 
 const MORE: { to: string; label: string; icon: Icon; color: string }[] = [
   { to: "/chat", label: "Chat", icon: MessageSquare, color: "#e879f9" },
+  { to: "/todo", label: "Todo", icon: ListChecks, color: "#f472b6" },
   { to: "/running", label: "Running", icon: Activity, color: "#4cb782" },
   { to: "/pipelines", label: "Pipelines", icon: Workflow, color: "#26b5ce" },
   { to: "/routines", label: "Routines", icon: RefreshCw, color: "#f2c94c" },

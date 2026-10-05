@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, ListChecks as ListChecksIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
 import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
 import { PlusIcon as Plus } from "@/components/ui/plus";
@@ -237,6 +237,7 @@ function Sidebar() {
             <Plus className="relative size-4" aria-hidden />
           </button>
           <NavItem to="/chat" icon={MessageSquare} color="#e879f9" label="Chat" match={pathname.startsWith("/chat")} />
+          <NavItem to="/todo" icon={ListChecksIcon} color="#f472b6" label="Todo" />
           <NavItem to="/inbox" icon={MailboxIcon} color="#f2994a" label="Inbox" count={inbox} />
           <NavItem to="/" icon={LayersIcon} color="#7c87f0" label="All issues" match={pathname === "/" && !view && !folder} />
         </nav>
@@ -410,6 +411,7 @@ const router = createBrowserRouter([
       { path: "/t/:id", ...page(() => import("@/pages/ticket"), "TicketPage") },
       { path: "/chat", ...page(() => import("@/pages/chat"), "ChatPage"), handle: { title: "Chat" } },
       { path: "/chat/:id", ...page(() => import("@/pages/chat"), "ChatPage"), handle: { title: "Chat" } },
+      { path: "/todo", ...page(() => import("@/pages/todo"), "TodoPage"), handle: { title: "Todo" } },
       { path: "/inbox", ...page(() => import("@/pages/inbox"), "InboxPage"), handle: { title: "Inbox" } },
       { path: "/zippers", ...page(() => import("@/pages/agents"), "AgentsPage"), handle: { title: "Zippers" } },
       { path: "/zippers/:handle", ...page(() => import("@/pages/agents"), "AgentsPage"), handle: { title: "Zippers" } },

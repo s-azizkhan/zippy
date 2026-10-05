@@ -29,17 +29,19 @@ import {
   patchOf,
   ticketInput,
   ticketPatch,
+  todoInput,
   workspaceInput,
   type TicketEvent,
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
 import { reqlog } from "./reqlog.ts";
-import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, workspaces } from "./db/index.ts";
+import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { browse, listFiles } from "./browse.ts";
-import { localizeImages, readCached } from "./files.ts";
+import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
+import { bodyLimit } from "hono/body-limit";
 import { folderDiff, prState, runTests } from "./git.ts";
 import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
@@ -131,6 +133,7 @@ function crud(path: string, table: PgTable & { id: any; orgId: any; createdAt: a
   });
 }
 crud("workspaces", workspaces, workspaceInput);
+crud("todos", todos, todoInput);
 app.get("/workspaces/:id/files", async (c) => {
   const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
   return w ? c.json(await listFiles(w.path).catch(() => [])) : c.notFound();
@@ -582,6 +585,17 @@ app.get("/files/:key", async (c) => {
   const f = await readCached(c.req.param("key"));
   if (!f) return c.notFound();
   return c.body(f.body, 200, { "content-type": f.type, "x-content-type-options": "nosniff", "cache-control": "private, max-age=31536000, immutable" });
+});
+
+app.post("/uploads", bodyLimit({ maxSize: 50 * 1024 * 1024 }), async (c) => {
+  const name = c.req.query("name") ?? "file";
+  const { key, inline } = await saveUpload(name, await c.req.arrayBuffer());
+  return c.json({ url: `/api/uploads/${key}`, name, inline }, 201);
+});
+app.get("/uploads/:key", async (c) => {
+  const f = await readUpload(c.req.param("key"));
+  if (!f) return c.notFound();
+  return c.body(f.body, 200, { "content-type": f.type, "x-content-type-options": "nosniff", "content-disposition": `${f.inline ? "inline" : "attachment"}; filename="${f.name}"`, "cache-control": "private, max-age=31536000, immutable" });
 });
 
 // ponytail: polls open Linear tickets every 60s; the webhook makes this instant when a public URL exists.
