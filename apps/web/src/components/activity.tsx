@@ -229,6 +229,7 @@ function ToolRun({ items, agent }: { items: Comment[]; agent?: Agent }) {
   const [open, setOpen] = useState(false);
   const failed = items.filter((c) => (c.payload as ToolPayload).status === "failed").length;
   const active = items.some((c) => !["completed", "failed"].includes((c.payload as ToolPayload).status ?? ""));
+  const now = items.findLast((c) => !["completed", "failed"].includes((c.payload as ToolPayload).status ?? "")) ?? items.at(-1)!;
   return (
     <div className="pl-1.5 text-xs">
       <button onClick={() => setOpen(!open)} aria-expanded={open} className="text-muted-foreground hover:text-foreground flex items-center gap-2">
@@ -237,6 +238,7 @@ function ToolRun({ items, agent }: { items: Comment[]; agent?: Agent }) {
           <span className="text-foreground/90 font-medium">{agent?.name}</span> ran {items.length} tool call{items.length > 1 && "s"}
           {failed > 0 && <span className="text-destructive"> · {failed} failed</span>}
         </span>
+        <span className="max-w-[28ch] truncate font-mono sm:max-w-[48ch]" title={(now.payload as ToolPayload).title}>{(now.payload as ToolPayload).title}</span>
         <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} aria-hidden />
       </button>
       {open && (
@@ -288,15 +290,30 @@ function CardHeader({ agent, author: linearAuthor, iso, children }: { agent?: Ag
   );
 }
 
+const groupTools = (cs: Comment[]) => cs.reduce<Comment[][]>((g, r) => (r.kind === "tool" && g.at(-1)?.[0]!.kind === "tool" ? g.at(-1)!.push(r) : g.push([r]), g), []);
+
+function Bubble({ c, agent }: { c: Comment; agent?: Agent }) {
+  const mine = !c.agentId;
+  return (
+    <div className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
+      {!mine && <AgentAvatar agent={agent} />}
+      <div title={new Date(c.createdAt).toLocaleString()} className={cn("min-w-0 max-w-[85%] rounded-2xl px-4 py-2.5 text-[16px] leading-relaxed", mine ? "bg-primary text-primary-foreground rounded-br-sm [&_a]:!bg-white/20 [&_a]:!text-inherit [&_code]:!bg-white/20" : "bg-muted rounded-bl-sm")}>
+        {md((c.payload as { text?: string }).text ?? "")}
+      </div>
+    </div>
+  );
+}
+
 function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?: string; c: Comment; replies: Comment[]; agent?: Agent; agents: Agent[]; ticketId: string; chat?: boolean }) {
   if (chat && c.kind === "text") {
-    const mine = !c.agentId;
     return (
-      <div className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
-        {!mine && <AgentAvatar agent={agent} />}
-        <div title={new Date(c.createdAt).toLocaleString()} className={cn("min-w-0 max-w-[85%] rounded-2xl px-4 py-2.5 text-[16px] leading-relaxed", mine ? "bg-primary text-primary-foreground rounded-br-sm [&_a]:!bg-white/20 [&_a]:!text-inherit [&_code]:!bg-white/20" : "bg-muted rounded-bl-sm")}>
-          {md((c.payload as { text?: string }).text ?? "")}
-        </div>
+      <div className="grid gap-3">
+        <Bubble c={c} agent={agent} />
+        {groupTools(replies).map((g) => {
+          const r = g[0]!;
+          const ra = agents.find((a) => a.id === r.agentId);
+          return r.kind === "tool" ? <ToolRun key={r.id} items={g} agent={ra} /> : <Bubble key={r.id} c={r} agent={ra} />;
+        })}
       </div>
     );
   }
@@ -317,7 +334,7 @@ function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?
       </div>
       {replies.length > 0 && (
         <ol className="grid gap-3 border-t px-4 py-3">
-          {replies.reduce<Comment[][]>((g, r) => (r.kind === "tool" && g.at(-1)?.[0]!.kind === "tool" ? g.at(-1)!.push(r) : g.push([r]), g), []).map((g) => {
+          {groupTools(replies).map((g) => {
             const r = g[0]!;
             const ra = agents.find((a) => a.id === r.agentId);
             return r.kind === "tool" ? (
