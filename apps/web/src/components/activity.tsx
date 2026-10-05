@@ -113,12 +113,17 @@ export const md = (text: string) => (
 
 const EVENT_KINDS = new Set(["status", "stage", "tool"]);
 
-type Item = { type: "event"; c: Comment } | { type: "tools"; items: Comment[] } | { type: "card"; c: Comment; replies: Comment[] };
+type Item = { type: "event"; c: Comment } | { type: "tools"; items: Comment[] } | { type: "card"; c: Comment };
+type Kids = Map<string, Comment[]>;
 
-/** Top-level timeline: cards with their replies, event lines, and runs of tool calls folded together. */
+const kidsOf = (comments: Comment[]): Kids => {
+  const kids: Kids = new Map();
+  for (const c of comments) if (c.parentId) kids.set(c.parentId, [...(kids.get(c.parentId) ?? []), c]);
+  return kids;
+};
+
+/** Top-level timeline: cards, event lines, and runs of tool calls folded together. Replies hang off `kids`. */
 function build(comments: Comment[]): Item[] {
-  const replies = new Map<string, Comment[]>();
-  for (const c of comments) if (c.parentId) replies.set(c.parentId, [...(replies.get(c.parentId) ?? []), c]);
   const items: Item[] = [];
   for (const c of comments) {
     if (c.parentId) continue;
@@ -127,7 +132,7 @@ function build(comments: Comment[]): Item[] {
       if (last?.type === "tools") last.items.push(c);
       else items.push({ type: "tools", items: [c] });
     } else if (EVENT_KINDS.has(c.kind)) items.push({ type: "event", c });
-    else items.push({ type: "card", c, replies: replies.get(c.id) ?? [] });
+    else items.push({ type: "card", c });
   }
   return items;
 }
@@ -159,6 +164,7 @@ function CopyLink({ id, className }: { id: string; className?: string }) {
 
 export function Activity({ ticketId, comments, agents, running, chat }: { ticketId: string; comments: Comment[]; agents: Agent[]; running: string[]; chat?: boolean }) {
   const items = useMemo(() => build(comments), [comments]);
+  const kids = useMemo(() => kidsOf(comments), [comments]);
   const { hash } = useLocation();
   const scrolled = useRef("");
   useEffect(() => {
@@ -169,7 +175,12 @@ export function Activity({ ticketId, comments, agents, running, chat }: { ticket
     el.animate([{ backgroundColor: "color-mix(in oklab, var(--primary) 18%, transparent)" }, { backgroundColor: "transparent" }], { duration: 2000 });
   }, [hash, comments]);
   const agent = (id: string | null) => agents.find((a) => a.id === id);
-  const thread = useMemo(() => comments.findLast((c) => c.kind === "text" || c.kind === "tool")?.parentId ?? null, [comments]); // thread the run is replying in
+  const thread = useMemo(() => {
+    const by = new Map(comments.map((c) => [c.id, c]));
+    let c = comments.findLast((x) => x.kind === "text" || x.kind === "tool");
+    while (c?.parentId && by.get(c.parentId)?.parentId) c = by.get(c.parentId);
+    return c?.parentId ?? null; // root of the thread the run is replying in
+  }, [comments]);
   const working = running.map((id) => agent(id)?.name).join(", ");
   const announce = useMemo(() => {
     const c = comments.findLast((x) => x.kind === "status" || x.kind === "approval" || x.kind === "question");
@@ -194,7 +205,7 @@ export function Activity({ ticketId, comments, agents, running, chat }: { ticket
               it.c.kind === "test" ? (
                 <TestResult p={it.c.payload as TestPayload} iso={it.c.createdAt} />
               ) : (
-                <Card c={it.c} replies={it.replies} agent={agent(it.c.agentId)} agents={agents} ticketId={ticketId} chat={chat} working={running.length && thread === it.c.id ? working : ""} />
+                <Card c={it.c} kids={kids} agent={agent(it.c.agentId)} agents={agents} ticketId={ticketId} chat={chat} working={running.length && thread === it.c.id ? working : ""} />
               )
             )}
           </li>
@@ -332,7 +343,79 @@ function Bubble({ c, agent }: { c: Comment; agent?: Agent }) {
   );
 }
 
-function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?: string; c: Comment; replies: Comment[]; agent?: Agent; agents: Agent[]; ticketId: string; chat?: boolean }) {
+/** Replies under a comment, all depths, tool calls excluded. */
+const countReplies = (kids: Kids, id: string): number => (kids.get(id) ?? []).reduce((n, c) => n + (c.kind === "tool" ? 0 : 1 + countReplies(kids, c.id)), 0);
+const plural = (n: number) => `${n} repl${n > 1 ? "ies" : "y"}`;
+
+function Fold({ folded, onClick, label }: { folded: boolean; onClick: () => void; label: string }) {
+  return (
+    <button type="button" onClick={onClick} aria-expanded={!folded} aria-label={`${folded ? "Expand" : "Collapse"} ${label}`} className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/60 rounded p-0.5 outline-none focus-visible:ring-2">
+      <ChevronRight className={cn("size-3.5 transition-transform", !folded && "rotate-90")} aria-hidden />
+    </button>
+  );
+}
+
+const DEPTH_INDENT = 5; // deeper levels stop indenting so mobile stays readable
+
+function Replies({ list, kids, agents, ticketId, depth = 0 }: { list: Comment[]; kids: Kids; agents: Agent[]; ticketId: string; depth?: number }) {
+  return (
+    <ol className="grid min-w-0 grid-cols-1 gap-3">
+      {groupTools(list).map((g) => {
+        const r = g[0]!;
+        return r.kind === "tool" ? (
+          <li key={r.id} className="min-w-0">
+            <ToolRun items={g} agent={agents.find((a) => a.id === r.agentId)} />
+          </li>
+        ) : (
+          <Reply key={r.id} c={r} kids={kids} agents={agents} ticketId={ticketId} depth={depth} />
+        );
+      })}
+    </ol>
+  );
+}
+
+function Reply({ c, kids, agents, ticketId, depth }: { c: Comment; kids: Kids; agents: Agent[]; ticketId: string; depth: number }) {
+  const [folded, setFolded] = useState(false);
+  const [replying, setReplying] = useState(false);
+  const sub = kids.get(c.id) ?? [];
+  const n = countReplies(kids, c.id);
+  return (
+    <li id={anchor(c.id)} className="group/c relative grid min-w-0 grid-cols-1 gap-1.5">
+      <CopyLink id={c.id} className="absolute top-0 right-0" />
+      <div className="flex min-w-0 items-center gap-1">
+        {n > 0 && <Fold folded={folded} onClick={() => setFolded(!folded)} label="replies" />}
+        <CardHeader agent={agents.find((a) => a.id === c.agentId)} author={(c.payload as { author?: string }).author} iso={c.createdAt}>
+          {folded && <span className="text-muted-foreground text-xs">· {plural(n)} hidden</span>}
+        </CardHeader>
+      </div>
+      {!folded && (
+        <>
+          <div className="pl-7 text-[14px]">{md((c.payload as { text?: string }).text ?? "")}</div>
+          <button type="button" onClick={() => setReplying(!replying)} className="text-muted-foreground hover:text-foreground w-fit pl-7 text-xs">
+            {replying ? "Cancel" : "Reply"}
+          </button>
+          {replying && <ReplyBox nested ticketId={ticketId} parentId={c.id} agents={agents} onDone={() => setReplying(false)} />}
+          {sub.length > 0 && (
+            <div className="flex min-w-0">
+              {depth < DEPTH_INDENT && (
+                <button type="button" onClick={() => setFolded(true)} aria-label="Collapse replies" title="Collapse" className="group/l ml-2.5 w-3 shrink-0 cursor-pointer outline-none">
+                  <span className="bg-border group-hover/l:bg-primary group-focus-visible/l:bg-primary block h-full w-px transition-colors" />
+                </button>
+              )}
+              <div className="min-w-0 flex-1 pl-2">
+                <Replies list={sub} kids={kids} agents={agents} ticketId={ticketId} depth={depth + 1} />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </li>
+  );
+}
+
+function Card({ c, kids, agent, agents, ticketId, chat, working }: { working?: string; c: Comment; kids: Kids; agent?: Agent; agents: Agent[]; ticketId: string; chat?: boolean }) {
+  const [folded, setFolded] = useState(false);
+  const replies = kids.get(c.id) ?? [];
   if (chat && c.kind === "text") {
     return (
       <div className="grid gap-3">
@@ -362,23 +445,13 @@ function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?
         <CardBody c={c} agent={agent} />
       </div>
       {replies.length > 0 && (
-        <ol className="grid min-w-0 grid-cols-1 gap-3 border-t px-4 py-3">
-          {groupTools(replies).map((g) => {
-            const r = g[0]!;
-            const ra = agents.find((a) => a.id === r.agentId);
-            return r.kind === "tool" ? (
-              <li key={r.id} className="min-w-0">
-                <ToolRun items={g} agent={ra} />
-              </li>
-            ) : (
-              <li key={r.id} id={anchor(r.id)} className="group/c relative grid min-w-0 grid-cols-1 gap-1.5">
-                <CopyLink id={r.id} className="absolute top-0 right-0" />
-                <CardHeader agent={ra} author={(r.payload as { author?: string }).author} iso={r.createdAt} />
-                <div className="pl-7 text-[14px]">{md((r.payload as { text?: string }).text ?? "")}</div>
-              </li>
-            );
-          })}
-        </ol>
+        <div className="grid min-w-0 grid-cols-1 gap-3 border-t px-4 py-3">
+          <div className="text-muted-foreground flex items-center gap-1 text-xs">
+            <Fold folded={folded} onClick={() => setFolded(!folded)} label="thread" />
+            {folded ? `Show ${plural(countReplies(kids, c.id))}` : "Hide replies"}
+          </div>
+          {!folded && <Replies list={replies} kids={kids} agents={agents} ticketId={ticketId} />}
+        </div>
       )}
       {working && (
         <p className="text-muted-foreground flex items-center gap-2 border-t px-4 py-2 text-xs">
@@ -689,11 +762,11 @@ export function MentionInput({
   );
 }
 
-function ReplyBox({ ticketId, parentId, agents }: { ticketId: string; parentId: string; agents: Agent[] }) {
+function ReplyBox({ ticketId, parentId, agents, nested, onDone }: { ticketId: string; parentId: string; agents: Agent[]; nested?: boolean; onDone?: () => void }) {
   const send = useApiMutation((body: string) => api.post(`/tickets/${ticketId}/comments`, { body, parentId }));
   return (
-    <div className="border-t px-4 py-2.5">
-      <MentionInput compact agents={agents} placeholder="Leave a reply…" pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: done })} />
+    <div className={nested ? "pl-7" : "border-t px-4 py-2.5"}>
+      <MentionInput compact={!nested} agents={agents} placeholder="Leave a reply…" pending={send.isPending} onSend={(t, done) => send.mutate(t, { onSuccess: () => (done(), onDone?.()) })} />
     </div>
   );
 }

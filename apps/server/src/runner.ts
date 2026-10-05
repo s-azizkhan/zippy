@@ -155,7 +155,9 @@ async function mirror(c: Comment) {
   if (!t?.linearId) return;
   const [org] = await db.select().from(orgs).where(eq(orgs.id, t.orgId));
   const [a] = c.agentId ? await db.select({ name: agents.name }).from(agents).where(eq(agents.id, c.agentId)) : [];
-  const [parent] = c.parentId ? await db.select({ lid: comments.linearCommentId }).from(comments).where(eq(comments.id, c.parentId)) : [];
+  // Linear threads are one level deep: reply under the top-level ancestor.
+  let [parent] = c.parentId ? await db.select({ lid: comments.linearCommentId, parentId: comments.parentId }).from(comments).where(eq(comments.id, c.parentId)) : [];
+  while (parent?.parentId) [parent] = await db.select({ lid: comments.linearCommentId, parentId: comments.parentId }).from(comments).where(eq(comments.id, parent.parentId));
   const lid = await postComment(org!, t, linearBody(c.kind, c.payload), a?.name ?? "Zippy", parent?.lid);
   if (lid) await db.update(comments).set({ linearCommentId: lid }).where(eq(comments.id, c.id));
 }
@@ -552,7 +554,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     l.busy = true;
     emit(ticketId, { type: "session", agentId, running: true });
     const [trig] = triggerCommentId ? await db.select({ id: comments.id, parentId: comments.parentId, agentId: comments.agentId }).from(comments).where(eq(comments.id, triggerCommentId)) : [];
-    l.replyTo = trig && !trig.agentId ? (trig.parentId ?? trig.id) : null; // reply in the human's thread
+    l.replyTo = trig && !trig.agentId ? trig.id : null; // reply under the human comment
     const preamble = await catchUp(sessionRow!, ticketId, agentId, triggerCommentId);
     await db.update(agentSessions).set({ lastSeenAt: new Date() }).where(eq(agentSessions.id, sessionRow!.id));
     await setStatus(ticketId, "in_progress");
