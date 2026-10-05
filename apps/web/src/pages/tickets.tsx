@@ -118,7 +118,7 @@ export function TicketsPage() {
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const setNewTicketOpen = useUI((s) => s.setNewTicketOpen);
   const [params, setParams] = useSearchParams();
-  const [closed, setClosed] = useState<Set<TicketStatus>>(new Set());
+  const [closed, setClosed] = useState<Set<TicketStatus>>(new Set(["done"]));
   useRowKeys();
   const reduce = useReducedMotion();
   const idx = TABS.findIndex((t) => t.id === tab.id);
