@@ -445,7 +445,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
         allowedTools: ["mcp__zippy"],
         ...(disallowedTools.length && { disallowedTools }),
         // ponytail: SDK `skills` allow-list; unset = all skills load.
-        ...(offSkill && { skills: items.filter((x) => x.i.kind === "skill" && x.on).map((x) => x.i.name) }),
+        ...(offSkill && { skills: [...items.filter((x) => x.i.kind === "skill" && x.on).map((x) => x.i.name), ...(agent.toggles["skill:code-review"] ? ["code-review"] : [])] }), // code-review is built in, not in catalog
       },
     },
   };

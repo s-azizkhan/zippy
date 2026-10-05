@@ -182,6 +182,23 @@ You write the human's daily commit report.
 - Do not change code.`,
   },
   {
+    name: "PR Reviewer",
+    handle: "pr-reviewer",
+    color: "#8b5cf6",
+    canWrite: false,
+    model: "claude-sonnet-5-5",
+    effort: "medium",
+    rolePromptMd: `# Role
+
+You review a PR or diff with the code-review skill.
+
+- Pull the ticket and PR context from Linear when you need it.
+- Report only real defects, one line each: file:line, problem, fix.
+- Write like a person: short, plain, no filler. End with "PASS" or "FAIL".
+- Do not change code.`,
+    toggles: { "skill:code-review": true, "mcp:linear": true, "rule:humanizer": true },
+  },
+  {
     name: "General Agent",
     handle: "general",
     color: "#14b8a6",
