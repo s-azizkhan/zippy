@@ -155,9 +155,9 @@ export function Activity({ ticketId, comments, agents, running, chat }: { ticket
       <h2 id="activity-h" className={chat ? "sr-only" : "text-[14px] font-semibold"}>
         Activity
       </h2>
-      <ol className="grid grid-cols-1 gap-3">
+      <ol className="grid min-w-0 grid-cols-1 gap-3">
         {items.map((it) => (
-          <li key={it.type === "tools" ? it.items[0]!.id : it.c.id}>
+          <li key={it.type === "tools" ? it.items[0]!.id : it.c.id} className="min-w-0">
             {it.type === "event" ? (
               <EventLine c={it.c} agent={agent(it.c.agentId)} />
             ) : it.type === "tools" ? (
@@ -333,16 +333,16 @@ function Card({ c, replies, agent, agents, ticketId, chat, working }: { working?
         <CardBody c={c} agent={agent} />
       </div>
       {replies.length > 0 && (
-        <ol className="grid gap-3 border-t px-4 py-3">
+        <ol className="grid min-w-0 grid-cols-1 gap-3 border-t px-4 py-3">
           {groupTools(replies).map((g) => {
             const r = g[0]!;
             const ra = agents.find((a) => a.id === r.agentId);
             return r.kind === "tool" ? (
-              <li key={r.id}>
+              <li key={r.id} className="min-w-0">
                 <ToolRun items={g} agent={ra} />
               </li>
             ) : (
-              <li key={r.id} className="grid gap-1.5">
+              <li key={r.id} className="grid min-w-0 grid-cols-1 gap-1.5">
                 <CardHeader agent={ra} author={(r.payload as { author?: string }).author} iso={r.createdAt} />
                 <div className="pl-7 text-[14px]">{md((r.payload as { text?: string }).text ?? "")}</div>
               </li>
