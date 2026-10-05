@@ -491,9 +491,15 @@ function Properties(props: {
     <aside className={cn("border-foreground/[0.07] bg-card/40 relative m-2 ml-0 hidden w-[300px] shrink-0 flex-col gap-5 overflow-x-hidden overflow-y-auto rounded-2xl border px-3 py-4 text-[13px] shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05)] lg:flex", sheet && "glass-pop sheet-up max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-50 max-lg:m-0 max-lg:flex max-lg:max-h-[82dvh] max-lg:w-auto max-lg:rounded-b-none max-lg:rounded-t-3xl max-lg:pb-[calc(1rem+env(safe-area-inset-bottom))]")} aria-label="Issue properties">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(100%_100%_at_50%_0%,color-mix(in_oklab,var(--color-primary)_14%,transparent),transparent)]" />
       <div className="relative -mb-1 flex items-center justify-end gap-1.5">
-        <span className="border-foreground/[0.07] bg-foreground/[0.04] mr-auto flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[11px]">
-          <SourceIcon linear={!!ticket.linearId} /> {ticket.identifier}
-        </span>
+        {(() => {
+          const cls = "border-foreground/[0.07] bg-foreground/[0.04] mr-auto flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[11px]";
+          const body = <><SourceIcon linear={!!ticket.linearId} /> {ticket.identifier}</>;
+          return ticket.linearUrl ? (
+            <a href={ticket.linearUrl} target="_blank" rel="noreferrer" title="Open in Linear" className={cn(cls, "hover:bg-foreground/[0.08] transition-colors")}>{body}</a>
+          ) : (
+            <span className={cls}>{body}</span>
+          );
+        })()}
         <CopyBtn label="Copy link" icon={Link2} onClick={() => copy(location.href, "Link")} />
         <CopyBtn label="Copy ID" icon={Copy} onClick={() => copy(ticket.identifier, "ID")} />
         {ticket.linearUrl && <CopyBtn label="Sync from Linear" icon={RefreshCw} onClick={sync} />}
