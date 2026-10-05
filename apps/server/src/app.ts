@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { and, asc, desc, eq, gte, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { execFile } from "node:child_process";
 import { z, ZodError } from "zod";
@@ -64,7 +64,7 @@ const body = async <T extends z.ZodType>(c: { req: { json(): Promise<unknown> } 
 // Identifiers are unique per org only; pass ?org=<orgId> to disambiguate.
 const byIdentifier = async (c: Context) => {
   const org = c.req.query("org");
-  const [t] = await db.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.identifier, c.req.param("id")!), org ? eq(tickets.orgId, org) : undefined));
+  const [t] = await db.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.identifier, c.req.param("id")!), isNull(tickets.deletedAt), org ? eq(tickets.orgId, org) : undefined));
   if (!t) return c.notFound();
   const url = new URL(c.req.url);
   url.pathname = url.pathname.replace(`/tickets/${c.req.param("id")}`, `/tickets/${t.id}`);
@@ -179,6 +179,7 @@ async function related(t: TicketRow) {
     .where(
       and(
         eq(tickets.orgId, t.orgId),
+        isNull(tickets.deletedAt),
         sql`${tickets.id} <> ${t.id}`,
         sql`(${out.length ? sql`${tickets.identifier} in ${out}` : sql`false`}
           or ${tickets.body} ~ ${word}
@@ -188,12 +189,12 @@ async function related(t: TicketRow) {
 }
 
 app.get("/orgs/:orgId/tickets", async (c) =>
-  c.json(await withFolders(await db.select().from(tickets).where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "ticket"))).orderBy(desc(tickets.updatedAt)))),
+  c.json(await withFolders(await db.select().from(tickets).where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "ticket"), isNull(tickets.deletedAt))).orderBy(desc(tickets.updatedAt)))),
 );
 
 // Chats: conversations with one agent, kept off the board. Tickets come out of them via the create_ticket tool.
 app.get("/orgs/:orgId/chats", async (c) =>
-  c.json(await db.select().from(tickets).where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "chat"), eq(tickets.archived, c.req.query("archived") === "1"))).orderBy(desc(tickets.createdAt))),
+  c.json(await db.select().from(tickets).where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "chat"), isNull(tickets.deletedAt), eq(tickets.archived, c.req.query("archived") === "1"))).orderBy(desc(tickets.createdAt))),
 );
 app.post("/orgs/:orgId/chats", async (c) => {
   const { agentId, workspaceIds, message } = await body(c, z.object({ agentId: z.string().uuid(), workspaceIds: z.array(z.string().uuid()).min(1), message: z.string().min(1) }));
@@ -209,7 +210,7 @@ app.post("/orgs/:orgId/tickets", async (c) => {
 
 app.get("/tickets/:id", async (c) => {
   const id = c.req.param("id");
-  const [ticket] = await withFolders(await db.select().from(tickets).where(eq(tickets.id, id)));
+  const [ticket] = await withFolders(await db.select().from(tickets).where(and(eq(tickets.id, id), isNull(tickets.deletedAt))));
   if (!ticket) return c.notFound();
   const brief = { id: tickets.id, identifier: tickets.identifier, title: tickets.title, status: tickets.status };
   const [timeline, sessions, rel, parent, children] = await Promise.all([
@@ -217,7 +218,7 @@ app.get("/tickets/:id", async (c) => {
     db.select().from(agentSessions).where(eq(agentSessions.ticketId, id)),
     related(ticket),
     ticket.parentId ? db.select(brief).from(tickets).where(eq(tickets.id, ticket.parentId)) : [],
-    db.select(brief).from(tickets).where(eq(tickets.parentId, id)).orderBy(asc(tickets.createdAt)),
+    db.select(brief).from(tickets).where(and(eq(tickets.parentId, id), isNull(tickets.deletedAt))).orderBy(asc(tickets.createdAt)),
   ]);
   return c.json({
     ticket,
@@ -246,6 +247,15 @@ app.patch("/tickets/:id", async (c) => {
   }
   if (patch.assigneeAgentId && patch.assigneeAgentId !== before?.agent) runAgent(t.id, patch.assigneeAgentId, "Start work on this ticket.").catch(console.error);
   return c.json(await emitTicket(t.id));
+});
+
+// Soft delete an archived ticket and its sub-issues; related rows stay but are unreachable.
+app.delete("/tickets/:id", async (c) => {
+  const id = c.req.param("id");
+  const [t] = await db.update(tickets).set({ deletedAt: new Date() }).where(and(eq(tickets.id, id), eq(tickets.archived, true), isNull(tickets.deletedAt))).returning({ id: tickets.id });
+  if (!t) return c.json({ error: "Only archived tickets can be deleted." }, 409);
+  await db.update(tickets).set({ deletedAt: new Date() }).where(eq(tickets.parentId, id));
+  return c.body(null, 204);
 });
 
 // Human comment. Routes to @mentioned agents, else to the assignee.
@@ -452,7 +462,7 @@ app.get("/orgs/:orgId/running", async (c) => {
     .select({ s: agentSessions, t: { id: tickets.id, identifier: tickets.identifier, title: tickets.title, kind: tickets.kind } })
     .from(agentSessions)
     .innerJoin(tickets, eq(tickets.id, agentSessions.ticketId))
-    .where(eq(tickets.orgId, c.req.param("orgId")));
+    .where(and(eq(tickets.orgId, c.req.param("orgId")), isNull(tickets.deletedAt)));
   return c.json(rows.filter((r) => isRunning(r.s.id)).map((r) => ({ agentId: r.s.agentId, ticket: r.t, costUsd: r.s.costUsd })));
 });
 
@@ -463,7 +473,7 @@ app.get("/agents/:id/work", async (c) => {
     .select({ ticket: { id: tickets.id, identifier: tickets.identifier, title: tickets.title, status: tickets.status, updatedAt: tickets.updatedAt }, assigned: tickets.assigneeAgentId, session: { id: agentSessions.id, costUsd: agentSessions.costUsd, tokensIn: agentSessions.tokensIn, tokensOut: agentSessions.tokensOut } })
     .from(tickets)
     .leftJoin(agentSessions, and(eq(agentSessions.ticketId, tickets.id), eq(agentSessions.agentId, id)))
-    .where(and(eq(tickets.kind, "ticket"), or(eq(tickets.assigneeAgentId, id), isNotNull(agentSessions.id))))
+    .where(and(eq(tickets.kind, "ticket"), isNull(tickets.deletedAt), or(eq(tickets.assigneeAgentId, id), isNotNull(agentSessions.id))))
     .orderBy(desc(tickets.updatedAt))
     .limit(100);
   return c.json(rows.map((r) => ({ ticket: r.ticket, assigned: r.assigned === id, running: !!r.session && isRunning(r.session.id), costUsd: r.session?.costUsd ?? 0, tokens: (r.session?.tokensIn ?? 0) + (r.session?.tokensOut ?? 0) })));
@@ -619,12 +629,12 @@ app.get("/orgs/:orgId/inbox", async (c) => {
   const open = await db
     .select()
     .from(tickets)
-    .where(and(eq(tickets.orgId, c.req.param("orgId")), inArray(tickets.status, ["needs_input", "in_review", "blocked"])));
+    .where(and(eq(tickets.orgId, c.req.param("orgId")), isNull(tickets.deletedAt), inArray(tickets.status, ["needs_input", "in_review", "blocked"])));
   const learnings = await db
     .select({ c: comments, t: tickets })
     .from(comments)
     .innerJoin(tickets, eq(tickets.id, comments.ticketId))
-    .where(and(eq(tickets.orgId, c.req.param("orgId")), eq(comments.kind, "learning"), sql`${comments.payload}->>'status' is null`));
+    .where(and(eq(tickets.orgId, c.req.param("orgId")), isNull(tickets.deletedAt), eq(comments.kind, "learning"), sql`${comments.payload}->>'status' is null`));
   const learned: InboxItem[] = learnings.map(({ c: l, t }) => ({
     kind: "learning",
     ticket: { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"] },

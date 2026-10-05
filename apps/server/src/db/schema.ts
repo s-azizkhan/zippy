@@ -114,6 +114,7 @@ export const tickets = pgTable("tickets", {
   loopCount: integer("loop_count").notNull().default(0),
   riskApproved: boolean("risk_approved").notNull().default(false),
   archived: boolean("archived").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }), // soft delete; comments/sessions/folders/runs hang off the ticket and vanish with it
   parentId: uuid("parent_id"), // sub-issue of
   routineId: uuid("routine_id").references(() => routines.id, { onDelete: "set null" }),
   createdAt: createdAt(),

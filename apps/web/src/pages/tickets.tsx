@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ChevronDown, ListFilter, ListTodo, Star } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ListFilter, ListTodo, Star, Trash2 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { FolderOpenIcon } from "@/components/ui/folder-open";
 import { LayersIcon } from "@/components/ui/layers";
@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, keys, queryClient, useAgents, useTickets, useWorkspaces } from "@/lib/api";
+import { ConfirmDialog } from "@/pages/settings";
 import { useOrg } from "@/lib/org";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
@@ -330,6 +331,7 @@ export function TicketsPage() {
 
 function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; i: number }) {
   const fav = useUI((s) => s.favorites.includes(t.id));
+  const [confirming, setConfirming] = useState(false);
   return (
     <li className="rise cv-row group/row relative" style={{ "--i": i } as React.CSSProperties}>
       <Link
@@ -368,6 +370,27 @@ function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; 
       >
         {t.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
       </button>
+      {t.archived && (
+        <button
+          aria-label="Delete"
+          title="Delete"
+          onClick={() => setConfirming(true)}
+          className="text-muted-foreground hover:text-destructive absolute top-1/2 right-[4.5rem] hidden -translate-y-1/2 rounded p-1 group-hover/row:block focus-visible:block"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Delete ${t.identifier}?`}
+        desc="Its comments and sub-issues are removed too."
+        action="Delete"
+        onConfirm={async () => {
+          await api.del(`/tickets/${t.id}`);
+          queryClient.invalidateQueries({ queryKey: keys.res(orgId, "tickets") });
+        }}
+      />
     </li>
   );
 }
