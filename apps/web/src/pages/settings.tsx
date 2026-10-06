@@ -1,7 +1,7 @@
 import type { IconType } from "@/lib/anim-icon";
 import { ProfileFields } from "@/components/profile-fields";
 import { MdEditor } from "@/components/md-editor";
-import { Bot, Braces, Building2, ChevronRight, Pin, Trash2, X } from "lucide-react";
+import { Bot, Braces, Building2, Database, ChevronRight, Pin, Trash2, X } from "lucide-react";
 import { BookTextIcon as BookOpen } from "@/components/ui/book-text";
 import { CheckIcon as Check } from "@/components/ui/check";
 import { CopyIcon as Copy } from "@/components/ui/copy";
@@ -19,6 +19,7 @@ import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { CACHE_TTLS, EFFORTS, KB_KINDS, KB_LABELS, MODELS, knowledgeInput, mcpServerInput, orgInput, patchOf, workspaceInput, type KnowledgeInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
 import { Field, fieldErrors, SettingRow } from "@/components/field";
+import { DbForm } from "@/components/db-form";
 import { FoldersPicker } from "@/components/pickers";
 import { OptionSelect } from "@/components/property-menu";
 import { ToggleList } from "@/components/toggle-list";
@@ -31,7 +32,7 @@ import { api, keys, useApiMutation, useAcp, useKnowledge, useMcpServers, useSyst
 import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
-const ICONS: Record<SettingsTab, IconType> = { org: Building2, folders: FolderGit2, knowledge: BookOpen, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
+const ICONS: Record<SettingsTab, IconType> = { org: Building2, database: Database, folders: FolderGit2, knowledge: BookOpen, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
 const GROUPS = [...new Set(SETTINGS_TABS.map((t) => t.group))];
 const isTab = (v: string | null): v is SettingsTab => SETTINGS_TABS.some((t) => t.value === v);
 
@@ -78,6 +79,11 @@ export function SettingsPage() {
           <div className="min-w-0 flex-1">
             <Pane value="org" title="Organization" desc="Identity, spending limits, notifications and shared context for every Zipper.">
               <OrgSettings active={tab === "org"} />
+            </Pane>
+            <Pane value="database" title="Database" desc="Where tickets, Zippers and comments are stored.">
+              <Card title="Postgres">
+                <DbForm />
+              </Card>
             </Pane>
             <Pane value="folders" title="Working folders" desc="Local repos Zippers work in. Each ticket gets an isolated worktree of one folder.">
               <Folders />

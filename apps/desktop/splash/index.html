@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Zippy</title>
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; height: 100vh; display: grid; place-items: center; font: 14px system-ui; }
+  main { display: grid; gap: 14px; justify-items: center; max-width: 440px; text-align: center; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand img { width: 36px; height: 36px; }
+  h1 { margin: 0; font-size: 20px; }
+  #msg { color: #888; min-height: 2.4em; }
+  .bad #msg { color: #d33; }
+  .spin { width: 18px; height: 18px; border: 2px solid #8884; border-top-color: #888; border-radius: 50%; animation: s 0.8s linear infinite; }
+  .bad .spin { display: none; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  button { display: none; font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid #8886; background: none; color: inherit; cursor: pointer; }
+  .bad.stuck button { display: block; }
+</style>
+<main>
+  <div class="brand"><img src="favicon.svg" alt="" /><h1>Zippy</h1></div>
+  <div class="spin"></div>
+  <div id="msg">Starting…</div>
+  <button id="reset">Reset built-in database</button>
+</main>
+<script>
+  const { invoke } = window.__TAURI__.core;
+  const msg = document.getElementById("msg");
+  const reset = document.getElementById("reset");
+  let armed = false;
+  reset.onclick = () => {
+    if (!armed) return ((armed = true), (reset.textContent = "Click again: erases local Zippy data"));
+    invoke("reset_builtin_db");
+    armed = false;
+    reset.textContent = "Reset built-in database";
+  };
+  setInterval(async () => {
+    const [text, fails] = await invoke("status");
+    msg.textContent = text || "Starting…";
+    document.body.classList.toggle("bad", fails > 0);
+    document.body.classList.toggle("stuck", fails >= 3);
+  }, 400);
+</script>

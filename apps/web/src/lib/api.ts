@@ -52,6 +52,8 @@ export const keys = {
 
 export const useSystem = () =>
   useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; authMethod?: string } }>("/system") });
+export const useDb = () =>
+  useQuery({ queryKey: ["system", "db"], queryFn: () => api.get<{ desktop: boolean; mode: "embedded" | "custom" | "env"; url: string }>("/system/db") });
 export const useAcp = () =>
   useQuery({ queryKey: ["system", "acp"], queryFn: () => api.get<{ ok: boolean; agent?: string; version?: string; error?: string }>("/system/acp"), staleTime: 60_000, retry: false });
 export type Usage = Record<"five_hour" | "seven_day", { utilization: number; resets_at: string } | null>;

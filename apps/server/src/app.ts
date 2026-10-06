@@ -36,6 +36,7 @@ import {
 import { bus, emit } from "./bus.ts";
 import { reqlog } from "./reqlog.ts";
 import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
+import { createDb, maskUrl, saveDbUrl, testDb } from "./dbadmin.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
@@ -84,6 +85,18 @@ app.post("/system/pick-folder", (c) =>
     ),
   ),
 );
+const dbUrl = z.object({ url: z.string().regex(/^postgres(ql)?:\/\/\S+$/, "must start with postgres://") });
+app.get("/system/db", (c) => c.json({ desktop: !!process.env.ZIPPY_CONFIG, mode: process.env.ZIPPY_DB_MODE ?? "env", url: maskUrl(process.env.DATABASE_URL) }));
+app.post("/system/db/test", async (c) => c.json(await testDb((await body(c, dbUrl)).url)));
+app.post("/system/db/create", async (c) => (await createDb((await body(c, dbUrl)).url), c.body(null, 204)));
+app.post("/system/db/save", async (c) => {
+  if (!process.env.ZIPPY_CONFIG) return c.json({ error: "desktop app only, set DATABASE_URL in .env" }, 400);
+  const { url } = await body(c, z.object({ url: dbUrl.shape.url.nullable() }));
+  const t = url && (await testDb(url));
+  if (t && !t.ok) return c.json({ error: t.error }, 400);
+  saveDbUrl(url);
+  return c.body(null, 204);
+});
 app.get("/system/usage", async (c) => c.json(await claudeUsage()));
 app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));
 

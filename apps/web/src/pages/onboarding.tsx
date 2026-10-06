@@ -7,11 +7,13 @@ import { Field, fieldErrors } from "@/components/field";
 import { ProfileFields } from "@/components/profile-fields";
 import { FolderGit2Icon } from "@/components/ui/folder-git-2";
 import { Button } from "@/components/ui/button";
+import { DbForm } from "@/components/db-form";
 import { Input } from "@/components/ui/input";
-import { api, createOrg, keys, queryClient } from "@/lib/api";
+import { api, createOrg, keys, queryClient, useDb } from "@/lib/api";
 import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
+const DB_STEP = { id: "db", label: "Database", title: "Where should data live?", sub: "Zippy keeps everything in Postgres, on this machine by default." } as const;
 const STEPS = [
   { id: "org", label: "Organization", title: "Name your team", sub: "The home for your tickets, Zippers and pipelines." },
   { id: "you", label: "You", title: "Who's the human?", sub: "Zippers sign their commits as you and learn how you like to work." },
@@ -28,6 +30,9 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
   const [picked, setPicked] = useState<string[] | null>(null); // null = all
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [dbDirty, setDbDirty] = useState(false);
+  const { data: db } = useDb();
+  const steps = db?.desktop ? [DB_STEP, ...STEPS] : STEPS;
   const setOrgId = useUI((s) => s.setOrgId);
   const { data: library = [] } = useQuery({ queryKey: ["default-agents"], queryFn: () => api.get<{ handle: string; name: string; color: string; description: string }[]>("/default-agents") });
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
@@ -40,8 +45,9 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
   const ws = workspaceInput.safeParse({ name: form.wsName, path: form.wsPath });
   const wsErrors = ws.success ? {} : Object.fromEntries(Object.entries(fieldErrors(ws.error.issues)).map(([k, v]) => [`ws${k[0]!.toUpperCase()}${k.slice(1)}`, v]));
   const orgErrors = org.success ? {} : fieldErrors(org.error.issues);
-  const stepOk = [!orgErrors.name && !orgErrors.key, !orgErrors.profile, true, ws.success];
-  const stepErrors = [orgErrors, {}, {}, wsErrors][step]!;
+  const s = steps[step]!;
+  const stepOk = { db: !dbDirty, org: !orgErrors.name && !orgErrors.key, you: !orgErrors.profile, agents: true, folder: ws.success };
+  const stepErrors = { db: {}, org: orgErrors, you: {}, agents: {}, folder: wsErrors }[s.id];
 
   async function browse() {
     const { path } = await api.post<{ path: string | null }>("/system/pick-folder");
@@ -50,9 +56,9 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
 
   async function next(e: React.FormEvent) {
     e.preventDefault();
-    if (!stepOk[step]) return setErrors(stepErrors);
+    if (!stepOk[s.id]) return setErrors(stepErrors);
     setErrors({});
-    if (step < STEPS.length - 1) return setStep(step + 1);
+    if (step < steps.length - 1) return setStep(step + 1);
     if (!org.success || !ws.success) return;
     setBusy(true);
     try {
@@ -66,8 +72,7 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
     }
   }
 
-  const s = STEPS[step]!;
-  const last = step === STEPS.length - 1;
+  const last = step === steps.length - 1;
   return (
     <main className="bg-background grid min-h-dvh lg:grid-cols-[26rem_1fr]">
       <aside className="bg-sidebar relative hidden flex-col justify-between overflow-hidden border-r p-10 lg:flex">
@@ -84,7 +89,7 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
             <span className="text-primary">for your tickets.</span>
           </h1>
           <ol className="grid gap-1" aria-label="Setup progress">
-            {STEPS.map((t, i) => (
+            {steps.map((t, i) => (
               <li key={t.id} aria-current={i === step ? "step" : undefined} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors", i === step ? "bg-background/70 font-medium shadow-sm" : "text-muted-foreground")}>
                 <span className={cn("flex size-6 items-center justify-center rounded-full border text-xs tabular-nums transition-colors", i < step && "bg-primary border-primary text-white", i === step && "border-primary text-primary")}>{i < step ? "✓" : i + 1}</span>
                 {t.label}
@@ -98,7 +103,7 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
       <form onSubmit={next} noValidate className="flex min-h-dvh flex-col px-6 py-8 sm:px-12">
         <div className="mx-auto flex w-full max-w-xl items-center justify-between">
           <p className={kicker}>
-            Step {step + 1} of {STEPS.length}
+            Step {step + 1} of {steps.length}
           </p>
           {onCancel && (
             <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
@@ -107,7 +112,7 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
           )}
         </div>
         <div className="bg-border mx-auto mt-3 h-0.5 w-full max-w-xl overflow-hidden rounded-full" aria-hidden>
-          <motion.div className="bg-primary h-full" animate={{ width: `${((step + 1) / STEPS.length) * 100}%` }} transition={{ type: "spring", stiffness: 200, damping: 30 }} />
+          <motion.div className="bg-primary h-full" animate={{ width: `${((step + 1) / steps.length) * 100}%` }} transition={{ type: "spring", stiffness: 200, damping: 30 }} />
         </div>
 
         <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center py-10">
@@ -117,6 +122,8 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
                 <h2 className="text-3xl font-bold tracking-tight">{s.title}</h2>
                 <p className="text-muted-foreground">{s.sub}</p>
               </div>
+
+              {s.id === "db" && <DbForm onDirty={setDbDirty} />}
 
               {s.id === "org" && (
                 <div className="grid gap-5">
