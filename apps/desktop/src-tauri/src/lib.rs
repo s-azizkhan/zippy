@@ -336,9 +336,10 @@ pub fn run() {
         .setup({
             let st = st.clone();
             move |app| {
-                // ponytail: full-color app icon; a monochrome template icon would match other menubar items
+                // Template image: macOS tints it for light/dark menubars. Source: icons/tray.svg.
                 TrayIconBuilder::with_id("main")
-                    .icon(app.default_window_icon().unwrap().clone())
+                    .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+                    .icon_as_template(true)
                     .tooltip("Zippy")
                     .menu(&tray_menu(app.handle(), &Tray::default())?)
                     .show_menu_on_left_click(true)
