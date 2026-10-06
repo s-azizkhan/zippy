@@ -16,7 +16,8 @@
         "width": 1360,
         "height": 860,
         "minWidth": 900,
-        "minHeight": 600
+        "minHeight": 600,
+        "create": false
       }
     ],
     "withGlobalTauri": true,
@@ -40,5 +41,14 @@
     "resources": [
       "resources/**/*"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "zippy"
+        ]
+      }
+    }
   }
 }

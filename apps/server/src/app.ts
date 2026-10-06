@@ -512,7 +512,10 @@ app.post("/agents/:id/test", async (c) => {
 app.get("/linear/connect", async (c) => c.redirect(await authorizeUrl(c.req.query("orgId")!)));
 app.get("/linear/callback", async (c) => {
   await completeOAuth(c.req.query("code")!, c.req.query("state")!);
-  return c.redirect(`${process.env.WEB_URL ?? "http://localhost:5199"}/settings?linear=connected`);
+  if (!process.env.ZIPPY_CONFIG) return c.redirect(`${process.env.WEB_URL ?? "http://localhost:5199"}/settings?linear=connected`);
+  // Desktop: OAuth ran in the user's browser; hand back to the app.
+  const back = "zippy://settings?linear=connected";
+  return c.html(`<!doctype html><meta charset="utf-8"><title>Zippy</title><body style="font:15px system-ui;display:grid;place-items:center;height:90vh"><p>Linear connected. <a href="${back}">Return to Zippy</a>, then close this tab.</p><script>location.href=${JSON.stringify(back)}</script>`);
 });
 app.delete("/orgs/:id/linear", async (c) => {
   await db.update(orgs).set({ linearAuth: null, linearWorkspace: null }).where(eq(orgs.id, c.req.param("id")));

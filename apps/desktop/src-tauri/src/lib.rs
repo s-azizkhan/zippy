@@ -244,6 +244,7 @@ fn tray_menu(app: &AppHandle, t: &Tray) -> tauri::Result<Menu<Wry>> {
         menu.append(&MenuItem::with_id(app, format!("nav:{}", r.path), label, true, None::<&str>)?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "nav:/?new=1", "New issue…", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "nav:/inbox", format!("Inbox ({})", t.inbox), true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "open", "Open Zippy", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
@@ -260,6 +261,24 @@ fn show(app: &AppHandle, path: Option<&str>) {
         if let Some(p) = path {
             let _ = w.eval(format!("history.pushState(null, '', {p:?}); dispatchEvent(new PopStateEvent('popstate'))"));
         }
+    }
+}
+
+/// Leaving Zippy's origin goes to the default browser. Only http(s)/mailto: agent-written links can't launch other handlers.
+fn stays_in_app(url: &tauri::Url) -> bool {
+    let local = url.scheme() == "tauri" || url.scheme() == "about" || (url.host_str() == Some("127.0.0.1") && url.port() == Some(PORT));
+    if !local && matches!(url.scheme(), "http" | "https" | "mailto") {
+        let _ = std::process::Command::new("open").arg(url.as_str()).spawn();
+    }
+    local
+}
+
+/// `zippy://settings?linear=connected` → full load of `/settings?linear=connected`, so data is fresh.
+fn open_deep_link(app: &AppHandle, url: &tauri::Url) {
+    let Some(rest) = url.as_str().strip_prefix("zippy://") else { return };
+    show(app, None);
+    if let (Some(w), Ok(to)) = (app.get_webview_window("main"), format!("http://127.0.0.1:{PORT}/{rest}").parse()) {
+        let _ = w.navigate(to);
     }
 }
 
@@ -331,11 +350,31 @@ pub fn run() {
     let st = Arc::new(Shared::default());
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(st.clone())
         .invoke_handler(tauri::generate_handler![status, reset_builtin_db])
         .setup({
             let st = st.clone();
             move |app| {
+                let cfg = app.config().app.windows[0].clone();
+                let handle = app.handle().clone();
+                tauri::WebviewWindowBuilder::from_config(app, &cfg)?
+                    .on_navigation(stays_in_app)
+                    .on_new_window(move |url, _| {
+                        // No second windows: Zippy links open in place, the rest in the browser.
+                        if stays_in_app(&url) {
+                            if let Some(w) = handle.get_webview_window("main") {
+                                let _ = w.navigate(url);
+                            }
+                        }
+                        tauri::webview::NewWindowResponse::Deny
+                    })
+                    .build()?;
+                {
+                    use tauri_plugin_deep_link::DeepLinkExt;
+                    let handle = app.handle().clone();
+                    app.deep_link().on_open_url(move |e| e.urls().iter().for_each(|u| open_deep_link(&handle, u)));
+                }
                 // Template image: macOS tints it for light/dark menubars. Source: icons/tray.svg.
                 TrayIconBuilder::with_id("main")
                     .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
