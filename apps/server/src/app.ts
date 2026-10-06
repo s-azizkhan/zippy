@@ -39,6 +39,7 @@ import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, org
 import { createDb, maskUrl, saveDbUrl, testDb } from "./dbadmin.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
+import { desktopNote, takeNotes } from "./notify.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { browse, listFiles } from "./browse.ts";
 import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
@@ -97,6 +98,7 @@ app.post("/system/db/save", async (c) => {
   saveDbUrl(url);
   return c.body(null, 204);
 });
+app.post("/system/test-notification", (c) => (desktopNote("Zippy", "Notifications are working."), c.body(null, 204)));
 app.get("/system/usage", async (c) => c.json(await claudeUsage()));
 app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));
 
@@ -709,12 +711,13 @@ async function inboxOf(orgId: string): Promise<InboxItem[]> {
 }
 app.get("/orgs/:orgId/inbox", async (c) => c.json(await inboxOf(c.req.param("orgId"))));
 
-// Desktop menubar: running Zippers and inbox size, across orgs.
+// Desktop shell poll: running Zippers, inbox size (across orgs) and pending notifications.
 app.get("/tray", async (c) => {
   const [all, names] = await Promise.all([db.select({ id: orgs.id }).from(orgs), db.select({ id: agents.id, name: agents.name }).from(agents)]);
   const name = new Map(names.map((a) => [a.id, a.name]));
   const [running, inbox] = await Promise.all([Promise.all(all.map((o) => runningOf(o.id))), Promise.all(all.map((o) => inboxOf(o.id)))]);
   return c.json({
+    notes: takeNotes(),
     inbox: inbox.flat().length,
     running: running.flat().map(({ agentId, ticket: t }) => ({
       label: `${name.get(agentId) ?? "Zipper"} · ${t.kind === "chat" ? t.title : `${t.identifier} ${t.title}`}`,

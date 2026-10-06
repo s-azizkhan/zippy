@@ -9,7 +9,7 @@ import { FoldersPicker } from "@/components/pickers";
 import { AgentAvatar } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, keys, useAgents, useApiMutation, useChats, useTicket, useTicketEvents, useWorkspaces } from "@/lib/api";
+import { api, keys, useAgents, useApiMutation, useChats, useDb, useTicket, useTicketEvents, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { ago, cn } from "@/lib/utils";
 
@@ -185,10 +185,12 @@ function Thread({ id }: { id: string }) {
   const ticket = data?.ticket;
   const busy = !!data?.sessions.some((s) => s.running);
   const wasBusy = useRef(false);
+  // The desktop app sends a system notification, which macOS hides while Zippy is in front.
+  const desktop = useDb().data?.desktop;
   useEffect(() => {
-    if (wasBusy.current && !busy) toast.success("Zipper finished replying");
+    if (wasBusy.current && !busy && (!desktop || document.hasFocus())) toast.success("Zipper finished replying");
     wasBusy.current = busy;
-  }, [busy]);
+  }, [busy, desktop]);
   const makeTicket = useApiMutation(() => api.post(`/tickets/${id}/comments`, { body: "Draft a ticket from this conversation for me to review." }, true));
   const stop = useApiMutation((agentId: string) => api.post(`/tickets/${id}/cancel`, { agentId }));
   const folders = useApiMutation((workspaceIds: string[]) => api.patch(`/tickets/${id}`, { workspaceIds }, true), [keys.ticket(id)]);

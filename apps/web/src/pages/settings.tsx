@@ -304,7 +304,14 @@ function OrgSettings({ active }: { active: boolean }) {
       </Card>
       <Card title="Notifications" desc="Sent when a ticket needs input, is ready for review, or is blocked.">
         <SettingRow label="Desktop notifications" hint="macOS notification on those events.">
-          {(p) => <Switch {...p} checked={form.notifyDesktop} onCheckedChange={(notifyDesktop) => setForm({ ...form, notifyDesktop })} />}
+          {(p) => (
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="xs" onClick={() => api.post("/system/test-notification", {}, true).then(() => toast.success("Test sent. Switch to another app if no banner shows."))}>
+                Send test
+              </Button>
+              <Switch {...p} checked={form.notifyDesktop} onCheckedChange={(notifyDesktop) => setForm({ ...form, notifyDesktop })} />
+            </div>
+          )}
         </SettingRow>
         <Field label="Slack webhook" hint="Incoming webhook URL. Empty = off." error={errors.slackWebhookUrl}>
           {(p) => <Input {...p} value={form.slackWebhookUrl} onChange={(e) => setForm({ ...form, slackWebhookUrl: e.target.value.trim() })} placeholder="https://hooks.slack.com/services/…" className="font-mono text-[13px]" />}

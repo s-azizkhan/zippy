@@ -206,6 +206,24 @@ struct Tray {
     running: Vec<Run>,
 }
 
+#[derive(serde::Deserialize)]
+struct Poll {
+    #[serde(flatten)]
+    tray: Tray,
+    notes: Vec<Note>,
+}
+
+#[derive(serde::Deserialize)]
+struct Note {
+    title: String,
+    body: String,
+}
+
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
 #[derive(serde::Deserialize, PartialEq)]
 struct Run {
     label: String,
@@ -246,25 +264,36 @@ fn show(app: &AppHandle, path: Option<&str>) {
 }
 
 async fn poll_tray(app: AppHandle) {
-    let mut last = None;
+    let mut last: Option<Tray> = None;
     loop {
-        let t = match reqwest::get(format!("http://127.0.0.1:{PORT}/api/tray")).await {
-            Ok(r) => r.json::<Tray>().await.unwrap_or_default(),
-            Err(_) => Tray::default(),
+        // Server down (starting, or restarting on a DB switch): keep the last state rather than report every chat as finished.
+        let poll = match reqwest::get(format!("http://127.0.0.1:{PORT}/api/tray")).await {
+            Ok(r) => r.json::<Poll>().await.ok(),
+            Err(_) => None,
         };
-        if last.as_ref() != Some(&t) {
-            if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(&app, &t)) {
-                let mut title = Vec::new();
-                if !t.running.is_empty() {
-                    title.push(format!("▶ {}", t.running.len()));
-                }
-                if t.inbox > 0 {
-                    title.push(format!("✉ {}", t.inbox));
-                }
-                let _ = tray.set_menu(Some(menu));
-                let _ = tray.set_title((!title.is_empty()).then(|| title.join("  ")));
+        if let Some(Poll { tray: t, notes }) = poll {
+            for n in &notes {
+                notify(&app, &n.title, &n.body);
             }
-            last = Some(t);
+            if let Some(prev) = &last {
+                for r in prev.running.iter().filter(|r| r.path.starts_with("/chat/") && !t.running.contains(r)) {
+                    notify(&app, "Zipper finished replying", &r.label);
+                }
+            }
+            if last.as_ref() != Some(&t) {
+                if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(&app, &t)) {
+                    let mut title = Vec::new();
+                    if !t.running.is_empty() {
+                        title.push(format!("▶ {}", t.running.len()));
+                    }
+                    if t.inbox > 0 {
+                        title.push(format!("✉ {}", t.inbox));
+                    }
+                    let _ = tray.set_menu(Some(menu));
+                    let _ = tray.set_title((!title.is_empty()).then(|| title.join("  ")));
+                }
+                last = Some(t);
+            }
         }
         sleep(Duration::from_secs(4)).await;
     }
@@ -301,6 +330,7 @@ fn exit_on_signal(app: AppHandle) {
 pub fn run() {
     let st = Arc::new(Shared::default());
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(st.clone())
         .invoke_handler(tauri::generate_handler![status, reset_builtin_db])
         .setup({
