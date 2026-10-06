@@ -1,7 +1,7 @@
 //! Shell around the Node sidecar (apps/server). Owns the DB choice: `config.json` `databaseUrl`
 //! if set, otherwise a built-in Postgres. The server rewrites config.json and exits to switch DBs.
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     process::Stdio,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -11,11 +11,17 @@ use std::{
 };
 
 use postgresql_embedded::{PostgreSQL, Settings};
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::TrayIconBuilder,
+    AppHandle, Manager, RunEvent, WindowEvent, Wry,
+};
 use tokio::{net::TcpStream, process::Command, sync::Mutex, time::sleep};
 
-const PORT: u16 = 3311; // off the dev server's 3301
-const PG_PORT: u16 = 54329;
+// Debug builds get their own ports + data dir so they run beside the installed app.
+const DEV: bool = cfg!(debug_assertions);
+const PORT: u16 = if DEV { 3312 } else { 3311 }; // off the web dev server's 3301
+const PG_PORT: u16 = if DEV { 54330 } else { 54329 };
 
 #[derive(Default)]
 struct Shared {
@@ -45,9 +51,24 @@ fn reset_builtin_db(st: tauri::State<'_, Arc<Shared>>) {
     st.reset.store(true, Ordering::SeqCst);
 }
 
-// ponytail: dev layout only. Bundling Node + server deps is the next step; override with ZIPPY_ROOT.
-fn repo_root() -> PathBuf {
-    std::env::var("ZIPPY_ROOT").map(PathBuf::from).unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."))
+/// Release: node + bundles from `scripts/bundle.mjs` in Resources. Debug: live repo sources via tsx.
+fn server_cmd(app: &AppHandle, data: &Path) -> Command {
+    let mut cmd;
+    if DEV {
+        let server = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../server");
+        cmd = Command::new("node");
+        cmd.args(["--import", "tsx", "src/index.ts"]).current_dir(&server).env("ZIPPY_WEB_DIST", server.join("../web/dist"));
+    } else {
+        let res = app.path().resource_dir().expect("resource dir").join("resources");
+        cmd = Command::new(res.join("node"));
+        cmd.arg(res.join("server.mjs"))
+            .current_dir(data)
+            .env("ZIPPY_WEB_DIST", res.join("web"))
+            .env("ZIPPY_MIGRATIONS", res.join("migrations"))
+            .env("ZIPPY_ADAPTER", res.join("adapter.mjs"))
+            .env("ZIPPY_LOGS", data.join("logs"));
+    }
+    cmd
 }
 
 /// Finder-launched apps get a bare PATH; ask the login shell for the real one (claude, git, gh, node).
@@ -105,10 +126,9 @@ async fn wait_port() -> bool {
 }
 
 async fn supervise(app: AppHandle, st: Arc<Shared>) {
-    let data = app.path().app_data_dir().expect("app data dir");
+    let data = app.path().app_data_dir().expect("app data dir").join(if DEV { "dev" } else { "" });
     let _ = std::fs::create_dir_all(&data);
     let cfg = data.join("config.json");
-    let root = repo_root();
     let path = login_path();
     let mut shown = false;
 
@@ -142,16 +162,13 @@ async fn supervise(app: AppHandle, st: Arc<Shared>) {
 
         st.fails.store(0, Ordering::SeqCst);
         st.say("Starting server…");
-        let child = Command::new("node")
-            .args(["--import", "tsx", "src/index.ts"])
-            .current_dir(root.join("apps/server"))
+        let child = server_cmd(&app, &data)
             .env("PATH", &path)
             .env("PORT", PORT.to_string())
             .env("WEB_URL", format!("http://127.0.0.1:{PORT}"))
             .env("DATABASE_URL", url)
             .env("ZIPPY_DB_MODE", mode)
             .env("ZIPPY_CONFIG", &cfg)
-            .env("ZIPPY_WEB_DIST", root.join("apps/web/dist"))
             .stdin(Stdio::null())
             .kill_on_drop(true)
             .spawn();
@@ -160,7 +177,7 @@ async fn supervise(app: AppHandle, st: Arc<Shared>) {
             Err(e) => {
                 eprintln!("cannot start node: {e}");
                 st.fails.fetch_add(1, Ordering::SeqCst);
-                st.say(format!("Can't start Node: {e}. Is Node installed?"));
+                st.say(format!("Can't start server: {e}"));
                 sleep(Duration::from_secs(3)).await;
                 continue;
             }
@@ -180,6 +197,76 @@ async fn supervise(app: AppHandle, st: Arc<Shared>) {
         let _ = child.wait().await;
         st.pid.store(0, Ordering::SeqCst);
         sleep(Duration::from_millis(500)).await;
+    }
+}
+
+#[derive(serde::Deserialize, PartialEq, Default)]
+struct Tray {
+    inbox: usize,
+    running: Vec<Run>,
+}
+
+#[derive(serde::Deserialize, PartialEq)]
+struct Run {
+    label: String,
+    path: String,
+}
+
+fn tray_menu(app: &AppHandle, t: &Tray) -> tauri::Result<Menu<Wry>> {
+    let menu = Menu::new(app)?;
+    let n = t.running.len();
+    let head = match n {
+        0 => "No Zippers running".to_owned(),
+        1 => "1 Zipper running".to_owned(),
+        _ => format!("{n} Zippers running"),
+    };
+    menu.append(&MenuItem::new(app, head, false, None::<&str>)?)?;
+    for r in &t.running {
+        let label: String = r.label.chars().take(60).collect();
+        menu.append(&MenuItem::with_id(app, format!("nav:{}", r.path), label, true, None::<&str>)?)?;
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "nav:/inbox", format!("Inbox ({})", t.inbox), true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "open", "Open Zippy", true, None::<&str>)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "quit", "Quit Zippy", true, None::<&str>)?)?;
+    Ok(menu)
+}
+
+/// Show the window; `path` routes the SPA in place (react-router listens to popstate).
+fn show(app: &AppHandle, path: Option<&str>) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        if let Some(p) = path {
+            let _ = w.eval(format!("history.pushState(null, '', {p:?}); dispatchEvent(new PopStateEvent('popstate'))"));
+        }
+    }
+}
+
+async fn poll_tray(app: AppHandle) {
+    let mut last = None;
+    loop {
+        let t = match reqwest::get(format!("http://127.0.0.1:{PORT}/api/tray")).await {
+            Ok(r) => r.json::<Tray>().await.unwrap_or_default(),
+            Err(_) => Tray::default(),
+        };
+        if last.as_ref() != Some(&t) {
+            if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), tray_menu(&app, &t)) {
+                let mut title = Vec::new();
+                if !t.running.is_empty() {
+                    title.push(format!("▶ {}", t.running.len()));
+                }
+                if t.inbox > 0 {
+                    title.push(format!("✉ {}", t.inbox));
+                }
+                let _ = tray.set_menu(Some(menu));
+                let _ = tray.set_title((!title.is_empty()).then(|| title.join("  ")));
+            }
+            last = Some(t);
+        }
+        sleep(Duration::from_secs(4)).await;
     }
 }
 
@@ -219,17 +306,37 @@ pub fn run() {
         .setup({
             let st = st.clone();
             move |app| {
+                // ponytail: full-color app icon; a monochrome template icon would match other menubar items
+                TrayIconBuilder::with_id("main")
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("Zippy")
+                    .menu(&tray_menu(app.handle(), &Tray::default())?)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app, e| match e.id().as_ref() {
+                        "quit" => app.exit(0),
+                        "open" => show(app, None),
+                        id => show(app, id.strip_prefix("nav:")),
+                    })
+                    .build(app)?;
+                tauri::async_runtime::spawn(poll_tray(app.handle().clone()));
                 exit_on_signal(app.handle().clone());
                 tauri::async_runtime::spawn(supervise(app.handle().clone(), st));
                 Ok(())
             }
         })
+        // Closing the window keeps Zippy (and running Zippers) alive in the menubar.
+        .on_window_event(|w, e| {
+            if let WindowEvent::CloseRequested { api, .. } = e {
+                api.prevent_close();
+                let _ = w.hide();
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error building zippy");
 
-    app.run(move |_, event| {
-        if let RunEvent::Exit = event {
-            tauri::async_runtime::block_on(stop(&st));
-        }
+    app.run(move |app, event| match event {
+        RunEvent::Exit => tauri::async_runtime::block_on(stop(&st)),
+        RunEvent::Reopen { .. } => show(app, None),
+        _ => {}
     });
 }

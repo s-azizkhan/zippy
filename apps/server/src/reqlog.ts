@@ -1,8 +1,9 @@
 import { appendFile, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import type { MiddlewareHandler } from "hono";
 import { routePath } from "hono/route";
 
-const dir = new URL("../../../logs/", import.meta.url);
+const dir = process.env.ZIPPY_LOGS ? pathToFileURL(`${process.env.ZIPPY_LOGS}/`) : new URL("../../../logs/", import.meta.url);
 const SECRET_KEY = /token|secret|key|password|authorization/i;
 const MAX = 10_000;
 const FILE_MAX = 10 * 1024 * 1024;

@@ -5353,6 +5353,7 @@ name = "zippy-desktop"
 version = "0.1.0"
 dependencies = [
  "postgresql_embedded",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",

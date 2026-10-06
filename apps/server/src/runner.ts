@@ -19,7 +19,7 @@ import { notify } from "./notify.ts";
 import { afterTurn } from "./pipeline.ts";
 import { agentSessions, agents, comments, db, mcpServers, orgs, runs, ticketFolders, tickets, workspaces } from "./db/index.ts";
 
-const ADAPTER = createRequire(import.meta.url).resolve("@agentclientprotocol/claude-agent-acp/dist/index.js");
+const ADAPTER = process.env.ZIPPY_ADAPTER ?? createRequire(import.meta.url).resolve("@agentclientprotocol/claude-agent-acp/dist/index.js");
 
 /** Local `claude` CLI if installed; otherwise the adapter's bundled CLI (subscription login). */
 export const claudePath = (() => {

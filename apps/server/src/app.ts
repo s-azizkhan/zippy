@@ -473,14 +473,15 @@ setInterval(async () => {
 }, 60_000).unref();
 
 // Agent sessions mid-turn right now (tickets and chats).
-app.get("/orgs/:orgId/running", async (c) => {
+async function runningOf(orgId: string) {
   const rows = await db
     .select({ s: agentSessions, t: { id: tickets.id, identifier: tickets.identifier, title: tickets.title, kind: tickets.kind } })
     .from(agentSessions)
     .innerJoin(tickets, eq(tickets.id, agentSessions.ticketId))
-    .where(and(eq(tickets.orgId, c.req.param("orgId")), isNull(tickets.deletedAt)));
-  return c.json(rows.filter((r) => isRunning(r.s.id)).map((r) => ({ agentId: r.s.agentId, ticket: r.t, costUsd: r.s.costUsd })));
-});
+    .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));
+  return rows.filter((r) => isRunning(r.s.id)).map((r) => ({ agentId: r.s.agentId, ticket: r.t, costUsd: r.s.costUsd }));
+}
+app.get("/orgs/:orgId/running", async (c) => c.json(await runningOf(c.req.param("orgId"))));
 
 // Tickets an agent is assigned to or has a session on, newest first.
 app.get("/agents/:id/work", async (c) => {
@@ -652,16 +653,16 @@ app.post("/tickets/:id/tests", async (c) => {
 });
 
 /** Everything waiting on a human, newest first. Actions reuse the answer/approval/advance routes. */
-app.get("/orgs/:orgId/inbox", async (c) => {
+async function inboxOf(orgId: string): Promise<InboxItem[]> {
   const open = await db
     .select()
     .from(tickets)
-    .where(and(eq(tickets.orgId, c.req.param("orgId")), isNull(tickets.deletedAt), inArray(tickets.status, ["needs_input", "in_review", "blocked"])));
+    .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.status, ["needs_input", "in_review", "blocked"])));
   const learnings = await db
     .select({ c: comments, t: tickets })
     .from(comments)
     .innerJoin(tickets, eq(tickets.id, comments.ticketId))
-    .where(and(eq(tickets.orgId, c.req.param("orgId")), isNull(tickets.deletedAt), eq(comments.kind, "learning"), sql`${comments.payload}->>'status' is null`));
+    .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(comments.kind, "learning"), sql`${comments.payload}->>'status' is null`));
   const learned: InboxItem[] = learnings.map(({ c: l, t }) => ({
     kind: "learning",
     ticket: { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"] },
@@ -671,7 +672,7 @@ app.get("/orgs/:orgId/inbox", async (c) => {
     options: [{ id: "accept", label: "Add to context", primary: true }, { id: "dismiss", label: "Dismiss" }],
     createdAt: l.createdAt.toISOString(),
   }));
-  if (!open.length) return c.json(learned);
+  if (!open.length) return learned;
   const rows = await db
     .select()
     .from(comments)
@@ -704,7 +705,22 @@ app.get("/orgs/:orgId/inbox", async (c) => {
       items.push({ kind: "blocked", ticket, agentId: last?.agentId ?? null, title: t.status === "blocked" ? "Blocked" : "Needs input", detail: lastText, createdAt: at });
     }
   }
-  return c.json([...items, ...learned].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  return [...items, ...learned].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+app.get("/orgs/:orgId/inbox", async (c) => c.json(await inboxOf(c.req.param("orgId"))));
+
+// Desktop menubar: running Zippers and inbox size, across orgs.
+app.get("/tray", async (c) => {
+  const [all, names] = await Promise.all([db.select({ id: orgs.id }).from(orgs), db.select({ id: agents.id, name: agents.name }).from(agents)]);
+  const name = new Map(names.map((a) => [a.id, a.name]));
+  const [running, inbox] = await Promise.all([Promise.all(all.map((o) => runningOf(o.id))), Promise.all(all.map((o) => inboxOf(o.id)))]);
+  return c.json({
+    inbox: inbox.flat().length,
+    running: running.flat().map(({ agentId, ticket: t }) => ({
+      label: `${name.get(agentId) ?? "Zipper"} · ${t.kind === "chat" ? t.title : `${t.identifier} ${t.title}`}`,
+      path: t.kind === "chat" ? `/chat/${t.id}` : `/t/${t.identifier}`,
+    })),
+  });
 });
 
 /** Accept a proposed learning (legacy comments) into the knowledge base, or dismiss it. */

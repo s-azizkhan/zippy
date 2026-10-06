@@ -1,6 +1,8 @@
-import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
 
 const NO_DB = "3D000";
@@ -33,16 +35,23 @@ export async function createDb(url: string) {
   }
 }
 
-/** `drizzle-kit push`, no config file. No --force: a push that would drop data aborts instead of prompting. */
-export const ensureSchema = () =>
-  new Promise<void>((resolve, reject) =>
-    execFile(
-      fileURLToPath(new URL("../node_modules/.bin/drizzle-kit", import.meta.url)),
-      ["push", "--dialect=postgresql", "--schema=./src/db/schema.ts", `--url=${process.env.DATABASE_URL}`],
-      { cwd: fileURLToPath(new URL("..", import.meta.url)), timeout: 120_000 },
-      (err, out, stderr) => (err ? reject(new Error(stderr.trim() || out.trim().split("\n").pop() || err.message)) : resolve()),
-    ),
-  );
+/** Applies drizzle/ migrations. A DB made by `db:push` (tables, no history) is marked as at 0000_init first. */
+export async function ensureSchema() {
+  const folder = process.env.ZIPPY_MIGRATIONS ?? fileURLToPath(new URL("../drizzle", import.meta.url));
+  const sql = open(process.env.DATABASE_URL!);
+  try {
+    const [{ pushed }] = await sql`select to_regclass('public.orgs') is not null and to_regclass('drizzle.__drizzle_migrations') is null as pushed`;
+    if (pushed) {
+      const [init] = readMigrationFiles({ migrationsFolder: folder });
+      await sql`create schema drizzle`;
+      await sql`create table drizzle.__drizzle_migrations (id serial primary key, hash text not null, created_at bigint)`;
+      await sql`insert into drizzle.__drizzle_migrations (hash, created_at) values (${init!.hash}, ${init!.folderMillis})`;
+    }
+    await migrate(drizzle(sql), { migrationsFolder: folder });
+  } finally {
+    await sql.end({ timeout: 1 });
+  }
+}
 
 /** Desktop shell owns this file and restarts the server after a change. `null` = built-in DB. */
 export function saveDbUrl(url: string | null) {
