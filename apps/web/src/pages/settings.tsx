@@ -1,9 +1,8 @@
 import type { IconType } from "@/lib/anim-icon";
 import { ProfileFields } from "@/components/profile-fields";
 import { MdEditor } from "@/components/md-editor";
-import { Braces, Building2, ChevronRight, Pin, Trash2, X } from "lucide-react";
+import { Bot, Braces, Building2, ChevronRight, Pin, Trash2, X } from "lucide-react";
 import { BookTextIcon as BookOpen } from "@/components/ui/book-text";
-import { BotIcon as Bot } from "@/components/ui/bot";
 import { CheckIcon as Check } from "@/components/ui/check";
 import { CopyIcon as Copy } from "@/components/ui/copy";
 import { DownloadIcon as Download } from "@/components/ui/download";
@@ -849,17 +848,18 @@ function KnowledgeBase() {
               <li key={k.id} className="flex items-start gap-3 px-4 py-2.5">
                 <span className="w-16 shrink-0 pt-1.5 text-[11px] font-medium uppercase text-muted-foreground">{KB_LABELS[k.kind]}</span>
                 <div className="min-w-0 flex-1">
-                  <input
+                  <textarea
                     aria-label="Entry text"
+                    rows={1}
                     defaultValue={k.text}
                     onBlur={(e) => e.target.value.trim() && e.target.value !== k.text && patch.mutate({ id: k.id, text: e.target.value.trim() })}
-                    onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-                    className="focus-visible:bg-muted/60 w-full rounded-md bg-transparent px-1.5 py-1 text-[13px] outline-none"
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), e.currentTarget.blur())}
+                    className="focus-visible:bg-muted/60 w-full resize-none rounded-md bg-transparent px-1.5 py-1 text-[13px] break-words outline-none [field-sizing:content]"
                   />
                   <div className="flex flex-wrap items-center gap-1.5 px-1.5">
                     {/^https?:\/\//i.test(k.url) && <a href={k.url} target="_blank" rel="noreferrer" className="truncate font-mono text-xs text-[#5e6ad2] hover:underline">{k.url}</a>}
                     <Chip>{folderName(k.workspaceId)}</Chip>
-                    {k.source === "agent" && <Chip><Bot aria-hidden className="inline size-3" /> Zipper</Chip>}
+                    {k.source === "agent" && <Chip><Bot aria-hidden className="inline size-3 align-[-2px]" /> Zipper</Chip>}
                     {k.uses > 0 && <Chip>used {k.uses}×</Chip>}
                   </div>
                 </div>
