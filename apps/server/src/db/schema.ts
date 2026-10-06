@@ -78,6 +78,7 @@ export const pipelines = pgTable("pipelines", {
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   autoStart: boolean("auto_start").notNull().default(false), // start on ticket create
+  labelIds: uuid("label_ids").array().notNull().default([]), // start on ticket create when it has one of these labels; wins over autoStart
   maxLoops: integer("max_loops").notNull().default(3),
   createdAt: createdAt(),
 });

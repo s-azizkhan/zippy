@@ -17,6 +17,7 @@ import {
   routineInput,
   knowledgeInput,
   type PipelineInput,
+  type WorkspaceInput,
   type ApprovalPayload,
   type InboxItem,
   type DraftPayload,
@@ -44,7 +45,7 @@ import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { browse, listFiles } from "./browse.ts";
 import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
 import { bodyLimit } from "hono/body-limit";
-import { folderDiff, prState, runTests } from "./git.ts";
+import { detectFolder, folderDiff, mergePr, prState, runTests } from "./git.ts";
 import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
@@ -54,6 +55,11 @@ import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claude
 
 export const app = new Hono().basePath("/api");
 app.use(reqlog);
+// CSRF: other sites can only send simple POSTs (form/text body, no custom headers). JSON or x-zippy forces a CORS preflight, which is never answered.
+app.use(async (c, next) => {
+  if (c.req.method === "POST" && !c.req.header("content-type")?.startsWith("application/json") && !c.req.header("x-zippy")) return c.json({ error: "JSON body required" }, 415);
+  await next();
+});
 
 app.onError((e, c) => {
   if (e instanceof ZodError) return c.json({ error: "invalid input", issues: e.issues }, 400);
@@ -130,12 +136,12 @@ app.get("/catalog/mcp", (c) => c.json(importableMcps()));
 app.post("/catalog/install/:id", async (c) => ((await installPreset(c.req.param("id"))) ? c.body(null, 204) : c.notFound()));
 
 // Org-scoped resources share the same CRUD shape.
-function crud(path: string, table: PgTable & { id: any; orgId: any; createdAt: any }, input: z.ZodObject) {
+function crud(path: string, table: PgTable & { id: any; orgId: any; createdAt: any }, input: z.ZodObject, prepare = async (v: any) => v) {
   app.get(`/orgs/:orgId/${path}`, async (c) =>
     c.json(await db.select().from(table as any).where(eq(table.orgId, c.req.param("orgId"))).orderBy(asc(table.createdAt))),
   );
   app.post(`/orgs/:orgId/${path}`, async (c) => {
-    const [row] = await db.insert(table).values({ ...(await body(c, input)), orgId: c.req.param("orgId") }).returning();
+    const [row] = await db.insert(table).values({ ...(await prepare(await body(c, input))), orgId: c.req.param("orgId") }).returning();
     return c.json(row, 201);
   });
   app.patch(`/${path}/:id`, async (c) => {
@@ -147,7 +153,11 @@ function crud(path: string, table: PgTable & { id: any; orgId: any; createdAt: a
     return c.body(null, 204);
   });
 }
-crud("workspaces", workspaces, workspaceInput);
+// Unset fields come from the repo: "main" is the schema default, so it yields to origin's HEAD.
+crud("workspaces", workspaces, workspaceInput, async (w: WorkspaceInput) => {
+  const d = await detectFolder(w.path);
+  return { ...w, baseBranch: w.baseBranch === "main" ? d.baseBranch || "main" : w.baseBranch, setupCmd: w.setupCmd || d.setupCmd, testCmd: w.testCmd || d.testCmd };
+});
 crud("todos", todos, todoInput);
 app.get("/workspaces/:id/files", async (c) => {
   const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
@@ -224,6 +234,31 @@ app.post("/orgs/:orgId/tickets", async (c) => {
   const ticket = await createTicket(c.req.param("orgId"), await body(c, ticketInput));
   await autoStart(ticket);
   return c.json(await emitTicket(ticket.id), 201);
+});
+
+// Quick capture (CLI, tray): the folder containing `cwd`, else the first org's first folder.
+app.post("/quick", async (c) => {
+  const { title, body: text, cwd } = await body(c, z.object({ title: z.string().min(1).max(200), body: z.string().default(""), cwd: z.string().optional() }));
+  const all = await db.select().from(workspaces).orderBy(asc(workspaces.createdAt));
+  const [first] = await db.select({ id: orgs.id }).from(orgs).orderBy(asc(orgs.createdAt)).limit(1);
+  const ws = all.find((w) => cwd && (cwd === w.path || cwd.startsWith(`${w.path}/`))) ?? all.find((w) => w.orgId === first?.id);
+  const orgId = ws?.orgId ?? first?.id;
+  if (!orgId) return c.json({ error: "Create an organization first." }, 400);
+  const ticket = await createTicket(orgId, ticketInput.parse({ title, body: text, workspaceIds: ws ? [ws.id] : [] }));
+  await autoStart(ticket);
+  return c.json(await emitTicket(ticket.id), 201);
+});
+
+// Queue: start a pipeline on every Todo ticket that has a folder and none running. Org maxLive caps how many run at once.
+app.post("/orgs/:orgId/queue", async (c) => {
+  const { pipelineId } = await body(c, z.object({ pipelineId: z.string().uuid() }));
+  const rows = await db
+    .selectDistinct({ id: tickets.id })
+    .from(tickets)
+    .innerJoin(ticketFolders, eq(ticketFolders.ticketId, tickets.id))
+    .where(and(eq(tickets.orgId, c.req.param("orgId")), eq(tickets.kind, "ticket"), eq(tickets.status, "todo"), eq(tickets.archived, false), isNull(tickets.deletedAt), isNull(tickets.stageId)));
+  for (const r of rows) startPipeline(r.id, pipelineId).catch(console.error);
+  return c.json({ started: rows.length });
 });
 
 app.get("/tickets/:id", async (c) => {
@@ -402,7 +437,7 @@ async function createStarterPipelines(orgId: string) {
   for (const p of PRESETS) {
     const stages = p.stages.map((s) => ({ name: s.name, agentId: team.find((a) => a.handle === s.handle)?.id, instruction: s.instruction, onPass: s.onPass ?? "next", onFail: s.onFail ?? "human", humanGate: s.humanGate ?? false }));
     if (have.some((h) => h.name === p.name) || stages.some((s) => !s.agentId)) continue;
-    made.push(await savePipeline(orgId, null, { name: p.name, autoStart: false, maxLoops: 3, stages: stages as PipelineInput["stages"] }));
+    made.push(await savePipeline(orgId, null, { name: p.name, autoStart: false, labelIds: [], maxLoops: 3, stages: stages as PipelineInput["stages"] }));
   }
   return made;
 }
@@ -657,6 +692,20 @@ app.post("/tickets/:id/tests", async (c) => {
   return c.json({ started: folders.map((f) => f.ws.name) }, 202);
 });
 
+// Approve = squash-merge every open PR on the ticket, then Done.
+app.post("/tickets/:id/merge", async (c) => {
+  const id = c.req.param("id");
+  const open = (await foldersOf(id)).filter(({ folder }) => folder.prUrl && folder.prState === "OPEN");
+  if (!open.length) return c.json({ error: "No open PR on this ticket." }, 400);
+  for (const { folder, ws } of open) {
+    const err = await mergePr(folder.worktreePath ?? ws.path, folder.prUrl!).then(() => null, (e: { stderr?: string; message: string }) => e.stderr?.trim() || e.message);
+    if (err) return c.json({ error: `${ws.name}: ${err}` }, 409);
+    await db.update(ticketFolders).set({ prState: "MERGED" }).where(and(eq(ticketFolders.ticketId, id), eq(ticketFolders.workspaceId, ws.id)));
+  }
+  await setStatus(id, "done");
+  return c.body(null, 204);
+});
+
 /** Everything waiting on a human, newest first. Actions reuse the answer/approval/advance routes. */
 async function inboxOf(orgId: string): Promise<InboxItem[]> {
   const open = await db
@@ -683,6 +732,7 @@ async function inboxOf(orgId: string): Promise<InboxItem[]> {
     .from(comments)
     .where(and(inArray(comments.ticketId, open.map((t) => t.id)), inArray(comments.kind, ["question", "approval", "error", "handoff", "pr", "text"])))
     .orderBy(desc(comments.createdAt));
+  const withPr = new Set((await db.select({ id: ticketFolders.ticketId }).from(ticketFolders).where(and(inArray(ticketFolders.ticketId, open.map((t) => t.id)), eq(ticketFolders.prState, "OPEN")))).map((r) => r.id));
   const items: InboxItem[] = [];
   for (const t of open) {
     const ticket = { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"] };
@@ -705,7 +755,8 @@ async function inboxOf(orgId: string): Promise<InboxItem[]> {
     if (t.status === "needs_input" && t.stageId) {
       items.push({ kind: "gate", ticket, agentId: last?.agentId ?? null, title: "Pipeline stage waits for you", detail: lastText, options: [{ id: "pass", label: "Approve & continue", primary: true }, { id: "fail", label: "Redo stage" }], createdAt: at });
     } else if (t.status === "in_review") {
-      items.push({ kind: "review", ticket, agentId: last?.agentId ?? null, title: "Ready for your review", detail: lastText, createdAt: at });
+      const options = withPr.has(t.id) ? [{ id: "merge", label: "Merge PR", primary: true }, { id: "done", label: "Mark done" }] : undefined;
+      items.push({ kind: "review", ticket, agentId: last?.agentId ?? null, title: "Ready for your review", detail: lastText, options, createdAt: at });
     } else {
       items.push({ kind: "blocked", ticket, agentId: last?.agentId ?? null, title: t.status === "blocked" ? "Blocked" : "Needs input", detail: lastText, createdAt: at });
     }

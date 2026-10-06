@@ -300,10 +300,20 @@ async function makeRoom(orgId: string, max: number) {
   for (;;) {
     const mine = [...live.values()].filter((x) => x.orgId === orgId);
     if (!max || mine.length < max) return;
-    const victim = mine.find((x) => !x.busy) ?? mine[0]!;
-    if (!victim.busy) victim.proc.kill();
-    await new Promise((r) => victim.proc.once("exit", r));
+    const victim = mine.find((x) => !x.busy);
+    if (victim) {
+      victim.proc.kill();
+      await new Promise((r) => victim.proc.once("exit", r));
+    } else await Promise.race(mine.map((x) => x.turn)); // all busy: wait for a turn to end
   }
+}
+
+// Process starts run one at a time per org, so a burst of tickets queues behind the maxLive cap.
+const startQueues = new Map<string, Promise<unknown>>();
+function queued<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+  const run = (startQueues.get(orgId) ?? Promise.resolve()).then(fn);
+  startQueues.set(orgId, run.catch(() => {}));
+  return run;
 }
 
 async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Ticket, agent: Agent, dirs: Dir[]): Promise<Live> {
@@ -536,8 +546,7 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
           return { ws, cwd, branch };
         }),
       );
-      await makeRoom(ticket.orgId, maxLive);
-      current = await start(sessionRow!, ticket, agent, dirs);
+      current = await queued(ticket.orgId, async () => (await makeRoom(ticket.orgId, maxLive), start(sessionRow!, ticket, agent, dirs)));
     }
     l = current;
   } catch (e) {

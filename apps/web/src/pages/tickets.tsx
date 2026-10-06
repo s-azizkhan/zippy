@@ -6,6 +6,7 @@ import { Link2Icon } from "@/components/ui/link-2";
 import { ZapIcon } from "@/components/ui/zap";
 import { PlusIcon as Plus } from "@/components/ui/plus";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Link, useSearchParams } from "react-router";
 import type { Agent, Ticket, TicketStatus } from "@zippy/shared";
 import { FileBrowser } from "@/components/file-browser";
@@ -23,7 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, keys, queryClient, useAgents, useTickets, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useAgents, usePipelines, useTickets, useWorkspaces } from "@/lib/api";
 import { ConfirmDialog } from "@/pages/settings";
 import { useOrg } from "@/lib/org";
 import { useUI } from "@/lib/store";
@@ -299,6 +300,7 @@ export function TicketsPage() {
                       {rows.length}
                     </span>
                   </button>
+                  {status === "todo" && <QueueAll orgId={org.id} />}
                   <button
                     aria-label={`New issue in ${STATUS[status].label}`}
                     onClick={() => setNewTicketOpen(true)}
@@ -392,5 +394,30 @@ function Row({ t, agent, orgId, i }: { t: Ticket; agent?: Agent; orgId: string; 
         }}
       />
     </li>
+  );
+}
+
+/** Run a pipeline on every Todo issue; the org's max live agents caps how many run at once. */
+function QueueAll({ orgId }: { orgId: string }) {
+  const { data: pipelines = [] } = usePipelines(orgId);
+  async function queue(pipelineId: string) {
+    const { started } = await api.post<{ started: number }>(`/orgs/${orgId}/queue`, { pipelineId }, true);
+    toast.success(started ? `Started ${started} issue${started === 1 ? "" : "s"}` : "No Todo issue with a folder to start");
+    queryClient.invalidateQueries({ queryKey: keys.res(orgId, "tickets") });
+  }
+  if (!pipelines.length) return null;
+  return (
+    <Select value="" onValueChange={(id) => queue(id).catch((e: Error) => toast.error(e.message))}>
+      <SelectTrigger size="sm" aria-label="Run a pipeline on all Todo issues" className="h-6 text-xs font-normal">
+        <SelectValue placeholder="Run all…" />
+      </SelectTrigger>
+      <SelectContent>
+        {pipelines.map((p) => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

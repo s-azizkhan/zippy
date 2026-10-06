@@ -2,6 +2,9 @@
   "name": "zippy",
   "private": true,
   "type": "module",
+  "bin": {
+    "zippy": "scripts/zippy.mjs"
+  },
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",

@@ -9,6 +9,7 @@ import { CircleHelpIcon as MessageCircleQuestion } from "@/components/ui/circle-
 import { WorkflowIcon as Workflow } from "@/components/ui/workflow";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Link } from "react-router";
 import type { InboxItem } from "@zippy/shared";
 import { AgentAvatar } from "@/components/status";
@@ -36,6 +37,7 @@ async function act(item: InboxItem, optionId: string) {
   else if (item.kind === "approval") await api.post(`/approvals/${item.commentId}`, { optionId });
   else if (item.kind === "gate") await api.post(`/tickets/${item.ticket.id}/advance`, { verdict: optionId });
   else if (item.kind === "learning") await api.post(`/comments/${item.commentId}/learning`, { accept: optionId === "accept" });
+  else if (item.kind === "review" && optionId === "merge") await api.post(`/tickets/${item.ticket.id}/merge`);
   else if (item.kind === "review") await api.patch(`/tickets/${item.ticket.id}`, { status: "done" });
 }
 
@@ -64,6 +66,8 @@ export function InboxPage() {
       await queryClient.invalidateQueries({ queryKey: keys.res(org.id, "inbox") });
       queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
       queryClient.invalidateQueries({ queryKey: keys.ticket(item.ticket.id) });
+    } catch (e) {
+      toast.error((e as Error).message);
     } finally {
       setBusy(null);
     }

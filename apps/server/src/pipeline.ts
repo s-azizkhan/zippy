@@ -32,12 +32,22 @@ export async function startPipeline(ticketId: string, pipelineId: string) {
   return enterStage(ticketId, p.stages[0]!, null);
 }
 
-async function enterStage(ticketId: string, stage: Stage, notes: string | null) {
+/** Validation adds acceptance criteria; a ticket that already has them skips it. */
+export const hasCriteria = (body: string) => /acceptance criteria/i.test(body);
+
+async function enterStage(ticketId: string, stage: Stage, notes: string | null): Promise<unknown> {
   const [t] = await db
     .update(tickets)
     .set({ stageId: stage.id, assigneeAgentId: stage.agentId, updatedAt: new Date() })
     .where(eq(tickets.id, ticketId))
     .returning();
+  const [agent] = await db.select({ handle: agents.handle }).from(agents).where(eq(agents.id, stage.agentId));
+  if (agent?.handle === "validator" && hasCriteria(t!.body)) {
+    const dest = target((await loadPipeline(stage.pipelineId))!.stages, stage, stage.onPass);
+    const end = dest === "done" || dest === "human";
+    await addComment(ticketId, stage.agentId, "handoff", { verdict: "pass", summary: "Skipped: the ticket already has acceptance criteria.", stage: stage.name, next: end ? "Done" : dest.name } satisfies HandoffPayload);
+    return end ? finish(ticketId) : enterStage(ticketId, dest, notes);
+  }
   await addComment(ticketId, stage.agentId, "stage", { name: stage.name, loop: t!.loopCount });
   const message = [`Pipeline stage: **${stage.name}**.`, stage.instruction, notes && `Notes from the previous stage:\n\n${notes}`, HANDOFF_RULE]
     .filter(Boolean)

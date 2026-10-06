@@ -18,6 +18,8 @@ Schema changes: `pnpm db:push` for your dev DB, then `pnpm --filter @zippy/serve
 
 Linear: copy the `LINEAR_*` keys from `.env.example` into `.env`, restart, then Settings → Linear → Connect.
 
+Quick capture: `pnpm link --global` once, then `zippy "fix login redirect"` from any repo files an issue under that folder. The desktop tray has New issue… too.
+
 Tests: `pnpm --filter @zippy/server test`
 
 ## Layout

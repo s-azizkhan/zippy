@@ -323,7 +323,7 @@ function Sidebar() {
 function Layout() {
   useShortcuts();
   const { data: orgs, isLoading, error, refetch } = useOrgs();
-  const { orgId, setOrgId, onboardingOpen, setOnboardingOpen, newTicketOpen } = useUI();
+  const { orgId, setOrgId, onboardingOpen, setOnboardingOpen, newTicketOpen, setNewTicketOpen } = useUI();
   const [params, setParams] = useSearchParams();
   const linkOrg = params.get("org"); // deep links (Slack) name their org
   const org = orgs?.find((o) => o.id === (linkOrg ?? orgId)) ?? orgs?.[0];
@@ -335,6 +335,13 @@ function Layout() {
       setParams(params, { replace: true });
     }
   }, [linkOrg, org, params, setParams]);
+
+  useEffect(() => {
+    if (!params.has("new")) return;
+    params.delete("new");
+    setParams(params, { replace: true });
+    setNewTicketOpen(true);
+  }, [params, setParams, setNewTicketOpen]);
 
   useEffect(() => {
     if (org && org.id !== orgId) setOrgId(org.id);

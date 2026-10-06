@@ -15,6 +15,7 @@ import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { pipelineInput, type Agent, type Pipeline, type PipelineInput, type StageInput } from "@zippy/shared";
 import { Field, SettingRow } from "@/components/field";
+import { LabelsPicker } from "@/components/pickers";
 import { AgentAvatar } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,11 +142,12 @@ function PipelineList({ pipelines, onOpen }: { pipelines: Pipeline[]; onOpen: (i
 
 /* ───────────── editor ───────────── */
 
-const EMPTY: PipelineInput = { name: "", autoStart: false, maxLoops: 3, stages: [] };
+const EMPTY: PipelineInput = { name: "", autoStart: false, labelIds: [], maxLoops: 3, stages: [] };
 
 const toInput = (p: Pipeline): PipelineInput => ({
   name: p.name,
   autoStart: p.autoStart,
+  labelIds: p.labelIds,
   maxLoops: p.maxLoops,
   stages: p.stages.map(({ name, agentId, instruction, onPass, onFail, humanGate }) => ({ name, agentId, instruction, onPass, onFail, humanGate })),
 });
@@ -239,6 +241,10 @@ function PipelineEditor({ pipeline, onOpen }: { pipeline: Pipeline | null; onOpe
               <Zap className="text-primary size-3.5" aria-hidden /> Start on new tickets
               <Switch checked={form.autoStart} onCheckedChange={(autoStart) => setForm({ ...form, autoStart })} />
             </label>
+            <span title="Runs this pipeline on new tickets with one of these labels, instead of the auto-start one." className="flex items-center gap-2 rounded-full border py-0.5 pr-1 pl-3">
+              Start on label
+              <LabelsPicker chip orgId={org.id} value={form.labelIds} onChange={(labelIds) => setForm({ ...form, labelIds })} />
+            </span>
             <div role="group" aria-label="Max fix loops" className="flex items-center gap-1 rounded-full border py-1 pr-1 pl-3">
               <Undo2 className="text-[#d9822b]" size={14} aria-hidden /> Max fix loops
               <Button type="button" size="icon-xs" variant="ghost" aria-label="Fewer loops" disabled={form.maxLoops <= 1} onClick={() => setForm({ ...form, maxLoops: form.maxLoops - 1 })}>
@@ -254,7 +260,7 @@ function PipelineEditor({ pipeline, onOpen }: { pipeline: Pipeline | null; onOpe
 
         <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
           <section aria-label="Stages">
-            <Terminal icon={Zap} label={form.autoStart ? "New ticket arrives" : "Started manually"} />
+            <Terminal icon={Zap} label={form.autoStart || form.labelIds.length ? "New ticket arrives" : "Started manually"} />
             <Reorder.Group as="ol" axis="y" values={stages} onReorder={reorder}>
               {stages.map((s, n) => (
                 <StageRow

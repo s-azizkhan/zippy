@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, matchesGlob } from "node:path";
 import { promisify } from "node:util";
@@ -150,4 +150,16 @@ export async function openPr(ticket: Ticket, folder: Folder, ws: Workspace, titl
 
 export async function prState(cwd: string, url: string): Promise<string | null> {
   return exec("gh", ["pr", "view", url, "--json", "state", "-q", ".state"], { cwd }).then((r) => r.stdout.trim(), () => null);
+}
+
+export const mergePr = (cwd: string, url: string) => exec("gh", ["pr", "merge", url, "--squash"], { cwd });
+
+const LOCKS: [string, string][] = [["pnpm-lock.yaml", "pnpm"], ["yarn.lock", "yarn"], ["bun.lock", "bun"], ["bun.lockb", "bun"], ["package-lock.json", "npm"]];
+
+/** Folder defaults: remote default branch, install and test commands. ponytail: JS repos only. */
+export async function detectFolder(path: string) {
+  const head = await git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").catch(() => "");
+  const pm = LOCKS.find(([f]) => existsSync(join(path, f)))?.[1];
+  const pkg = await readFile(join(path, "package.json"), "utf8").then((t) => JSON.parse(t) as { scripts?: Record<string, string> }, () => null);
+  return { baseBranch: head.replace(/^origin\//, ""), setupCmd: pm ? `${pm} install` : "", testCmd: pm && pkg?.scripts?.test ? `${pm} test` : "" };
 }

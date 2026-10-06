@@ -133,6 +133,7 @@ export const stageInput = z.object({
 export const pipelineInput = z.object({
   name: z.string().min(1).max(80),
   autoStart: z.boolean().default(false),
+  labelIds: z.array(z.string().uuid()).default([]),
   maxLoops: z.number().int().min(1).max(10).default(3),
   stages: z.array(stageInput).min(1),
 });

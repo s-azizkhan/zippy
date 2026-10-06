@@ -23,8 +23,10 @@ export async function setFolders(ticketId: string, workspaceIds: string[]) {
 
 export const hasFolders = async (ticketId: string) => (await db.select().from(ticketFolders).where(eq(ticketFolders.ticketId, ticketId)).limit(1)).length > 0;
 
+/** Start the pipeline a label picks, else the org's auto-start one. */
 export async function autoStart(ticket: TicketRow) {
-  const [p] = await db.select().from(pipelines).where(and(eq(pipelines.orgId, ticket.orgId), eq(pipelines.autoStart, true)));
+  const all = await db.select().from(pipelines).where(eq(pipelines.orgId, ticket.orgId));
+  const p = all.find((x) => x.labelIds.some((l) => ticket.labelIds.includes(l))) ?? all.find((x) => x.autoStart);
   if (p && (await hasFolders(ticket.id))) await startPipeline(ticket.id, p.id);
 }
 

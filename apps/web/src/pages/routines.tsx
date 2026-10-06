@@ -29,6 +29,13 @@ const PRESETS = [
   { label: "Monthly", hours: 720 },
 ];
 
+const TEMPLATES: Pick<RoutineInput, "name" | "title" | "body" | "everyHours">[] = [
+  { name: "Dependency bumps", title: "Bump dependencies", everyHours: 168, body: "Update outdated dependencies, patch and minor versions only. Run the tests. Commit and open a PR if anything changed. List majors you skipped." },
+  { name: "Sentry triage", title: "Triage new Sentry issues", everyHours: 24, body: "Use the Sentry MCP to list unresolved issues first seen in the last 24 hours. Create a sub-ticket for each real bug with the stack trace, the suspect file:line and a repro. Skip noise and say why." },
+  { name: "Flaky tests", title: "Hunt flaky tests", everyHours: 168, body: "Run the test suite 3 times. Report every test that fails only sometimes, with the likely cause. Fix it if the cause is clear." },
+  { name: "TODO harvest", title: "Harvest new TODOs", everyHours: 168, body: "Find TODO and FIXME comments added in the last 7 days (`git log -p --since=7.days`). Create a sub-ticket for each one that is real work." },
+];
+
 const toInput = ({ name, title, body, workspaceIds, assigneeAgentId, pipelineId, everyHours, runAt, enabled }: Routine): RoutineInput => ({ name, title, body, workspaceIds, assigneeAgentId, pipelineId, everyHours, runAt, enabled });
 
 function cadence({ everyHours: h, runAt }: Pick<RoutineInput, "everyHours" | "runAt">) {
@@ -421,6 +428,16 @@ function Editor({ routine }: { routine?: Routine }) {
 
         <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
           <div className="grid gap-6">
+            {!routine && (
+              <div role="group" aria-label="Start from a template" className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground text-xs">Start from:</span>
+                {TEMPLATES.map((t) => (
+                  <Button key={t.name} type="button" size="xs" variant="outline" onClick={() => setForm((f) => ({ ...f, ...t }))}>
+                    {t.name}
+                  </Button>
+                ))}
+              </div>
+            )}
             <Card title="Ticket template" hint="Every run creates a ticket from this.">
               <Field label="Name" error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Weekly dependency bump" autoFocus={!routine} />}</Field>
               <Field label="Ticket title" hint="The run date is appended." error={errors.title}>{(p) => <Input {...p} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Bump dependencies" />}</Field>

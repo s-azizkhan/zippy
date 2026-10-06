@@ -24,7 +24,7 @@ const label = (day: string, today: string) =>
   day === today ? "Today" : day === shift(today, -1) ? "Yesterday" : new Date(`${day}T12:00`).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 
 async function upload(file: File, editor: Editor) {
-  const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
+  const res = await fetch(`/api/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file, headers: { "x-zippy": "1" } });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
   const { url } = (await res.json()) as { url: string };
   const c = editor.chain().focus();

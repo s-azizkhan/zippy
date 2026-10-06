@@ -1,0 +1,1 @@
+ALTER TABLE "pipelines" ADD COLUMN "label_ids" uuid[] DEFAULT '{}' NOT NULL;
