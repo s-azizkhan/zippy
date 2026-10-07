@@ -147,7 +147,7 @@ export const linearImport = z.object({
 export const terminalTemplateInput = z.object({
   name: z.string().trim().min(1).max(80),
   steps: z
-    .array(z.object({ workspaceId: z.string().uuid(), title: z.string().trim().max(60).default(""), command: z.string().trim().max(2000).default("") }))
+    .array(z.object({ workspaceId: z.string().uuid(), title: z.string().trim().max(60).default(""), command: z.string().trim().max(2000).default(""), delaySec: z.number().int().min(0).max(600).default(0) }))
     .min(1)
     .max(20),
 });

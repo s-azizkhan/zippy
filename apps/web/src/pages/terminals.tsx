@@ -1,7 +1,8 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { ChevronDown, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, GripVertical, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { Reorder, useDragControls } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -72,16 +73,46 @@ function PtyTerminal({ id, onExit }: { id: string; onExit: () => void }) {
   return <div ref={host} className="h-full min-h-0 w-full overflow-hidden rounded-xl bg-[#0f0f10] p-2" />;
 }
 
-const blankStep = (workspaceId: string) => ({ workspaceId, title: "", command: "" });
+type Step = TerminalTemplateInput["steps"][number];
+type KeyedStep = Step & { key: number };
+let stepSeq = 0;
+const blankStep = (workspaceId: string): KeyedStep => ({ key: ++stepSeq, workspaceId, title: "", command: "", delaySec: 0 });
 
-/** Create/edit a template: ordered steps of folder + optional name + optional command. */
+function StepRow({ st, i, only, folderOptions, set, remove }: { st: KeyedStep; i: number; only: boolean; folderOptions: { value: string; label: string }[]; set: (p: Partial<Step>) => void; remove: () => void }) {
+  const controls = useDragControls();
+  return (
+    <Reorder.Item value={st} dragListener={false} dragControls={controls} whileDrag={{ scale: 1.015, zIndex: 20 }} className="bg-foreground/[0.03] border-foreground/[0.07] bg-background grid gap-2 rounded-xl border p-3">
+      <div className="flex items-center gap-2">
+        <button type="button" aria-label={`Drag to reorder step ${i + 1}`} onPointerDown={(e) => controls.start(e)} className="text-muted-foreground hover:text-foreground -ml-1 cursor-grab touch-none rounded p-0.5 active:cursor-grabbing">
+          <GripVertical className="size-4" aria-hidden />
+        </button>
+        <span className="text-muted-foreground w-4 shrink-0 font-mono text-xs">{i + 1}.</span>
+        <OptionSelect label="Folder" size="sm" value={st.workspaceId} onChange={(v) => set({ workspaceId: v })} options={folderOptions} className="flex-1" />
+        <Input className="h-7 flex-1 text-xs" value={st.title} onChange={(e) => set({ title: e.target.value })} placeholder="Name (optional)" aria-label="Terminal name" />
+        <Button type="button" size="icon-xs" variant="ghost" aria-label="Remove step" disabled={only} onClick={remove}>
+          <X aria-hidden />
+        </Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input className="h-7 flex-1 font-mono text-xs" value={st.command} onChange={(e) => set({ command: e.target.value })} placeholder="Command to run (optional), e.g. pnpm dev" aria-label="Command" />
+        <label className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+          wait
+          <Input type="number" min={0} max={600} className="h-7 w-16 text-xs tabular-nums" value={st.delaySec} onChange={(e) => set({ delaySec: Math.max(0, Math.min(600, Number(e.target.value) || 0)) })} aria-label="Seconds to wait before running the command" />
+          s
+        </label>
+      </div>
+    </Reorder.Item>
+  );
+}
+
+/** Create/edit a template: ordered steps of folder + optional name + optional command + optional delay. */
 function TemplateDialog({ orgId, workspaces, initial, onClose }: { orgId: string; workspaces: Workspace[]; initial: TerminalTemplate | null; onClose: () => void }) {
   const key = keys.res(orgId, "terminal-templates");
-  const [form, setForm] = useState<TerminalTemplateInput>(initial ? { name: initial.name, steps: initial.steps } : { name: "", steps: [blankStep(workspaces[0]?.id ?? "")] });
+  const [name, setName] = useState(initial?.name ?? "");
+  const [steps, setSteps] = useState<KeyedStep[]>(() => (initial ? initial.steps.map((st) => ({ ...blankStep(st.workspaceId), ...st, key: ++stepSeq })) : [blankStep(workspaces[0]?.id ?? "")]));
   const save = useApiMutation((v: TerminalTemplateInput) => (initial ? api.patch(`/terminal-templates/${initial.id}`, v) : api.post(`/orgs/${orgId}/terminal-templates`, v)), [key]);
-  const setStep = (i: number, patch: Partial<TerminalTemplateInput["steps"][number]>) => setForm((f) => ({ ...f, steps: f.steps.map((st, j) => (j === i ? { ...st, ...patch } : st)) }));
   const folderOptions = workspaces.map((w) => ({ value: w.id, label: w.name }));
-  const valid = form.name.trim() && form.steps.length > 0 && form.steps.every((st) => st.workspaceId);
+  const valid = name.trim() && steps.length > 0 && steps.every((st) => st.workspaceId);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -93,26 +124,19 @@ function TemplateDialog({ orgId, workspaces, initial, onClose }: { orgId: string
           className="grid gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (valid) save.mutateAsync(form).then(onClose);
+            if (valid) save.mutateAsync({ name, steps: steps.map(({ key: _k, ...st }) => st) }).then(onClose);
           }}
         >
-          <Field label="Template name">{(p) => <Input {...p} autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full stack dev" />}</Field>
+          <Field label="Template name">{(p) => <Input {...p} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Full stack dev" />}</Field>
           <div className="grid gap-2">
             <p className="text-[13px] font-medium">Terminals to open</p>
-            {form.steps.map((st, i) => (
-              <div key={i} className="bg-foreground/[0.03] border-foreground/[0.07] grid gap-2 rounded-xl border p-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground w-5 shrink-0 font-mono text-xs">{i + 1}.</span>
-                  <OptionSelect label="Folder" size="sm" value={st.workspaceId} onChange={(v) => setStep(i, { workspaceId: v })} options={folderOptions} className="flex-1" />
-                  <Input className="h-7 flex-1 text-xs" value={st.title} onChange={(e) => setStep(i, { title: e.target.value })} placeholder="Name (optional)" aria-label="Terminal name" />
-                  <Button type="button" size="icon-xs" variant="ghost" aria-label="Remove step" disabled={form.steps.length === 1} onClick={() => setForm((f) => ({ ...f, steps: f.steps.filter((_, j) => j !== i) }))}>
-                    <X aria-hidden />
-                  </Button>
-                </div>
-                <Input className="h-7 font-mono text-xs" value={st.command} onChange={(e) => setStep(i, { command: e.target.value })} placeholder="Command to run (optional), e.g. pnpm dev" aria-label="Command" />
-              </div>
-            ))}
-            <Button type="button" size="sm" variant="outline" className="justify-self-start" onClick={() => setForm((f) => ({ ...f, steps: [...f.steps, blankStep(f.steps.at(-1)?.workspaceId ?? workspaces[0]?.id ?? "")] }))}>
+            <p className="text-muted-foreground -mt-1 text-xs">All shells open at once. "wait" delays only that step's command, e.g. give the db 5s before the server starts.</p>
+            <Reorder.Group axis="y" values={steps} onReorder={setSteps} className="grid gap-2">
+              {steps.map((st, i) => (
+                <StepRow key={st.key} st={st} i={i} only={steps.length === 1} folderOptions={folderOptions} set={(patch) => setSteps((ss) => ss.map((x) => (x.key === st.key ? { ...x, ...patch } : x)))} remove={() => setSteps((ss) => ss.filter((x) => x.key !== st.key))} />
+              ))}
+            </Reorder.Group>
+            <Button type="button" size="sm" variant="outline" className="justify-self-start" onClick={() => setSteps((ss) => [...ss, blankStep(ss.at(-1)?.workspaceId ?? workspaces[0]?.id ?? "")])}>
               <Plus aria-hidden /> Add terminal
             </Button>
           </div>
@@ -199,7 +223,7 @@ export function TerminalsPage() {
                 {!tplFolded &&
                   templates.map((tpl) => (
                     <div key={tpl.id} className="group/p hover:bg-foreground/[0.05] flex items-center gap-1 rounded-lg pr-1 pl-2 text-[13px]">
-                      <button className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left" title={tpl.steps.map((st) => st.command || "shell").join(" · ")} onClick={() => runTpl.mutateAsync(tpl.id).then((t) => t[0] && navigate(`/terminals/${t[0].id}`))} disabled={runTpl.isPending}>
+                      <button className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left" title={tpl.steps.map((st) => (st.command || "shell") + (st.delaySec ? ` (+${st.delaySec}s)` : "")).join(" · ")} onClick={() => runTpl.mutateAsync(tpl.id).then((t) => t[0] && navigate(`/terminals/${t[0].id}`))} disabled={runTpl.isPending}>
                         <Play className="text-primary size-3 shrink-0 fill-current" aria-hidden />
                         <span className="truncate text-xs">{tpl.name}</span>
                         <span className="text-muted-foreground shrink-0 text-[10px]">{tpl.steps.length}</span>

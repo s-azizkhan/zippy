@@ -240,7 +240,8 @@ app.post("/terminal-templates/:id/run", async (c) => {
     const w = ws.get(step.workspaceId);
     if (!w) continue;
     const term = spawnTerminal(w.id, w.path, 80, 24, step.title);
-    if (step.command) writeTerminal(term.id, step.command + "\r");
+    // Shell opens now; the command waits delaySec so an earlier step (a server, a db) can be up first.
+    if (step.command) setTimeout(() => writeTerminal(term.id, step.command + "\r"), (step.delaySec ?? 0) * 1000).unref();
     opened.push(term);
   }
   return c.json(opened, 201);

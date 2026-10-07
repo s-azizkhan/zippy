@@ -217,7 +217,7 @@ export const terminalTemplates = pgTable("terminal_templates", {
   id: id(),
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  steps: jsonb("steps").$type<{ workspaceId: string; title: string; command: string }[]>().notNull().default([]),
+  steps: jsonb("steps").$type<{ workspaceId: string; title: string; command: string; delaySec?: number }[]>().notNull().default([]),
   createdAt: createdAt(),
 });
 
