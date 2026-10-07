@@ -12,7 +12,8 @@ export function RunningPage() {
   const stop = useApiMutation((r: { ticketId: string; agentId: string }) => api.post(`/tickets/${r.ticketId}/cancel`, { agentId: r.agentId }), [keys.res(org.id, "running")]);
 
   return (
-    <div className="mx-auto w-full max-w-[760px] px-6 py-10">
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-[760px] px-6 py-10">
       <h1 className="text-2xl font-semibold tracking-[-0.01em]">Running Zippers</h1>
       <p className="text-muted-foreground mt-1 text-[13px]">Every Zipper working right now, on tickets and chats.</p>
       <ul className="mt-6 grid gap-2" aria-live="polite">
@@ -36,6 +37,7 @@ export function RunningPage() {
         })}
       </ul>
       {!isLoading && !running.length && <p className="text-muted-foreground mt-6 rounded-xl border border-dashed px-4 py-8 text-center text-[13px]">No Zippers running right now.</p>}
+      </div>
     </div>
   );
 }
