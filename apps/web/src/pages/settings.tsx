@@ -14,8 +14,9 @@ import { SearchIcon as Search } from "@/components/ui/search";
 import { ServerIcon as Server } from "@/components/ui/server";
 import { WrenchIcon as Wrench } from "@/components/ui/wrench";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { CACHE_TTLS, EFFORTS, KB_KINDS, KB_LABELS, MODELS, knowledgeInput, mcpServerInput, orgInput, patchOf, workspaceInput, type KnowledgeInput, type McpServer, type McpServerInput, type Workspace, type WorkspaceInput } from "@zippy/shared";
@@ -34,80 +35,173 @@ import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
 const ICONS: Record<SettingsTab, IconType> = { org: Building2, database: Database, folders: FolderGit2, knowledge: BookOpen, tools: Wrench, mcp: Server, connectors: Plug, linear: Link2 };
+/** One accent per section: tints the hero tile, nav glow and status marks. */
+const TINTS: Record<SettingsTab, string> = { org: "#5e6ad2", database: "#26b5ce", folders: "#4cb782", knowledge: "#d4a017", tools: "#a78bfa", mcp: "#e879f9", connectors: "#f97316", linear: "#5e6ad2" };
 const GROUPS = [...new Set(SETTINGS_TABS.map((t) => t.group))];
 const isTab = (v: string | null): v is SettingsTab => SETTINGS_TABS.some((t) => t.value === v);
+const PANES: Record<SettingsTab, { title: string; desc: string }> = {
+  org: { title: "Organization", desc: "Identity, spending limits, notifications and shared context for every Zipper." },
+  database: { title: "Database", desc: "Where tickets, Zippers and comments are stored." },
+  folders: { title: "Working folders", desc: "Local repos Zippers work in. Each ticket gets an isolated worktree of one folder." },
+  knowledge: { title: "Knowledge base", desc: "Dos, don'ts, preferences, commands and links. Zippers add to it as they work; the most relevant entries go into each Zipper's prompt." },
+  tools: { title: "Zipper tool defaults", desc: "Defaults for every Zipper. Override per Zipper on the Zippers page." },
+  mcp: { title: "MCP servers", desc: "Servers given to every Zipper session. Scope one to a folder to limit it." },
+  connectors: { title: "Connectors", desc: "Status of the services Zippy connects to." },
+  linear: { title: "Linear", desc: "Sync tickets and comments with your Linear workspace." },
+};
+
+const PaneCtx = createContext<SettingsTab>("org");
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("tab");
   // `?linear=connected` is where the OAuth callback lands.
   const tab: SettingsTab = isTab(q) ? q : params.has("linear") ? "linear" : "org";
+  const scroller = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center border-b px-4">
+    <div className="flex min-h-0 flex-1 flex-col" style={{ "--tint": TINTS[tab] } as CSSProperties}>
+      <header className="bg-background/80 sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b px-4 backdrop-blur-md">
         <h1 className="text-[13px] font-semibold">Settings</h1>
+        <span aria-hidden className="text-muted-foreground/60">/</span>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={tab}
+            initial={reduce ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? undefined : { opacity: 0, y: -4 }}
+            transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
+            className="text-muted-foreground text-[13px]"
+          >
+            {PANES[tab].title}
+          </motion.span>
+        </AnimatePresence>
       </header>
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scroller} className="settings-bg flex-1 overflow-y-auto">
         <TabsPrimitive.Root
           value={tab}
-          onValueChange={(v) => setParams({ tab: v }, { replace: true })}
+          onValueChange={(v) => (setParams({ tab: v }, { replace: true }), scroller.current?.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" }))}
           orientation="vertical"
-          className="mx-auto flex max-w-4xl flex-col gap-4 px-4 py-4 md:flex-row md:gap-10 md:px-6 md:py-8"
+          className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:gap-8 md:px-6 md:py-8 lg:gap-12"
         >
-          <TabsPrimitive.List aria-label="Settings sections" className="-mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 pb-1 md:sticky md:top-0 md:mx-0 md:w-52 md:flex-col md:gap-0.5 md:self-start md:overflow-visible md:px-0 md:pb-0">
-            {GROUPS.map((g) => (
-              <div key={g} role="presentation" className="flex gap-1 md:flex-col md:gap-0.5">
-                <span className="text-muted-foreground hidden px-3 pt-4 pb-1 text-[11px] font-medium tracking-wide uppercase first:pt-0 md:block" aria-hidden>
-                  {g}
-                </span>
-                {SETTINGS_TABS.filter((t) => t.group === g).map((t) => {
-                  const Icon = ICONS[t.value];
-                  return (
-                    <TabsPrimitive.Trigger
-                      key={t.value}
-                      value={t.value}
-                      className="text-muted-foreground hover:text-foreground hover:bg-accent/60 data-[state=active]:bg-accent data-[state=active]:text-foreground focus-visible:ring-ring/60 relative inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg border px-3 text-[13px] font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] max-md:data-[state=active]:border-foreground/30 md:min-h-9 md:border-transparent md:before:absolute md:before:inset-y-2 md:before:-left-0 md:before:w-0.5 md:before:origin-center md:before:scale-y-0 md:before:rounded-full md:before:bg-foreground md:before:transition-transform md:data-[state=active]:before:scale-y-100"
-                    >
-                      <Icon aria-hidden className="size-4 shrink-0" />
-                      {t.label}
-                    </TabsPrimitive.Trigger>
-                  );
-                })}
-              </div>
-            ))}
-          </TabsPrimitive.List>
+          <LayoutGroup id="settings-nav">
+            <TabsPrimitive.List aria-label="Settings sections" className="-mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 pb-1 md:sticky md:top-0 md:mx-0 md:w-56 md:flex-col md:gap-0.5 md:self-start md:overflow-visible md:px-0 md:pb-0">
+              {GROUPS.map((g) => (
+                <div key={g} role="presentation" className="flex gap-1 md:flex-col md:gap-0.5">
+                  <span className="text-muted-foreground/80 hidden px-3 pt-5 pb-1.5 text-[11px] font-medium tracking-[0.08em] uppercase first:pt-0 md:block" aria-hidden>
+                    {g}
+                  </span>
+                  {SETTINGS_TABS.filter((t) => t.group === g).map((t) => {
+                    const Icon = ICONS[t.value];
+                    const active = t.value === tab;
+                    return (
+                      <TabsPrimitive.Trigger
+                        key={t.value}
+                        value={t.value}
+                        style={{ "--tint": TINTS[t.value] } as CSSProperties}
+                        className="group/tab text-muted-foreground hover:text-foreground data-[state=active]:text-foreground focus-visible:ring-ring/60 relative inline-flex min-h-11 shrink-0 items-center gap-2.5 rounded-xl px-3 text-[13px] font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-[3px] md:min-h-9"
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="settings-active-pill"
+                            aria-hidden
+                            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 36, mass: 0.6 }}
+                            className="bg-accent absolute inset-0 rounded-xl shadow-[inset_0_1px_0_rgb(255_255_255/0.5),0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.06)]"
+                          />
+                        )}
+                        <span aria-hidden className="tint-tile relative grid size-6 shrink-0 place-items-center rounded-md transition-transform duration-300 group-hover/tab:scale-105 group-data-[state=active]/tab:scale-105">
+                          <Icon className="size-3.5" />
+                        </span>
+                        <span className="relative">{t.label}</span>
+                      </TabsPrimitive.Trigger>
+                    );
+                  })}
+                </div>
+              ))}
+            </TabsPrimitive.List>
+          </LayoutGroup>
           <div className="min-w-0 flex-1">
-            <Pane value="org" title="Organization" desc="Identity, spending limits, notifications and shared context for every Zipper.">
+            <Pane value="org" active={tab}>
               <OrgSettings active={tab === "org"} />
             </Pane>
-            <Pane value="database" title="Database" desc="Where tickets, Zippers and comments are stored.">
+            <Pane value="database" active={tab}>
               <Card title="Postgres">
                 <DbForm />
               </Card>
             </Pane>
-            <Pane value="folders" title="Working folders" desc="Local repos Zippers work in. Each ticket gets an isolated worktree of one folder.">
+            <Pane value="folders" active={tab}>
               <Folders />
             </Pane>
-            <Pane value="knowledge" title="Knowledge base" desc="Dos, don'ts, preferences, commands and links. Zippers add to it as they work; the most relevant entries go into each Zipper's prompt.">
+            <Pane value="knowledge" active={tab}>
               <KnowledgeBase />
             </Pane>
-            <Pane value="tools" title="Zipper tool defaults" desc="Defaults for every Zipper. Override per Zipper on the Zippers page.">
+            <Pane value="tools" active={tab}>
               <OrgTools />
             </Pane>
-            <Pane value="mcp" title="MCP servers" desc="Servers given to every Zipper session. Scope one to a folder to limit it.">
+            <Pane value="mcp" active={tab}>
               <McpServers />
             </Pane>
-            <Pane value="connectors" title="Connectors" desc="Status of the services Zippy connects to.">
+            <Pane value="connectors" active={tab}>
               <Connectors />
             </Pane>
-            <Pane value="linear" title="Linear" desc="Sync tickets and comments with your Linear workspace.">
+            <Pane value="linear" active={tab}>
               <LinearSettings />
             </Pane>
           </div>
+          <OnThisPage tab={tab} scroller={scroller} />
         </TabsPrimitive.Root>
       </div>
     </div>
+  );
+}
+
+/** Right rail, wide screens only: every card in the active pane, highlighted as it scrolls into view. */
+function OnThisPage({ tab, scroller }: { tab: SettingsTab; scroller: React.RefObject<HTMLDivElement | null> }) {
+  const [items, setItems] = useState<{ id: string; label: string }[]>([]);
+  const [current, setCurrent] = useState("");
+  const reduce = useReducedMotion();
+  useEffect(() => {
+    const root = scroller.current;
+    const pane = root?.querySelector<HTMLElement>(`[data-pane="${tab}"]`);
+    const cards = pane ? [...pane.querySelectorAll<HTMLElement>("section[id][data-card-title]")] : [];
+    setItems(cards.map((c) => ({ id: c.id, label: c.dataset.cardTitle! })));
+    setCurrent(cards[0]?.id ?? "");
+    if (!root || cards.length < 3) return;
+    const io = new IntersectionObserver(
+      (es) => {
+        const hit = es.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (hit) setCurrent(hit.target.id);
+      },
+      { root, rootMargin: "-10% 0px -70% 0px" },
+    );
+    cards.forEach((c) => io.observe(c));
+    return () => io.disconnect();
+  }, [tab, scroller]);
+  if (items.length < 3) return null;
+  return (
+    <nav aria-label="On this page" className="hidden w-40 shrink-0 self-start xl:block xl:sticky xl:top-0">
+      <p className="text-muted-foreground/80 mb-2 px-3 text-[11px] font-medium tracking-[0.08em] uppercase">On this page</p>
+      <ul className="relative grid gap-0.5 border-l">
+        {items.map((it) => {
+          const on = it.id === current;
+          return (
+            <li key={it.id} className="relative">
+              {on && <motion.span layoutId="settings-rail" aria-hidden transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 400, damping: 36 }} className="absolute inset-y-1 -left-px w-0.5 rounded-full" style={{ background: "var(--tint)" }} />}
+              <a
+                href={`#${it.id}`}
+                aria-current={on ? "true" : undefined}
+                onClick={(e) => (e.preventDefault(), document.getElementById(it.id)?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }), setCurrent(it.id))}
+                className={`focus-visible:ring-ring/60 block truncate rounded-md px-3 py-1 text-xs outline-none transition-colors focus-visible:ring-[3px] ${on ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {it.label}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
 
@@ -140,25 +234,38 @@ function HotkeyRow() {
 const MAC = navigator.platform.startsWith("Mac");
 const pretty = (hk: string) => hk.replace("CmdOrCtrl", MAC ? "⌘" : "Ctrl").replace("Shift", "⇧").replace("Alt", MAC ? "⌥" : "Alt").replaceAll("+", MAC ? "" : "+");
 
-/** Panes stay mounted so unsaved edits survive tab switches; the animation replays when one becomes visible. */
-function Pane({ value, title, desc, children }: { value: SettingsTab; title: string; desc: string; children: ReactNode }) {
+/**
+ * Panes stay mounted so unsaved edits survive tab switches. Going display:none → shown restarts the CSS
+ * `rise` animation on the hero and every `.stagger` child, so the entrance replays on each visit for free.
+ */
+function Pane({ value, children }: { value: SettingsTab; active: SettingsTab; children: ReactNode }) {
+  const Icon = ICONS[value];
+  const { title, desc } = PANES[value];
   return (
-    <TabsPrimitive.Content value={value} forceMount className="animate-in fade-in-0 slide-in-from-bottom-1 grid gap-5 outline-none duration-300 data-[state=inactive]:hidden">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-        <p className="text-muted-foreground mt-0.5 text-[13px]">{desc}</p>
-      </div>
-      {children}
-    </TabsPrimitive.Content>
+    <PaneCtx.Provider value={value}>
+      <TabsPrimitive.Content value={value} forceMount data-pane={value} className="stagger grid gap-5 outline-none data-[state=inactive]:hidden" style={{ "--tint": TINTS[value] } as CSSProperties}>
+        <div className="rise flex items-start gap-4">
+          <span aria-hidden className="tint-tile hero-tile grid size-12 shrink-0 place-items-center rounded-2xl">
+            <Icon className="size-5" />
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <h2 className="text-xl font-semibold tracking-tight text-balance">{title}</h2>
+            <p className="text-muted-foreground mt-1 max-w-prose text-[13px] leading-relaxed text-pretty">{desc}</p>
+          </div>
+        </div>
+        {children}
+      </TabsPrimitive.Content>
+    </PaneCtx.Provider>
   );
 }
 
 function Card({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
+  const pane = useContext(PaneCtx);
   return (
-    <section className="bg-card grid gap-4 rounded-xl border p-5 shadow-xs">
+    <section id={`${pane}-${slug(title)}`} data-card-title={title} aria-labelledby={`${pane}-${slug(title)}-h`} className="settings-card rise bg-card grid scroll-mt-20 gap-4 rounded-2xl border p-5 sm:p-6">
       <div>
-        <h3 className="text-sm font-medium">{title}</h3>
-        {desc && <p className="text-muted-foreground mt-0.5 text-xs">{desc}</p>}
+        <h3 id={`${pane}-${slug(title)}-h`} className="text-sm font-semibold tracking-tight">{title}</h3>
+        {desc && <p className="text-muted-foreground mt-1 text-xs leading-relaxed text-pretty">{desc}</p>}
       </div>
       {children}
     </section>
@@ -167,14 +274,27 @@ function Card({ title, desc, children }: { title: string; desc?: string; childre
 
 function EmptyState({ icon: Icon, title, desc, children }: { icon: IconType; title: string; desc: string; children?: ReactNode }) {
   return (
-    <div className="grid justify-items-center gap-1 rounded-xl border border-dashed px-6 py-10 text-center">
-      <span className="bg-muted mb-2 grid size-10 place-items-center rounded-full">
-        <Icon aria-hidden className="text-muted-foreground size-5" />
+    <div className="empty-state rise grid justify-items-center gap-1 rounded-2xl border border-dashed px-6 py-12 text-center">
+      <span aria-hidden className="tint-tile float mb-3 grid size-12 place-items-center rounded-2xl">
+        <Icon className="size-5" />
       </span>
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-muted-foreground max-w-sm text-xs">{desc}</p>
-      {children && <div className="mt-3">{children}</div>}
+      <p className="text-sm font-semibold tracking-tight">{title}</p>
+      <p className="text-muted-foreground max-w-sm text-xs leading-relaxed text-pretty">{desc}</p>
+      {children && <div className="mt-4">{children}</div>}
     </div>
+  );
+}
+
+/** Connection status: label + dot, pinging softly while connected. Announces changes to screen readers. */
+function Status({ ok, loading, children }: { ok: boolean; loading?: boolean; children: ReactNode }) {
+  return (
+    <p role="status" aria-live="polite" className="flex items-center gap-2.5 text-[13px] font-medium">
+      <span aria-hidden className="relative grid size-2.5 place-items-center">
+        {ok && !loading && <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/50 [animation-duration:2.4s]" />}
+        <span className={`relative size-2 rounded-full transition-colors duration-500 ${loading ? "bg-muted-foreground/40 animate-pulse" : ok ? "bg-emerald-500 shadow-[0_0_8px_rgb(16_185_129/0.6)]" : "bg-muted-foreground/50"}`} />
+      </span>
+      {children}
+    </p>
   );
 }
 
@@ -203,10 +323,10 @@ export function ConfirmDialog({ open, onOpenChange, title, desc, action, onConfi
 function Disclosure({ title, meta, badges, trailing, defaultOpen = false, children }: { title: string; meta?: string; badges?: ReactNode; trailing?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className="bg-card min-w-0 rounded-xl border shadow-xs transition-shadow data-[state=open]:shadow-sm">
+    <Collapsible.Root open={open} onOpenChange={setOpen} className="settings-card rise bg-card min-w-0 rounded-2xl border data-[state=open]:shadow-md">
       <div className="flex items-center gap-3 pr-4">
-        <Collapsible.Trigger className="group focus-visible:ring-ring/60 flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-xl px-4 py-3 text-left outline-none focus-visible:ring-[3px]">
-          <ChevronRight aria-hidden className="text-muted-foreground size-4 shrink-0 transition-transform duration-200 group-data-[state=open]:rotate-90" />
+        <Collapsible.Trigger className="group focus-visible:ring-ring/60 flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-3 text-left outline-none focus-visible:ring-[3px]">
+          <ChevronRight aria-hidden className="text-muted-foreground size-4 shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] group-data-[state=open]:rotate-90" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium">{title || "Untitled"}</span>
             {meta && <span className="text-muted-foreground block truncate font-mono text-xs">{meta}</span>}
@@ -215,16 +335,16 @@ function Disclosure({ title, meta, badges, trailing, defaultOpen = false, childr
         </Collapsible.Trigger>
         {trailing}
       </div>
-      <Collapsible.Content forceMount className="grid transition-[grid-template-rows] duration-300 ease-out data-[state=closed]:grid-rows-[0fr] data-[state=open]:grid-rows-[1fr]">
+      <Collapsible.Content forceMount className="grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] data-[state=closed]:grid-rows-[0fr] data-[state=open]:grid-rows-[1fr]">
         <div inert={!open} className="min-h-0 overflow-hidden">
-          <div className="border-t p-4 sm:p-5">{children}</div>
+          <div className={`border-t p-4 transition-[opacity,translate] duration-300 sm:p-5 ${open ? "opacity-100" : "translate-y-1 opacity-0"}`}>{children}</div>
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
   );
 }
 
-const Chip = ({ children }: { children: ReactNode }) => <span className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">{children}</span>;
+const Chip = ({ children }: { children: ReactNode }) => <span className="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] ring-1 ring-foreground/[0.04] ring-inset">{children}</span>;
 
 function OrgTools() {
   const org = useOrg();
@@ -279,7 +399,7 @@ function OrgSettings({ active }: { active: boolean }) {
   }, [active, dirty, save.isPending]);
 
   return (
-    <form onSubmit={(e) => (e.preventDefault(), submit())} noValidate className="grid gap-5">
+    <form onSubmit={(e) => (e.preventDefault(), submit())} noValidate className="stagger grid gap-5">
       <Card title="You" desc="Zippers commit as you and know who they work for.">
         <ProfileFields profile={form.profile} onChange={(profile) => setForm({ ...form, profile })} />
       </Card>
@@ -353,26 +473,45 @@ function OrgSettings({ active }: { active: boolean }) {
           {(p) => <MdEditor id={p.id} value={form.contextMd} onChange={(contextMd) => setForm((f) => ({ ...f, contextMd }))} className="min-h-72" />}
         </Field>
       </Card>
-      <div role="status" className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
-        {dirty && !save.isPending && (
-          <div className="bg-popover pointer-events-auto animate-in fade-in-0 slide-in-from-bottom-4 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 shadow-lg duration-300">
+      <SaveBar show={dirty} pending={save.isPending} onDiscard={() => (setForm(base), setErrors({}))} />
+    </form>
+  );
+}
+
+/** Floating glass pill at the bottom of a dirty form. Springs in, keeps the ⌘S hint, stays reachable on touch. */
+function SaveBar({ show, pending, onDiscard }: { show: boolean; pending: boolean; onDiscard: () => void }) {
+  const reduce = useReducedMotion();
+  return (
+    <div role="status" aria-live="polite" className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
+      <AnimatePresence>
+        {show && (
+          <motion.div
+            initial={reduce ? false : { opacity: 0, y: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduce ? undefined : { opacity: 0, y: 16, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 380, damping: 32, mass: 0.7 }}
+            className="liquid pointer-events-auto flex flex-wrap items-center gap-3 rounded-2xl px-4 py-2.5"
+          >
             <span className="flex items-center gap-2 text-[13px] font-medium">
-              <span aria-hidden className="size-2 rounded-full bg-amber-500" />
-              Unsaved changes
+              <span aria-hidden className="relative grid size-2.5 place-items-center">
+                <span className="absolute inset-0 animate-ping rounded-full bg-amber-500/50 [animation-duration:1.8s]" />
+                <span className="relative size-2 rounded-full bg-amber-500" />
+              </span>
+              {pending ? "Saving…" : "Unsaved changes"}
             </span>
-            <Button type="button" variant="ghost" size="sm" className="max-md:min-h-11" onClick={() => (setForm(base), setErrors({}))}>
+            <Button type="button" variant="ghost" size="sm" className="max-md:min-h-11" onClick={onDiscard} disabled={pending}>
               Discard
             </Button>
-            <Button type="submit" size="sm" className="max-md:min-h-11" disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save"}
+            <Button type="submit" size="sm" className="max-md:min-h-11" disabled={pending}>
+              {pending ? "Saving…" : "Save"}
               <kbd aria-hidden className="bg-primary-foreground/20 hidden rounded px-1 font-mono text-[10px] sm:inline">
                 ⌘S
               </kbd>
             </Button>
-          </div>
+          </motion.div>
         )}
-      </div>
-    </form>
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -383,7 +522,7 @@ function Folders() {
   const { data = [] } = useWorkspaces(org.id);
   const [adding, setAdding] = useState(false);
   return (
-    <div className="grid gap-3">
+    <div className="stagger grid gap-3">
       {data.length === 0 && !adding && (
         <EmptyState icon={FolderGit2} title="No working folders yet" desc="Add a local git repo so Zippers have somewhere to work.">
           <Button onClick={() => setAdding(true)}>
@@ -555,7 +694,7 @@ function McpJsonEditor({ servers, onDone }: { servers: McpServer[]; onDone: () =
   const removed = confirm ? servers.filter((s) => !confirm.some((v) => v.name === s.name)).map((s) => s.name) : [];
 
   return (
-    <div className="grid gap-3">
+    <div className="stagger grid gap-3">
       <Field label="MCP JSON" hint="Same format as .mcp.json. Existing names update, new names are added, missing names are removed." error={error}>
         {(p) => <Textarea {...p} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} className="min-h-72 font-mono text-[13px]" />}
       </Field>
@@ -616,7 +755,7 @@ function McpServers() {
     </div>
   );
   return (
-    <div className="grid gap-3">
+    <div className="stagger grid gap-3">
       {data.length === 0 && !adding && (
         <EmptyState icon={Server} title="No MCP servers yet" desc="MCP servers give Zippers extra tools, like databases, browsers or issue trackers.">
           {toolbar}
@@ -744,16 +883,14 @@ function Connectors() {
   return (
     <Card title="AI connection" desc="Claude Code runs every Zipper. It must be logged in on the machine running Zippy.">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="flex items-center gap-2 text-[13px] font-medium">
-          <span aria-hidden className={`size-2 rounded-full ${ok ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+        <Status ok={!!ok} loading={isLoading}>
           {isLoading ? "Checking…" : ok ? `Connected${system.auth.authMethod ? ` (${system.auth.authMethod})` : ""}` : system?.claudePath ? "Not logged in" : "Claude CLI not found"}
-        </p>
-        {system?.claudePath && <code className="bg-muted text-muted-foreground rounded px-1.5 py-1 text-xs">{system.claudePath}</code>}
+        </Status>
+        {system?.claudePath && <code className="bg-muted text-muted-foreground rounded-md px-1.5 py-1 text-xs">{system.claudePath}</code>}
       </div>
-      <p className="mt-3 flex items-center gap-2 text-[13px]">
-        <span aria-hidden className={`size-2 rounded-full ${acp.data?.ok ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+      <Status ok={!!acp.data?.ok} loading={acp.isLoading}>
         {acp.isLoading ? "Checking ACP adapter…" : acp.data?.ok ? `ACP adapter running${acp.data.version ? ` (${acp.data.agent} ${acp.data.version})` : ""}` : `ACP adapter failed: ${acp.data?.error ?? "unreachable"}`}
-      </p>
+      </Status>
       {!isLoading && !ok && (
         <p className="text-muted-foreground mt-3 text-xs">
           Run <code className="bg-muted rounded px-1">claude auth login</code> and start Zippy from that terminal.
@@ -778,13 +915,10 @@ function LinearSettings() {
       setTimeout(() => setCopied(false), 2000);
     });
   return (
-    <div className="grid gap-5">
+    <div className="stagger grid gap-5">
       <Card title="Connection" desc="Connects through the Linear MCP server. Zippers post to Linear as you, with their name in the comment, ticket status syncs, and every Zipper gets the Linear MCP server.">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="flex items-center gap-2 text-[13px] font-medium">
-            <span aria-hidden className={`size-2 rounded-full ${org.linearConnected ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
-            {org.linearConnected ? `Connected to ${org.linearWorkspace}` : "Not connected"}
-          </p>
+          <Status ok={org.linearConnected}>{org.linearConnected ? `Connected to ${org.linearWorkspace}` : "Not connected"}</Status>
           {org.linearConnected ? (
             <Button variant="outline" size="sm" className="max-md:min-h-11" onClick={() => setConfirming(true)}>
               Disconnect
@@ -859,7 +993,7 @@ function KnowledgeBase() {
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.uses - a.uses);
 
   return (
-    <div className="grid gap-4">
+    <div className="stagger grid gap-4">
       <Card title="Add entry" desc="Short, imperative, one fact per entry. Pinned entries always reach Zippers.">
         <form onSubmit={submit} className="grid gap-2 sm:grid-cols-[8rem_1fr_11rem_auto]" aria-label="New knowledge entry">
           <OptionSelect label="Kind" value={form.kind} onChange={(v) => setForm({ ...form, kind: v as KnowledgeInput["kind"] })} options={KB_KINDS.map((k) => ({ value: k, label: KB_LABELS[k] }))} />
@@ -881,15 +1015,26 @@ function KnowledgeBase() {
               <Search aria-hidden className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
               <Input aria-label="Filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter" className="pl-8" />
             </div>
-            {(["all", ...KB_KINDS] as const).map((k) => (
-              <Button key={k} size="sm" variant={kind === k ? "secondary" : "ghost"} onClick={() => setKind(k)}>
-                {k === "all" ? `All ${data.length}` : `${KB_LABELS[k]} ${data.filter((d) => d.kind === k).length}`}
-              </Button>
-            ))}
+            <LayoutGroup id="kb-kind">
+              <div role="group" aria-label="Filter by kind" className="flex flex-wrap gap-0.5 rounded-xl border p-0.5">
+                {(["all", ...KB_KINDS] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    aria-pressed={kind === k}
+                    onClick={() => setKind(k)}
+                    className={`focus-visible:ring-ring/60 relative min-h-8 rounded-[10px] px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-[3px] ${kind === k ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {kind === k && <motion.span layoutId="kb-kind-pill" aria-hidden transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.6 }} className="bg-accent absolute inset-0 rounded-[10px]" />}
+                    <span className="relative">{k === "all" ? `All ${data.length}` : `${KB_LABELS[k]} ${data.filter((d) => d.kind === k).length}`}</span>
+                  </button>
+                ))}
+              </div>
+            </LayoutGroup>
           </div>
-          <ul className="bg-card divide-y rounded-xl border shadow-xs">
+          <ul className="settings-card bg-card stagger divide-y rounded-2xl border">
             {shown.map((k) => (
-              <li key={k.id} className="flex items-start gap-3 px-4 py-2.5">
+              <li key={k.id} className="rise flex items-start gap-3 px-4 py-2.5 first:rounded-t-2xl last:rounded-b-2xl">
                 <span className="w-16 shrink-0 pt-1.5 text-[11px] font-medium uppercase text-muted-foreground">{KB_LABELS[k.kind]}</span>
                 <div className="min-w-0 flex-1">
                   <textarea
