@@ -1,6 +1,7 @@
 // Builds src-tauri/resources: node binary, bundled server + ACP adapter, web app, migrations.
 import { execFileSync } from "node:child_process";
-import { cpSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { createRequire } from "node:module";
 import { build } from "esbuild";
 
@@ -20,7 +21,11 @@ const esm = {
   // CJS deps inside an ESM bundle still call require()
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 };
-await build({ ...esm, entryPoints: [`${server}src/index.ts`], outfile: `${out}server.mjs` });
+// node-pty is a native addon: stays external, shipped as a real node_modules folder next to the bundle.
+await build({ ...esm, entryPoints: [`${server}src/index.ts`], outfile: `${out}server.mjs`, external: ["node-pty"] });
+const ptyDir = dirname(createRequire(`${server}package.json`).resolve("node-pty/package.json"));
+cpSync(ptyDir, `${out}node_modules/node-pty`, { recursive: true, dereference: true });
+chmodSync(`${out}node_modules/node-pty/prebuilds/${process.platform}-${process.arch}/spawn-helper`, 0o755);
 // The SDK's per-platform claude binary (~200MB) is skipped: the app uses the user's own `claude`.
 await build({
   ...esm,

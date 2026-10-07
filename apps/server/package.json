@@ -19,6 +19,7 @@
     "@zippy/shared": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.12",
+    "node-pty": "^1.1.0",
     "postgres": "^3.4.9",
     "zod": "^4.6.5"
   },

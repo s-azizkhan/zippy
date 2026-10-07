@@ -6,6 +6,7 @@ const { Hono } = await import("hono");
 const { relative } = await import("node:path");
 const { app } = await import("./app.ts");
 const { shutdown } = await import("./runner.ts");
+const { closeAllTerminals } = await import("./term.ts");
 
 if (process.env.ZIPPY_CONFIG) {
   const { ensureSchema } = await import("./dbadmin.ts");
@@ -22,4 +23,4 @@ const main = root
 const port = Number(process.env.PORT ?? 3001);
 serve({ fetch: main.fetch, port, hostname: "127.0.0.1" }, () => console.log(`zippy server http://127.0.0.1:${port}`));
 
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => (shutdown(), process.exit(0)));
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => (shutdown(), closeAllTerminals(), process.exit(0)));
