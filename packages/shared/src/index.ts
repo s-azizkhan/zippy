@@ -144,6 +144,14 @@ export const linearImport = z.object({
   assigneeAgentId: z.string().uuid().nullable().default(null),
 });
 
+export const terminalTemplateInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  steps: z
+    .array(z.object({ workspaceId: z.string().uuid(), title: z.string().trim().max(60).default(""), command: z.string().trim().max(2000).default("") }))
+    .min(1)
+    .max(20),
+});
+
 export const routineInput = z.object({
   name: z.string().min(1).max(80),
   title: z.string().min(1).max(200),
@@ -209,6 +217,7 @@ export type StageInput = z.infer<typeof stageInput>;
 export type PipelineInput = z.infer<typeof pipelineInput>;
 export type TicketInput = z.infer<typeof ticketInput>;
 export type RoutineInput = z.infer<typeof routineInput>;
+export type TerminalTemplateInput = z.infer<typeof terminalTemplateInput>;
 
 export type CommentKind = "text" | "tool" | "plan" | "approval" | "status" | "error" | "handoff" | "question" | "pr" | "stage" | "test" | "learning" | "draft";
 
@@ -296,6 +305,7 @@ export type Ticket = Row &
     folders: TicketFolder[];
   };
 export type Routine = Row & RoutineInput & { orgId: string; lastRunAt: string | null };
+export type TerminalTemplate = Row & TerminalTemplateInput & { orgId: string };
 export type Label = Row & z.infer<typeof labelInput> & { orgId: string };
 export type KnowledgeInput = z.infer<typeof knowledgeInput>;
 export type Knowledge = Row & KnowledgeInput & { orgId: string; source: "user" | "agent"; agentId: string | null; ticketId: string | null; uses: number; lastUsedAt: string | null };

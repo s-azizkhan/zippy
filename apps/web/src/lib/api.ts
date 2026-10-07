@@ -1,7 +1,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import type { TodoInput, Agent, AgentWork, Comment, FolderDiff, InboxItem, Knowledge, Label, McpServer, Org, OrgInput, Pipeline, Routine, Ticket, TicketDetail, TicketEvent, Workspace } from "@zippy/shared";
+import type { TodoInput, Agent, AgentWork, Comment, FolderDiff, InboxItem, Knowledge, Label, McpServer, Org, OrgInput, Pipeline, Routine, TerminalTemplate, Ticket, TicketDetail, TicketEvent, Workspace } from "@zippy/shared";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,6 +69,7 @@ export const useRunning = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "running"), queryFn: () => api.get<RunningItem[]>(`/orgs/${orgId}/running`), enabled: !!orgId, refetchInterval: 4000 });
 export type TermInfo = { id: string; workspaceId: string; title: string; pid: number; alive: boolean; exitCode: number | null; createdAt: string };
 export const useTerminals = (orgId?: string) => useApiQuery<TermInfo[]>(keys.res(orgId!, "terminals"), orgId ? `/orgs/${orgId}/terminals` : null);
+export const useTerminalTemplates = (orgId?: string) => useApiQuery<TerminalTemplate[]>(keys.res(orgId!, "terminal-templates"), orgId ? `/orgs/${orgId}/terminal-templates` : null);
 export const useInbox = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "inbox"), queryFn: () => api.get<InboxItem[]>(`/orgs/${orgId}/inbox`), enabled: !!orgId, refetchInterval: 15_000 });
 export const useDiff = (ticketId: string, enabled: boolean, merged = false) =>

@@ -22,10 +22,10 @@ let seq = 0;
 export const listTerminals = (workspaceIds: string[]): TermInfo[] =>
   [...sessions.values()].filter((s) => workspaceIds.includes(s.workspaceId)).map(({ proc: _p, buf: _b, events: _e, ...info }) => info);
 
-export function spawnTerminal(workspaceId: string, cwd: string, cols = 80, rows = 24): TermInfo {
+export function spawnTerminal(workspaceId: string, cwd: string, cols = 80, rows = 24, title?: string): TermInfo {
   const shell = process.env.SHELL || "/bin/zsh";
   const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: { ...process.env, TERM: "xterm-256color" } as Record<string, string> });
-  const s: Session = { id: randomUUID(), workspaceId, title: `${shell.split("/").pop()} ${++seq}`, pid: proc.pid, alive: true, exitCode: null, createdAt: new Date().toISOString(), proc, buf: "", events: new EventEmitter().setMaxListeners(0) };
+  const s: Session = { id: randomUUID(), workspaceId, title: title || `${shell.split("/").pop()} ${++seq}`, pid: proc.pid, alive: true, exitCode: null, createdAt: new Date().toISOString(), proc, buf: "", events: new EventEmitter().setMaxListeners(0) };
   proc.onData((d) => {
     s.buf = (s.buf + d).slice(-SCROLLBACK);
     s.events.emit("data", d);

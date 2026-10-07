@@ -1,12 +1,17 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { ChevronDown, PanelLeftClose, PanelLeftOpen, Plus, Search, X } from "lucide-react";
+import { ChevronDown, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
+import type { TerminalTemplate, TerminalTemplateInput, Workspace } from "@zippy/shared";
+import { Field } from "@/components/field";
+import { OptionSelect } from "@/components/property-menu";
 import { Button } from "@/components/ui/button";
-import { api, keys, useApiMutation, useTerminals, useWorkspaces, type TermInfo } from "@/lib/api";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { api, keys, useApiMutation, useTerminalTemplates, useTerminals, useWorkspaces, type TermInfo } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +72,64 @@ function PtyTerminal({ id, onExit }: { id: string; onExit: () => void }) {
   return <div ref={host} className="h-full min-h-0 w-full overflow-hidden rounded-xl bg-[#0f0f10] p-2" />;
 }
 
+const blankStep = (workspaceId: string) => ({ workspaceId, title: "", command: "" });
+
+/** Create/edit a template: ordered steps of folder + optional name + optional command. */
+function TemplateDialog({ orgId, workspaces, initial, onClose }: { orgId: string; workspaces: Workspace[]; initial: TerminalTemplate | null; onClose: () => void }) {
+  const key = keys.res(orgId, "terminal-templates");
+  const [form, setForm] = useState<TerminalTemplateInput>(initial ? { name: initial.name, steps: initial.steps } : { name: "", steps: [blankStep(workspaces[0]?.id ?? "")] });
+  const save = useApiMutation((v: TerminalTemplateInput) => (initial ? api.patch(`/terminal-templates/${initial.id}`, v) : api.post(`/orgs/${orgId}/terminal-templates`, v)), [key]);
+  const setStep = (i: number, patch: Partial<TerminalTemplateInput["steps"][number]>) => setForm((f) => ({ ...f, steps: f.steps.map((st, j) => (j === i ? { ...st, ...patch } : st)) }));
+  const folderOptions = workspaces.map((w) => ({ value: w.id, label: w.name }));
+  const valid = form.name.trim() && form.steps.length > 0 && form.steps.every((st) => st.workspaceId);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{initial ? "Edit template" : "New terminal template"}</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (valid) save.mutateAsync(form).then(onClose);
+          }}
+        >
+          <Field label="Template name">{(p) => <Input {...p} autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full stack dev" />}</Field>
+          <div className="grid gap-2">
+            <p className="text-[13px] font-medium">Terminals to open</p>
+            {form.steps.map((st, i) => (
+              <div key={i} className="bg-foreground/[0.03] border-foreground/[0.07] grid gap-2 rounded-xl border p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-5 shrink-0 font-mono text-xs">{i + 1}.</span>
+                  <OptionSelect label="Folder" size="sm" value={st.workspaceId} onChange={(v) => setStep(i, { workspaceId: v })} options={folderOptions} className="flex-1" />
+                  <Input className="h-7 flex-1 text-xs" value={st.title} onChange={(e) => setStep(i, { title: e.target.value })} placeholder="Name (optional)" aria-label="Terminal name" />
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label="Remove step" disabled={form.steps.length === 1} onClick={() => setForm((f) => ({ ...f, steps: f.steps.filter((_, j) => j !== i) }))}>
+                    <X aria-hidden />
+                  </Button>
+                </div>
+                <Input className="h-7 font-mono text-xs" value={st.command} onChange={(e) => setStep(i, { command: e.target.value })} placeholder="Command to run (optional), e.g. pnpm dev" aria-label="Command" />
+              </div>
+            ))}
+            <Button type="button" size="sm" variant="outline" className="justify-self-start" onClick={() => setForm((f) => ({ ...f, steps: [...f.steps, blankStep(f.steps.at(-1)?.workspaceId ?? workspaces[0]?.id ?? "")] }))}>
+              <Plus aria-hidden /> Add terminal
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!valid || save.isPending}>
+              {initial ? "Save" : "Create"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function TerminalsPage() {
   const org = useOrg();
   const { id } = useParams();
@@ -83,6 +146,12 @@ export function TerminalsPage() {
   const [folded, setFolded] = useState<Record<string, boolean>>({}); // ponytail: in-memory fold state; persist if it ever annoys
   const [hidden, setHidden] = useState(() => localStorage.getItem("zippy-term-rail") === "1");
   const toggleRail = () => setHidden((h) => (localStorage.setItem("zippy-term-rail", h ? "0" : "1"), !h));
+  const { data: templates = [] } = useTerminalTemplates(org.id);
+  const tkey = keys.res(org.id, "terminal-templates");
+  const [tplDialog, setTplDialog] = useState<{ open: boolean; edit: TerminalTemplate | null }>({ open: false, edit: null });
+  const [tplFolded, setTplFolded] = useState(false);
+  const runTpl = useApiMutation((tplId: string) => api.post<TermInfo[]>(`/terminal-templates/${tplId}/run`, {}, true), [key]);
+  const delTpl = useApiMutation((tplId: string) => api.del(`/terminal-templates/${tplId}`), [tkey]);
   const current = terms.find((t) => t.id === id);
   const needle = q.trim().toLowerCase();
   const hit = (t: TermInfo, w: { name: string }) => !needle || t.title.toLowerCase().includes(needle) || w.name.toLowerCase().includes(needle);
@@ -116,6 +185,40 @@ export function TerminalsPage() {
                 </button>
               )}
             </label>
+            {!needle && (
+              <section className="grid gap-0.5">
+                <div className="flex items-center justify-between px-1">
+                  <button onClick={() => setTplFolded((f) => !f)} aria-expanded={!tplFolded} className="text-muted-foreground/80 hover:text-foreground flex min-w-0 items-center gap-1 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">
+                    <ChevronDown className={cn("size-3 shrink-0 transition-transform", tplFolded && "-rotate-90")} aria-hidden />
+                    Templates
+                  </button>
+                  <Button size="icon-xs" variant="ghost" aria-label="New template" onClick={() => setTplDialog({ open: true, edit: null })} disabled={!workspaces.length}>
+                    <Plus aria-hidden />
+                  </Button>
+                </div>
+                {!tplFolded &&
+                  templates.map((tpl) => (
+                    <div key={tpl.id} className="group/p hover:bg-foreground/[0.05] flex items-center gap-1 rounded-lg pr-1 pl-2 text-[13px]">
+                      <button className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left" title={tpl.steps.map((st) => st.command || "shell").join(" · ")} onClick={() => runTpl.mutateAsync(tpl.id).then((t) => t[0] && navigate(`/terminals/${t[0].id}`))} disabled={runTpl.isPending}>
+                        <Play className="text-primary size-3 shrink-0 fill-current" aria-hidden />
+                        <span className="truncate text-xs">{tpl.name}</span>
+                        <span className="text-muted-foreground shrink-0 text-[10px]">{tpl.steps.length}</span>
+                      </button>
+                      <button aria-label={`Edit ${tpl.name}`} onClick={() => setTplDialog({ open: true, edit: tpl })} className="text-muted-foreground hover:text-foreground flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover/p:opacity-100 focus-visible:opacity-100">
+                        <Pencil className="size-3" aria-hidden />
+                      </button>
+                      <button aria-label={`Delete ${tpl.name}`} onClick={() => delTpl.mutate(tpl.id)} className="text-muted-foreground hover:text-destructive flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover/p:opacity-100 focus-visible:opacity-100">
+                        <Trash2 className="size-3" aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                {!tplFolded && !templates.length && (
+                  <button onClick={() => setTplDialog({ open: true, edit: null })} disabled={!workspaces.length} className="text-muted-foreground hover:text-foreground px-2 py-1 text-left text-xs">
+                    + Save a set of shells to reopen in one click
+                  </button>
+                )}
+              </section>
+            )}
             {workspaces.map((w) => {
               const mine = terms.filter((t) => t.workspaceId === w.id && hit(t, w));
               if (needle && !mine.length) return null;
@@ -173,6 +276,7 @@ export function TerminalsPage() {
           </>
         )}
       </aside>
+      {tplDialog.open && <TemplateDialog orgId={org.id} workspaces={workspaces} initial={tplDialog.edit} onClose={() => setTplDialog({ open: false, edit: null })} />}
       <div className="flex min-h-0 flex-1 flex-col p-3">
         {current ? (
           <>

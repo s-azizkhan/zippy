@@ -213,6 +213,14 @@ export const knowledge = pgTable("knowledge", {
 });
 
 // Recurring tickets: every `everyHours` a ticket is created from this template.
+export const terminalTemplates = pgTable("terminal_templates", {
+  id: id(),
+  orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  steps: jsonb("steps").$type<{ workspaceId: string; title: string; command: string }[]>().notNull().default([]),
+  createdAt: createdAt(),
+});
+
 export const routines = pgTable("routines", {
   id: id(),
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),

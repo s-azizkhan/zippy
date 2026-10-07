@@ -15,6 +15,7 @@ import {
   pipelineInput,
   nextRunAt,
   routineInput,
+  terminalTemplateInput,
   knowledgeInput,
   type PipelineInput,
   type WorkspaceInput,
@@ -36,7 +37,7 @@ import {
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
 import { reqlog } from "./reqlog.ts";
-import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
+import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, terminalTemplates, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
 import { createDb, maskUrl, readConfig, saveDbUrl, testDb, writeConfig } from "./dbadmin.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
@@ -227,6 +228,22 @@ app.post("/terminals/:id/resize", async (c) => {
 app.patch("/terminals/:id", async (c) => {
   const { title } = z.object({ title: z.string().trim().min(1).max(60) }).parse(await c.req.json());
   return renameTerminal(c.req.param("id"), title) ? c.body(null, 204) : c.notFound();
+});
+crud("terminal-templates", terminalTemplates, terminalTemplateInput);
+// Run = one shell per step, in that step's folder, with the command typed in as if by the user.
+app.post("/terminal-templates/:id/run", async (c) => {
+  const [t] = await db.select().from(terminalTemplates).where(eq(terminalTemplates.id, c.req.param("id")));
+  if (!t) return c.notFound();
+  const ws = new Map((await db.select().from(workspaces).where(eq(workspaces.orgId, t.orgId))).map((w) => [w.id, w]));
+  const opened = [];
+  for (const step of t.steps) {
+    const w = ws.get(step.workspaceId);
+    if (!w) continue;
+    const term = spawnTerminal(w.id, w.path, 80, 24, step.title);
+    if (step.command) writeTerminal(term.id, step.command + "\r");
+    opened.push(term);
+  }
+  return c.json(opened, 201);
 });
 app.delete("/terminals/:id", (c) => (closeTerminal(c.req.param("id")) ? c.body(null, 204) : c.notFound()));
 crud("mcp", mcpServers, mcpServerInput);
