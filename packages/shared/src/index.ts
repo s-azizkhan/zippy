@@ -237,7 +237,7 @@ export type FolderDiff = { workspaceId: string; folder: string; branch: string |
 
 export type InboxItem = {
   kind: "question" | "approval" | "gate" | "review" | "blocked" | "learning";
-  ticket: Pick<Ticket, "id" | "identifier" | "title" | "status">;
+  ticket: Pick<Ticket, "id" | "identifier" | "title" | "status" | "priority">;
   commentId?: string;
   agentId: string | null;
   title: string;

@@ -105,10 +105,9 @@ export function TicketPage({ ticketId, embedded }: { ticketId?: string; embedded
   // Linear keys: S/P/A/L/F open property menus, J/K next/prev issue, Esc back to the list.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey || embedded) return; // embedded: the Inbox owns the keys
       const m = MENU_KEYS[e.key];
       if (m) return e.preventDefault(), setMenu(m);
-      if (embedded) return;
       if (e.key === "\\") return e.preventDefault(), toggleSplit();
       if (e.key === "]") return e.preventDefault(), toggleProps();
       if (e.key === "j") go(1);

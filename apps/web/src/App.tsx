@@ -20,7 +20,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, queryClient, useApiMutation, useInbox, useOrgs, useRunning, useSystem, useUsage, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useOrgs, useRunning, useSystem, useUsage, useWorkspaces } from "@/lib/api";
+import { useInboxView } from "@/lib/inbox";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
 const Onboarding = lazy(() => import("@/pages/onboarding").then((m) => ({ default: m.Onboarding })));
@@ -157,8 +158,7 @@ function Sidebar() {
   const params = new URLSearchParams(search);
   const folder = params.get("folder");
   const view = params.get("view");
-  const { data: inboxItems = [] } = useInbox(org.id);
-  const inbox = inboxItems.length;
+  const { unread: inbox } = useInboxView(org.id); // unread, not total: the badge means "new since you looked"
   const { data: running = [] } = useRunning(org.id);
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);

@@ -265,6 +265,11 @@ circle { transition: stroke 0.3s, fill 0.3s, stroke-dasharray 0.4s ease; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .working-ring, .typing-dot, .shimmer { animation: none; } }
 
+/* Inbox: unread dot breathes once in a while; off with reduced motion. */
+@keyframes unread { 50% { box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 25%, transparent); } }
+.unread-dot { color: var(--c); animation: unread 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .unread-dot { animation: none; } }
+
 /* Glass: translucent surface + blur + hairline highlight. Falls back to solid popover without backdrop-filter. */
 .glass-pop { background: var(--popover); color: var(--popover-foreground); }
 .glass, .glass-bar { background: var(--card); }

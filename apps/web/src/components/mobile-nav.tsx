@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useInbox, useOrgs, useRunning, useWorkspaces } from "@/lib/api";
+import { useOrgs, useRunning, useWorkspaces } from "@/lib/api";
+import { useInboxView } from "@/lib/inbox";
 import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +65,7 @@ export function MobileNav({ orgId }: { orgId: string }) {
   const { pathname, search } = useLocation();
   const { setNewTicketOpen, setPaletteOpen, setOrgId, setOnboardingOpen } = useUI();
   const { data: orgs = [] } = useOrgs();
-  const { data: inbox = [] } = useInbox(orgId);
+  const { unread: inbox } = useInboxView(orgId);
   const { data: running = [] } = useRunning(orgId);
   const { data: folders = [] } = useWorkspaces(orgId);
   const [more, setMore] = useState(false);
@@ -77,7 +78,7 @@ export function MobileNav({ orgId }: { orgId: string }) {
       <div className="pointer-events-none fixed inset-x-0 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 flex items-center justify-center gap-2.5 px-3 md:hidden">
         <motion.nav initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ ...spring, delay: 0.1 }} aria-label="Main" className="liquid pointer-events-auto flex items-center gap-0.5 rounded-full p-1.5">
           <Item to="/" icon={Layers} label="Issues" color="#7c87f0" on={issuesOn} />
-          <Item to="/inbox" icon={Inbox} label="Inbox" color="#f2994a" on={pathname.startsWith("/inbox")} count={inbox.length} />
+          <Item to="/inbox" icon={Inbox} label="Inbox" color="#f2994a" on={pathname.startsWith("/inbox")} count={inbox} />
           <Item to="/zippers" icon={Bot} label="Zippers" color="#4cb782" on={pathname.startsWith("/zippers")} count={running.length} />
           <Item icon={MoreHorizontal} label="More" color="#94a3b8" on={moreOn} onClick={() => setMore(true)} />
         </motion.nav>

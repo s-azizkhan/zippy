@@ -732,7 +732,7 @@ async function inboxOf(orgId: string): Promise<InboxItem[]> {
     .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), eq(comments.kind, "learning"), sql`${comments.payload}->>'status' is null`));
   const learned: InboxItem[] = learnings.map(({ c: l, t }) => ({
     kind: "learning",
-    ticket: { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"] },
+    ticket: { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"], priority: t.priority as InboxItem["ticket"]["priority"] },
     commentId: l.id,
     agentId: l.agentId,
     title: (l.payload as LearningPayload).text,
@@ -748,7 +748,7 @@ async function inboxOf(orgId: string): Promise<InboxItem[]> {
   const withPr = new Set((await db.select({ id: ticketFolders.ticketId }).from(ticketFolders).where(and(inArray(ticketFolders.ticketId, open.map((t) => t.id)), eq(ticketFolders.prState, "OPEN")))).map((r) => r.id));
   const items: InboxItem[] = [];
   for (const t of open) {
-    const ticket = { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"] };
+    const ticket = { id: t.id, identifier: t.identifier, title: t.title, status: t.status as InboxItem["ticket"]["status"], priority: t.priority as InboxItem["ticket"]["priority"] };
     const mine = rows.filter((r) => r.ticketId === t.id);
     const before = items.length;
     for (const q of mine.filter((r) => r.kind === "question" && !(r.payload as QuestionPayload).answer)) {
