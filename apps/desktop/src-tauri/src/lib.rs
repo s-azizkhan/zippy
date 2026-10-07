@@ -12,9 +12,9 @@ use std::{
 
 use postgresql_embedded::{PostgreSQL, Settings};
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, RunEvent, WindowEvent, Wry,
+    AppHandle, Emitter, Manager, RunEvent, WindowEvent, Wry,
 };
 use tokio::{net::TcpStream, process::Command, sync::Mutex, time::sleep};
 
@@ -465,6 +465,33 @@ pub fn run() {
                         tauri::webview::NewWindowResponse::Deny
                     })
                     .build()?;
+                // ⌘W: the native "Close Window" item would hide the window before the page ever sees the key.
+                // Swap it for our own item so the page can claim it first (the terminals view closes the active shell).
+                let menu = Menu::default(app.handle())?;
+                for item in menu.items()? {
+                    if let MenuItemKind::Submenu(sub) = item {
+                        for (i, it) in sub.items()?.into_iter().enumerate() {
+                            if let MenuItemKind::Predefined(p) = &it {
+                                if p.text()?.starts_with("Close") {
+                                    sub.remove_at(i)?;
+                                    sub.insert(&MenuItem::with_id(app, "close", "Close Window", true, Some("CmdOrCtrl+W"))?, i)?;
+                                }
+                            }
+                        }
+                    }
+                }
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, e| {
+                    if e.id() == "close" {
+                        if let Some(w) = app.webview_windows().into_values().find(|w| w.is_focused().unwrap_or(false)) {
+                            if w.label() == "main" {
+                                let _ = w.emit("zippy:close", ());
+                            } else {
+                                let _ = w.hide();
+                            }
+                        }
+                    }
+                });
                 {
                     use tauri_plugin_deep_link::DeepLinkExt;
                     let handle = app.handle().clone();

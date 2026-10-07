@@ -183,6 +183,17 @@ export function TerminalsPage() {
   const open = (workspaceId: string) => spawn.mutateAsync(workspaceId).then((t) => navigate(`/terminals/${t.id}`));
   const kill = (t: TermInfo) => close.mutateAsync(t.id).then(() => t.id === id && navigate("/terminals"));
 
+  // ⌘W on this page kills the active shell instead of closing the window.
+  useEffect(() => {
+    if (!current) return;
+    const on = (e: Event) => {
+      e.preventDefault();
+      void kill(current);
+    };
+    window.addEventListener("zippy:close", on);
+    return () => window.removeEventListener("zippy:close", on);
+  }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="flex min-h-0 flex-1">
       <aside className={cn("border-foreground/[0.07] flex shrink-0 flex-col gap-3 overflow-y-auto border-r py-4 transition-[width] duration-150", hidden ? "w-11 items-center px-1" : "w-60 px-3")} aria-label="Terminals">

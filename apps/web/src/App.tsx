@@ -31,11 +31,32 @@ const ConfirmDialog = lazy(() => import("@/pages/settings").then((m) => ({ defau
 const page = (load: () => Promise<Record<string, any>>, name: string) => ({ lazy: async () => ({ Component: (await load())[name] }) });
 
 
+declare global {
+  interface Window {
+    __TAURI__?: { event: { listen: (name: string, cb: () => void) => Promise<() => void> }; window: { getCurrentWindow: () => { close: () => Promise<void> } } };
+  }
+}
+
+/** ⌘W (desktop menu or key): a page may claim it by cancelling the DOM event; otherwise the window closes (hides to the tray). */
+function requestClose() {
+  const ev = new Event("zippy:close", { cancelable: true });
+  window.dispatchEvent(ev);
+  if (!ev.defaultPrevented) void window.__TAURI__?.window.getCurrentWindow().close();
+}
+
 function useShortcuts() {
   const { setPaletteOpen, setNewTicketOpen } = useUI();
   useEffect(() => {
+    let off: (() => void) | undefined;
+    void window.__TAURI__?.event.listen("zippy:close", requestClose).then((f) => (off = f));
+    return () => off?.();
+  }, []);
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key === "w" && window.__TAURI__) {
+        e.preventDefault();
+        requestClose();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen(!useUI.getState().paletteOpen);
       } else if ((e.metaKey || e.ctrlKey) && e.key === "b") {
