@@ -19,6 +19,7 @@ type Session = TermInfo & { proc: pty.IPty; buf: string; events: EventEmitter };
 const sessions = new Map<string, Session>();
 let seq = 0;
 
+export const allTerminals = (): TermInfo[] => [...sessions.values()].map(({ proc: _p, buf: _b, events: _e, ...info }) => info);
 export const listTerminals = (workspaceIds: string[]): TermInfo[] =>
   [...sessions.values()].filter((s) => workspaceIds.includes(s.workspaceId)).map(({ proc: _p, buf: _b, events: _e, ...info }) => info);
 

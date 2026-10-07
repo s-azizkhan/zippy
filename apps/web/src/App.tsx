@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, ListChecks as ListChecksIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, ListChecks as ListChecksIcon, Radio as RadioIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
 import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
 import { PlusIcon as Plus } from "@/components/ui/plus";
@@ -267,6 +267,7 @@ function Sidebar() {
           <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
           <NavItem to="/running" icon={ActivityIcon} color="#4cb782" label="Running" count={running.length} />
           <NavItem to="/terminals" icon={TerminalSquare} color="#a3a3a3" label="Terminals" match={pathname.startsWith("/terminals")} />
+          <NavItem to="/ports" icon={RadioIcon} color="#34d399" label="Ports" />
           <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
           <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
         </Section>
@@ -447,6 +448,7 @@ const router = createBrowserRouter([
       { path: "/running", ...page(() => import("@/pages/running"), "RunningPage"), handle: { title: "Running" } },
       { path: "/terminals", ...page(() => import("@/pages/terminals"), "TerminalsPage"), handle: { title: "Terminals" } },
       { path: "/terminals/:id", ...page(() => import("@/pages/terminals"), "TerminalsPage"), handle: { title: "Terminals" } },
+      { path: "/ports", ...page(() => import("@/pages/ports"), "PortsPage"), handle: { title: "Ports" } },
       { path: "/pipelines", ...page(() => import("@/pages/pipelines"), "PipelinesPage"), handle: { title: "Pipelines" } },
       { path: "/routines", ...page(() => import("@/pages/routines"), "RoutinesPage"), handle: { title: "Routines" } },
       { path: "/routines/new", ...page(() => import("@/pages/routines"), "RoutineEditor"), handle: { title: "New routine" } },

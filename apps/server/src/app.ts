@@ -52,6 +52,7 @@ import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownComme
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
+import { killPid, listPorts } from "./ports.ts";
 import { closeTerminal, getTerminal, listTerminals, renameTerminal, resizeTerminal, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
@@ -86,6 +87,28 @@ app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}", byIdentifier);
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
 app.get("/system", (c) => c.json({ claudePath, auth: claudeAuthStatus() }));
+// Port manager: what is listening, which command opened it, and a way to stop it.
+app.get("/system/ports", async (c) => c.json(await listPorts()));
+app.get("/system/ports/:port", async (c) => {
+  const port = z.coerce.number().int().min(1).max(65535).parse(c.req.param("port"));
+  return c.json(await listPorts(port));
+});
+app.post("/system/ports/:port/kill", async (c) => {
+  const port = z.coerce.number().int().min(1).max(65535).parse(c.req.param("port"));
+  const { force, pids } = z.object({ force: z.boolean().default(false), pids: z.array(z.number().int()).optional() }).parse(await c.req.json().catch(() => ({})));
+  const rows = (await listPorts(port)).filter((r) => (pids ? pids.includes(r.pid) : true));
+  if (!rows.length) return c.json({ error: `Nothing is listening on ${port}` }, 404);
+  const killed: number[] = [];
+  for (const r of new Map(rows.map((r) => [r.pid, r])).values()) {
+    try {
+      killPid(r.pid, force);
+      killed.push(r.pid);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 400);
+    }
+  }
+  return c.json({ killed });
+});
 // macOS-only native folder picker; server runs on the user's machine
 app.post("/system/pick-folder", (c) =>
   new Promise<Response>((res) =>
