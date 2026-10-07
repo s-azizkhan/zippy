@@ -53,12 +53,18 @@ export async function ensureSchema() {
   }
 }
 
-/** Desktop shell owns this file and restarts the server after a change. `null` = built-in DB. */
+/** Desktop shell's config.json (ZIPPY_CONFIG). Keys: databaseUrl, hotkey. */
+export function readConfig(): Record<string, unknown> {
+  try { return JSON.parse(readFileSync(process.env.ZIPPY_CONFIG!, "utf8")); } catch { return {}; }
+}
+export function writeConfig(patch: Record<string, unknown>) {
+  const cfg = { ...readConfig(), ...patch };
+  for (const k of Object.keys(patch)) if (patch[k] === undefined) delete cfg[k];
+  writeFileSync(process.env.ZIPPY_CONFIG!, JSON.stringify(cfg, null, 2));
+}
+
+/** Desktop shell restarts the server after a DB change. `null` = built-in DB. */
 export function saveDbUrl(url: string | null) {
-  const file = process.env.ZIPPY_CONFIG!;
-  const cfg: Record<string, unknown> = (() => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return {}; } })();
-  if (url) cfg.databaseUrl = url;
-  else delete cfg.databaseUrl;
-  writeFileSync(file, JSON.stringify(cfg, null, 2));
+  writeConfig({ databaseUrl: url ?? undefined });
   setTimeout(() => process.kill(process.pid, "SIGTERM"), 200);
 }

@@ -18,7 +18,7 @@ Schema changes: `pnpm db:push` for your dev DB, then `pnpm --filter @zippy/serve
 
 Linear: copy the `LINEAR_*` keys from `.env.example` into `.env`, restart, then Settings → Linear → Connect.
 
-Quick capture: `pnpm link --global` once, then `zippy "fix login redirect"` from any repo files an issue under that folder. The desktop tray has New issue… too.
+Quick capture: `pnpm link --global` once, then `zippy "fix login redirect"` from any repo files an issue under that folder. Piped output is attached: `pytest 2>&1 | zippy "fix failing tests"`. Desktop: ⌘⇧Z opens a floating capture box anywhere (clipboard auto-fills when it looks like an error; change or disable it in Settings → Organization → Notifications). The tray has New issue… too.
 
 Tests: `pnpm --filter @zippy/server test`
 

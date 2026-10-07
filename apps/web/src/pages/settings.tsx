@@ -14,6 +14,7 @@ import { SearchIcon as Search } from "@/components/ui/search";
 import { ServerIcon as Server } from "@/components/ui/server";
 import { WrenchIcon as Wrench } from "@/components/ui/wrench";
 import { Collapsible, Tabs as TabsPrimitive } from "radix-ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -109,6 +110,35 @@ export function SettingsPage() {
     </div>
   );
 }
+
+/** Global shortcut for the desktop capture box. Press keys in the field to record; saves on its own, not with the org form. */
+function HotkeyRow() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["system", "hotkey"], queryFn: () => api.get<{ desktop: boolean; hotkey: string | null }>("/system/hotkey") });
+  const save = useMutation({
+    mutationFn: (hotkey: string | null) => api.post("/system/hotkey", { hotkey }, true),
+    onSuccess: (_, hotkey) => (qc.setQueryData(["system", "hotkey"], { desktop: true, hotkey }), toast.success(hotkey ? `Shortcut set to ${pretty(hotkey)}` : "Shortcut disabled")),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  if (!q.data?.desktop) return null;
+  const hotkey = q.data.hotkey;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (e.key === "Escape" || e.key === "Backspace") return save.mutate(null);
+    const mods = [e.metaKey || e.ctrlKey ? "CmdOrCtrl" : "", e.altKey ? "Alt" : "", e.shiftKey ? "Shift" : ""].filter(Boolean);
+    const key = /^F\d{1,2}$/.test(e.key) ? e.key : e.key.length === 1 && /[a-z0-9]/i.test(e.key) ? e.key.toUpperCase() : "";
+    if (!key || (!mods.length && !key.startsWith("F"))) return; // modifier alone, or a bare letter: wait for the rest
+    save.mutate([...mods, key].join("+"));
+  };
+  return (
+    <SettingRow label="Quick capture shortcut" hint={hotkey ? "Press a new combination to change. Backspace disables." : "Press a combination to enable."}>
+      {(p) => <Input {...p} readOnly value={hotkey ? pretty(hotkey) : "Off"} onKeyDown={onKeyDown} placeholder="Press keys…" className="w-44 text-center font-mono text-[13px]" />}
+    </SettingRow>
+  );
+}
+
+const MAC = navigator.platform.startsWith("Mac");
+const pretty = (hk: string) => hk.replace("CmdOrCtrl", MAC ? "⌘" : "Ctrl").replace("Shift", "⇧").replace("Alt", MAC ? "⌥" : "Alt").replaceAll("+", MAC ? "" : "+");
 
 /** Panes stay mounted so unsaved edits survive tab switches; the animation replays when one becomes visible. */
 function Pane({ value, title, desc, children }: { value: SettingsTab; title: string; desc: string; children: ReactNode }) {
@@ -313,6 +343,7 @@ function OrgSettings({ active }: { active: boolean }) {
             </div>
           )}
         </SettingRow>
+        <HotkeyRow />
         <Field label="Slack webhook" hint="Incoming webhook URL. Empty = off." error={errors.slackWebhookUrl}>
           {(p) => <Input {...p} value={form.slackWebhookUrl} onChange={(e) => setForm({ ...form, slackWebhookUrl: e.target.value.trim() })} placeholder="https://hooks.slack.com/services/…" className="font-mono text-[13px]" />}
         </Field>

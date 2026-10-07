@@ -37,7 +37,7 @@ import {
 import { bus, emit } from "./bus.ts";
 import { reqlog } from "./reqlog.ts";
 import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
-import { createDb, maskUrl, saveDbUrl, testDb } from "./dbadmin.ts";
+import { createDb, maskUrl, readConfig, saveDbUrl, testDb, writeConfig } from "./dbadmin.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
 import { desktopNote, takeNotes } from "./notify.ts";
@@ -102,6 +102,19 @@ app.post("/system/db/save", async (c) => {
   const t = url && (await testDb(url));
   if (t && !t.ok) return c.json({ error: t.error }, 400);
   saveDbUrl(url);
+  return c.body(null, 204);
+});
+// Desktop global shortcut for the capture box. null = off. The shell re-reads config.json on its tray poll.
+const DEFAULT_HOTKEY = "CmdOrCtrl+Shift+Z";
+app.get("/system/hotkey", (c) => {
+  const desktop = !!process.env.ZIPPY_CONFIG;
+  const v = desktop ? readConfig().hotkey : undefined;
+  return c.json({ desktop, hotkey: v === undefined ? DEFAULT_HOTKEY : v });
+});
+app.post("/system/hotkey", async (c) => {
+  if (!process.env.ZIPPY_CONFIG) return c.json({ error: "desktop app only" }, 400);
+  const { hotkey } = await body(c, z.object({ hotkey: z.string().regex(/^((CmdOrCtrl|Cmd|Ctrl|Alt|Option|Shift|Super|Meta)\+)+[A-Za-z0-9]|F\d{1,2}$/, "modifier + key, e.g. CmdOrCtrl+Shift+Z").nullable() }));
+  writeConfig({ hotkey: hotkey === DEFAULT_HOTKEY ? undefined : hotkey });
   return c.body(null, 204);
 });
 app.post("/system/test-notification", (c) => (desktopNote("Zippy", "Notifications are working."), c.body(null, 204)));

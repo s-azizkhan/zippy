@@ -244,7 +244,7 @@ fn tray_menu(app: &AppHandle, t: &Tray) -> tauri::Result<Menu<Wry>> {
         menu.append(&MenuItem::with_id(app, format!("nav:{}", r.path), label, true, None::<&str>)?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&MenuItem::with_id(app, "nav:/?new=1", "New issue…", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "capture", "New issue…", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "nav:/inbox", format!("Inbox ({})", t.inbox), true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "open", "Open Zippy", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
@@ -282,9 +282,102 @@ fn open_deep_link(app: &AppHandle, url: &tauri::Url) {
     }
 }
 
+/// Floating capture window (global hotkey). Hidden, not destroyed, so the next open is instant.
+fn capture_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    if let Some(w) = app.get_webview_window("capture") {
+        return Ok(w);
+    }
+    tauri::WebviewWindowBuilder::new(app, "capture", tauri::WebviewUrl::App("capture.html".into()))
+        .title("New issue")
+        .inner_size(560.0, 260.0)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .center()
+        .visible(false)
+        .build()
+}
+
+/// Prefill the body with the clipboard when it looks like an error or log, not a URL or a word.
+fn clipboard_hint(app: &AppHandle) -> String {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let text = app.clipboard().read_text().unwrap_or_default();
+    let loggy = text.contains('\n') || ["error", "exception", "traceback", "fail", "panic"].iter().any(|k| text.to_lowercase().contains(k));
+    if !loggy || text.len() > 20_000 {
+        return String::new();
+    }
+    format!("```\n{}\n```", text.trim())
+}
+
+fn capture_open(app: &AppHandle) {
+    use tauri::Emitter;
+    if let Ok(w) = capture_window(app) {
+        let _ = w.emit("capture:open", clipboard_hint(app));
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+#[tauri::command]
+fn capture_hide(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("capture") {
+        let _ = w.hide();
+    }
+}
+
+/// The capture page can't fetch the server itself (tauri:// origin, no CORS), so post from here.
+#[tauri::command]
+async fn capture_submit(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    let res = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{PORT}/api/quick"))
+        .json(&serde_json::json!({ "title": title, "body": body }))
+        .send()
+        .await
+        .map_err(|_| "Zippy server is not running yet".to_string())?;
+    let ok = res.status().is_success();
+    let v: serde_json::Value = res.json().await.unwrap_or_default();
+    if !ok {
+        return Err(v["error"].as_str().unwrap_or("could not file issue").to_owned());
+    }
+    notify(&app, "Issue filed", &format!("{} {}", v["identifier"].as_str().unwrap_or(""), v["title"].as_str().unwrap_or("")));
+    Ok(())
+}
+
+/// config.json `hotkey`: absent = default, `null` = off. Settings writes it; we re-read on each tray poll.
+fn config_hotkey(app: &AppHandle) -> Option<String> {
+    let cfg = app.path().app_data_dir().expect("app data dir").join(if DEV { "dev/config.json" } else { "config.json" });
+    std::fs::read_to_string(&cfg)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .map(|v| v["hotkey"].as_str().map(str::to_owned))
+        .unwrap_or(Some("CmdOrCtrl+Shift+Z".into()))
+}
+
+fn apply_hotkey(app: &AppHandle, hk: Option<&str>) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    let _ = app.global_shortcut().unregister_all();
+    if let Some(hk) = hk {
+        if let Err(e) = app.global_shortcut().on_shortcut(hk, |app, _, e| {
+            if e.state() == ShortcutState::Pressed {
+                capture_open(app);
+            }
+        }) {
+            eprintln!("hotkey {hk} not registered: {e}");
+        }
+    }
+}
+
 async fn poll_tray(app: AppHandle) {
     let mut last: Option<Tray> = None;
+    let mut hotkey = config_hotkey(&app);
+    apply_hotkey(&app, hotkey.as_deref());
     loop {
+        let hk = config_hotkey(&app);
+        if hk != hotkey {
+            apply_hotkey(&app, hk.as_deref());
+            hotkey = hk;
+        }
         // Server down (starting, or restarting on a DB switch): keep the last state rather than report every chat as finished.
         let poll = match reqwest::get(format!("http://127.0.0.1:{PORT}/api/tray")).await {
             Ok(r) => r.json::<Poll>().await.ok(),
@@ -351,8 +444,10 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(st.clone())
-        .invoke_handler(tauri::generate_handler![status, reset_builtin_db])
+        .invoke_handler(tauri::generate_handler![status, reset_builtin_db, capture_hide, capture_submit])
         .setup({
             let st = st.clone();
             move |app| {
@@ -385,6 +480,7 @@ pub fn run() {
                     .on_menu_event(|app, e| match e.id().as_ref() {
                         "quit" => app.exit(0),
                         "open" => show(app, None),
+                        "capture" => capture_open(app),
                         id => show(app, id.strip_prefix("nav:")),
                     })
                     .build(app)?;
@@ -395,11 +491,16 @@ pub fn run() {
             }
         })
         // Closing the window keeps Zippy (and running Zippers) alive in the menubar.
-        .on_window_event(|w, e| {
-            if let WindowEvent::CloseRequested { api, .. } = e {
+        .on_window_event(|w, e| match e {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = w.hide();
             }
+            // Spotlight-style: clicking elsewhere dismisses the capture window.
+            WindowEvent::Focused(false) if w.label() == "capture" => {
+                let _ = w.hide();
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error building zippy");

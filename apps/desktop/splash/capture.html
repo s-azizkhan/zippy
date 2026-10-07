@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>New issue</title>
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; font: 14px system-ui; background: Canvas; }
+  form { display: grid; gap: 8px; padding: 12px; }
+  input, textarea { font: inherit; padding: 8px 10px; border: 1px solid #8884; border-radius: 8px; background: none; color: inherit; resize: none; }
+  input { font-size: 16px; }
+  textarea { height: 140px; font-family: ui-monospace, monospace; font-size: 12px; }
+  footer { display: flex; justify-content: space-between; color: #888; font-size: 12px; }
+  #err { color: #d33; }
+</style>
+<form id="f">
+  <input id="title" placeholder="What should Zippy do?" maxlength="200" autofocus />
+  <textarea id="body" placeholder="Details (clipboard auto-fills if it looks like an error)"></textarea>
+  <footer><span id="err"></span><span>⏎ file · ⇧⏎ newline · esc close</span></footer>
+</form>
+<script>
+  const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
+  const [f, title, body, err] = ["f", "title", "body", "err"].map((id) => document.getElementById(id));
+  // Rust shows the window after this event: reset and prefill from clipboard.
+  listen("capture:open", async (e) => {
+    title.value = "";
+    body.value = e.payload ?? "";
+    err.textContent = "";
+    title.focus();
+  });
+  const close = () => invoke("capture_hide");
+  f.onkeydown = (e) => {
+    if (e.key === "Escape") close();
+    if (e.key === "Enter" && !e.shiftKey) (e.preventDefault(), f.requestSubmit());
+  };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!title.value.trim()) return title.focus();
+    try {
+      await invoke("capture_submit", { title: title.value.trim(), body: body.value });
+      close();
+    } catch (x) {
+      err.textContent = String(x);
+    }
+  };
+</script>
