@@ -67,7 +67,19 @@ export const useChats = (orgId?: string, archived = false) => useApiQuery<Ticket
 export type RunningItem = { agentId: string; ticket: { id: string; identifier: string; title: string; kind: "ticket" | "chat" }; costUsd: number };
 export const useRunning = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "running"), queryFn: () => api.get<RunningItem[]>(`/orgs/${orgId}/running`), enabled: !!orgId, refetchInterval: 4000 });
-export type TermInfo = { id: string; workspaceId: string; title: string; pid: number; alive: boolean; exitCode: number | null; createdAt: string };
+export type TermInfo = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  pid: number;
+  alive: boolean;
+  exitCode: number | null;
+  createdAt: string;
+  cwd: string;
+  command: string;
+  process: string; // foreground process: zsh / node / claude …
+  lastDataAt: number; // epoch ms of last output
+};
 export const useTerminals = (orgId?: string) => useApiQuery<TermInfo[]>(keys.res(orgId!, "terminals"), orgId ? `/orgs/${orgId}/terminals` : null);
 export const useTerminalTemplates = (orgId?: string) => useApiQuery<TerminalTemplate[]>(keys.res(orgId!, "terminal-templates"), orgId ? `/orgs/${orgId}/terminal-templates` : null);
 export const useInbox = (orgId?: string) =>

@@ -13,32 +13,74 @@ try {
 
 const SCROLLBACK = 200_000; // bytes replayed to a reconnecting client
 
-export type TermInfo = { id: string; workspaceId: string; title: string; pid: number; alive: boolean; exitCode: number | null; createdAt: string };
-type Session = TermInfo & { proc: pty.IPty; buf: string; events: EventEmitter };
+export type TermInfo = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  pid: number;
+  alive: boolean;
+  exitCode: number | null;
+  createdAt: string;
+  cwd: string;
+  command: string; // typed in after start (templates, "run in new terminal"); replayed on restart
+  process: string; // foreground process name, e.g. zsh / node / claude
+  lastDataAt: number; // epoch ms of the last output byte; drives busy / unread dots
+};
+type Session = Omit<TermInfo, "process"> & { proc: pty.IPty; buf: string; events: EventEmitter; delaySec: number; timer?: NodeJS.Timeout };
 
 const sessions = new Map<string, Session>();
 let seq = 0;
 
-export const allTerminals = (): TermInfo[] => [...sessions.values()].map(({ proc: _p, buf: _b, events: _e, ...info }) => info);
-export const listTerminals = (workspaceIds: string[]): TermInfo[] =>
-  [...sessions.values()].filter((s) => workspaceIds.includes(s.workspaceId)).map(({ proc: _p, buf: _b, events: _e, ...info }) => info);
+const info = (s: Session): TermInfo => {
+  const { proc, buf: _b, events: _e, delaySec: _d, timer: _t, ...rest } = s;
+  let p = "";
+  try {
+    p = s.alive ? proc.process.split("/").pop()! : "";
+  } catch {}
+  return { ...rest, process: p };
+};
+export const allTerminals = (): TermInfo[] => [...sessions.values()].map(info);
+export const listTerminals = (workspaceIds: string[]): TermInfo[] => [...sessions.values()].filter((s) => workspaceIds.includes(s.workspaceId)).map(info);
 
-export function spawnTerminal(workspaceId: string, cwd: string, cols = 80, rows = 24, title?: string): TermInfo {
+/** (Re)starts the shell behind a session; the id stays put so open panes and links survive a restart. */
+function start(s: Session, cols: number, rows: number) {
   const shell = process.env.SHELL || "/bin/zsh";
-  const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd, env: { ...process.env, TERM: "xterm-256color" } as Record<string, string> });
-  const s: Session = { id: randomUUID(), workspaceId, title: title || `${shell.split("/").pop()} ${++seq}`, pid: proc.pid, alive: true, exitCode: null, createdAt: new Date().toISOString(), proc, buf: "", events: new EventEmitter().setMaxListeners(0) };
+  const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd: s.cwd, env: { ...process.env, TERM: "xterm-256color" } as Record<string, string> });
+  Object.assign(s, { proc, pid: proc.pid, alive: true, exitCode: null, buf: "", lastDataAt: Date.now() });
   proc.onData((d) => {
+    if (s.proc !== proc) return;
     s.buf = (s.buf + d).slice(-SCROLLBACK);
+    s.lastDataAt = Date.now();
     s.events.emit("data", d);
   });
   proc.onExit(({ exitCode }) => {
+    if (s.proc !== proc) return; // an old shell dying after restart must not mark the new one dead
     s.alive = false;
     s.exitCode = exitCode;
     s.events.emit("exit", exitCode);
   });
+  // Shell opens now; the command waits delaySec so an earlier template step (a server, a db) can be up first.
+  clearTimeout(s.timer);
+  if (s.command) s.timer = setTimeout(() => s.proc === proc && s.alive && proc.write(s.command + "\r"), s.delaySec * 1000).unref();
+}
+
+export function spawnTerminal(workspaceId: string, cwd: string, cols = 80, rows = 24, title?: string, command = "", delaySec = 0): TermInfo {
+  const shell = (process.env.SHELL || "/bin/zsh").split("/").pop();
+  const s = { id: randomUUID(), workspaceId, title: title || `${shell} ${++seq}`, cwd, command, delaySec, createdAt: new Date().toISOString(), events: new EventEmitter().setMaxListeners(0) } as Session;
+  start(s, cols, rows);
   sessions.set(s.id, s);
-  const { proc: _p, buf: _b, events: _e, ...info } = s;
-  return info;
+  return info(s);
+}
+
+export function restartTerminal(id: string) {
+  const s = sessions.get(id);
+  if (!s) return null;
+  const { cols, rows } = s.proc;
+  if (s.alive) s.proc.kill();
+  s.delaySec = 0;
+  start(s, cols, rows);
+  s.events.emit("restart");
+  return info(s);
 }
 
 export const getTerminal = (id: string) => sessions.get(id);
@@ -55,6 +97,7 @@ export const resizeTerminal = (id: string, cols: number, rows: number) => {
 export function closeTerminal(id: string) {
   const s = sessions.get(id);
   if (!s) return false;
+  clearTimeout(s.timer);
   if (s.alive) s.proc.kill();
   sessions.delete(id);
   return true;

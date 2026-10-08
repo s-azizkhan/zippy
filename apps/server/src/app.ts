@@ -53,7 +53,7 @@ import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { closeTerminal, getTerminal, listTerminals, renameTerminal, resizeTerminal, spawnTerminal, writeTerminal } from "./term.ts";
+import { closeTerminal, getTerminal, listTerminals, renameTerminal, resizeTerminal, restartTerminal, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -218,9 +218,11 @@ app.get("/orgs/:id/terminals", async (c) => {
 app.post("/workspaces/:id/terminals", async (c) => {
   const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
   if (!w) return c.notFound();
-  const { cols, rows } = z.object({ cols: z.number().int().min(1).max(500).default(80), rows: z.number().int().min(1).max(200).default(24) }).parse(await c.req.json().catch(() => ({})));
+  const { cols, rows, title, command } = z
+    .object({ cols: z.number().int().min(1).max(500).default(80), rows: z.number().int().min(1).max(200).default(24), title: z.string().trim().max(60).optional(), command: z.string().trim().max(2000).default("") })
+    .parse(await c.req.json().catch(() => ({})));
   try {
-    return c.json(spawnTerminal(w.id, w.path, cols, rows), 201);
+    return c.json(spawnTerminal(w.id, w.path, cols, rows, title, command), 201);
   } catch (e: any) {
     return c.json({ error: `Could not start shell: ${e.message}` }, 500);
   }
@@ -231,13 +233,14 @@ app.get("/terminals/:id/events", (c) => {
   return streamSSE(c, async (stream) => {
     const data = (d: string) => void stream.writeSSE({ data: JSON.stringify(d) });
     const exit = (code: number) => void stream.writeSSE({ event: "exit", data: String(code) });
+    const restart = () => void stream.writeSSE({ event: "restart", data: "" });
     if (s.buf) void stream.writeSSE({ event: "replay", data: JSON.stringify(s.buf) });
     if (!s.alive) exit(s.exitCode ?? 0);
-    s.events.on("data", data).on("exit", exit);
+    s.events.on("data", data).on("exit", exit).on("restart", restart);
     const ping = setInterval(() => void stream.writeSSE({ event: "ping", data: "" }), 20_000);
     await new Promise<void>((resolve) => stream.onAbort(resolve));
     clearInterval(ping);
-    s.events.off("data", data).off("exit", exit);
+    s.events.off("data", data).off("exit", exit).off("restart", restart);
   });
 });
 app.post("/terminals/:id/input", async (c) => {
@@ -262,12 +265,13 @@ app.post("/terminal-templates/:id/run", async (c) => {
   for (const step of t.steps) {
     const w = ws.get(step.workspaceId);
     if (!w) continue;
-    const term = spawnTerminal(w.id, w.path, 80, 24, step.title);
-    // Shell opens now; the command waits delaySec so an earlier step (a server, a db) can be up first.
-    if (step.command) setTimeout(() => writeTerminal(term.id, step.command + "\r"), (step.delaySec ?? 0) * 1000).unref();
-    opened.push(term);
+    opened.push(spawnTerminal(w.id, w.path, 80, 24, step.title, step.command, step.delaySec ?? 0));
   }
   return c.json(opened, 201);
+});
+app.post("/terminals/:id/restart", (c) => {
+  const t = restartTerminal(c.req.param("id"));
+  return t ? c.json(t) : c.notFound();
 });
 app.delete("/terminals/:id", (c) => (closeTerminal(c.req.param("id")) ? c.body(null, 204) : c.notFound()));
 crud("mcp", mcpServers, mcpServerInput);
