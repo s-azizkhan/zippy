@@ -79,6 +79,10 @@ export type TermInfo = {
   command: string;
   process: string; // foreground process: zsh / node / claude …
   lastDataAt: number; // epoch ms of last output
+  tags: string[]; // @agent handles and ticket identifiers
+  ticketId: string | null;
+  ticketKind: "ticket" | "chat" | null;
+  agentId: string | null; // opened by this agent; null = human
 };
 export const useTerminals = (orgId?: string) => useApiQuery<TermInfo[]>(keys.res(orgId!, "terminals"), orgId ? `/orgs/${orgId}/terminals` : null);
 export const useTerminalTemplates = (orgId?: string) => useApiQuery<TerminalTemplate[]>(keys.res(orgId!, "terminal-templates"), orgId ? `/orgs/${orgId}/terminal-templates` : null);

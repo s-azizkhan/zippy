@@ -5,7 +5,7 @@ import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js"
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { z } from "zod";
-import { KB_KINDS, httpUrl, type DraftPayload, type QuestionPayload } from "@zippy/shared";
+import { KB_KINDS, httpUrl, type ApprovalPayload, type DraftPayload, type QuestionPayload } from "@zippy/shared";
 import { agents, db, knowledge, orgs, ticketFolders, tickets } from "./db/index.ts";
 import { addKnowledge, byShortId, render, search } from "./kb.ts";
 import { commitsAhead, ensureWorktree, folderDiff, openPr } from "./git.ts";
@@ -15,6 +15,7 @@ import { notify } from "./notify.ts";
 import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
+import { closeTerminal, getTerminal, listTerminals, readTerminal, spawnTerminal, writeTerminal } from "./term.ts";
 
 // Bearer token -> the agent session it was issued to. Issued per spawned ACP process.
 const tokens = new Map<string, { ticketId: string; agentId: string }>();
@@ -32,6 +33,16 @@ const hops = new Map<string, number>();
 export const resetHops = (ticketId: string) => hops.delete(ticketId);
 
 const MAX_KB_PER_TICKET = 8;
+
+// Terminal actions by read-only agents, waiting on an approval card. ponytail: in memory; a restart drops them and the agent asks again.
+const pendingTerm = new Map<string, () => Promise<string>>(); // key: approval comment id
+/** Runs (or drops) the terminal action behind an approval card; returns the message for the agent, or null when the card was not one. */
+export async function runPendingTerm(commentId: string, approved: boolean) {
+  const run = pendingTerm.get(commentId);
+  if (!run) return null;
+  pendingTerm.delete(commentId);
+  return approved ? run().catch((e: Error) => `Failed: ${e.message}`) : "The user denied it. Explain what you wanted or ask_user for an alternative.";
+}
 
 /** The org's human when `handle` is theirs. */
 async function humanOf(orgId: string, handle: string) {
@@ -209,6 +220,99 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
       const [t] = await db.select({ orgId: tickets.orgId }).from(tickets).where(eq(tickets.id, ticketId));
       const rows = await search(t!.orgId, (await foldersOf(ticketId)).map((f) => f.ws.id), query);
       return text(rows.length ? render(rows) : "No matches.");
+    },
+  );
+
+  // Terminals: real PTY shells that outlive the turn. Read-only agents and chats get list/read; opening and typing need canWrite. The human sees them live on the Terminals page, tagged with this ticket and the agent.
+  const termLine = (t: ReturnType<typeof listTerminals>[number]) => `${t.id}  ${t.alive ? (t.process && !/^(-?zsh|-?bash|fish|sh)$/.test(t.process) ? `running ${t.process}` : "idle") : `exited ${t.exitCode}`}  "${t.title}"${t.command ? `  $ ${t.command}` : ""}  [${t.tags.join(" ")}]`;
+  const ownTerms = async () => {
+    const dirs = await foldersOf(ticketId);
+    return listTerminals(dirs.map((d) => d.ws.id)).filter((t) => t.ticketId === ticketId);
+  };
+  server.registerTool(
+    "terminal_read",
+    { description: "Read the last lines of output from a terminal on this ticket.", inputSchema: { id: z.string(), lines: z.number().int().min(1).max(1000).default(80) } },
+    async ({ id, lines }) => {
+      const t = getTerminal(id);
+      if (!t || t.ticketId !== ticketId) return text("No such terminal on this ticket. Call list_terminals.");
+      const out = readTerminal(id, lines) ?? "";
+      return text(`${out.trim() || "(no output yet)"}\n\n[${t.alive ? "running" : `exited ${t.exitCode}`}]`);
+    },
+  );
+  server.registerTool(
+    "list_terminals",
+    { description: "Terminals opened for this ticket (yours and the user's), with id, state, title, command and tags.", inputSchema: {} },
+    async () => {
+      const mine = await ownTerms();
+      return text(mine.length ? mine.map(termLine).join("\n") : "No terminals on this ticket.");
+    },
+  );
+
+  // Read-only agents may still open / type into / close shells, but each such action is an approval card the human allows first.
+  // Approved actions run in decideApproval → runPendingTerm; the agent is re-prompted with the result.
+  const gated = async (title: string, run: () => Promise<string>) => {
+    if (canWrite) return text(await run());
+    const c = await addComment(ticketId, agentId, "approval", {
+      title,
+      kind: "terminal",
+      options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }, { optionId: "deny", name: "Deny", kind: "reject_once" }],
+    } satisfies ApprovalPayload);
+    pendingTerm.set(c.id, run);
+    await setStatus(ticketId, "needs_input");
+    markAsked(ticketId, agentId);
+    return text("You are read-only, so this needs the user's approval. A card was posted. End your turn now; you will be messaged with the result.");
+  };
+  server.registerTool(
+    "open_terminal",
+    {
+      description: "Open a persistent shell in a working folder (its worktree when one exists) and optionally run a command in it. Use for long-running things the user should be able to watch and keep: dev servers, watchers, test loops. For one-off commands use your own shell instead. Returns the terminal id. The user sees it live on the Terminals page. Read-only agents: the user approves first.",
+      inputSchema: {
+        folder: z.string().optional().describe("Working folder name; default: your cwd folder"),
+        command: z.string().max(2000).optional().describe("Command typed into the shell right after it opens"),
+        title: z.string().max(60).optional().describe("Short name shown to the user, e.g. \"dev server\""),
+      },
+    },
+    async ({ folder, command, title }) => {
+      const dirs = await foldersOf(ticketId);
+      const row = folder ? dirs.find((d) => d.ws.name === folder) : dirs[0];
+      if (!row) return text(folder ? `No working folder "${folder}" on this ticket.` : "This ticket has no working folder.");
+      const [t] = await db.select({ identifier: tickets.identifier, kind: tickets.kind }).from(tickets).where(eq(tickets.id, ticketId));
+      const [me] = await db.select({ handle: agents.handle }).from(agents).where(eq(agents.id, agentId));
+      const name = title || command?.split(" ").slice(0, 3).join(" ") || `@${me!.handle}`;
+      return gated(`Open terminal in ${row.ws.name}${command ? `: \`${command}\`` : ""}`, async () => {
+        const info = spawnTerminal(row.ws.id, row.folder.worktreePath ?? row.ws.path, 120, 30, name, command ?? "", 0, { tags: [`@${me!.handle}`, t!.identifier], ticketId, ticketKind: t!.kind, agentId });
+        await addComment(ticketId, agentId, "text", { text: `Opened terminal **${name}** in ${row.ws.name}${command ? `: \`${command}\`` : ""} (see Terminals on this ticket).` });
+        return `Terminal ${info.id} opened in ${info.cwd}. Read it with terminal_read; it keeps running after your turn.`;
+      });
+    },
+  );
+  server.registerTool(
+    "terminal_write",
+    {
+      description: "Type into a terminal you opened on this ticket. Sends input plus Enter unless enter=false (use that for raw keys like Ctrl-C = \"\\u0003\"). Read-only agents: the user approves first.",
+      inputSchema: { id: z.string(), input: z.string().max(4000), enter: z.boolean().default(true) },
+    },
+    async ({ id, input, enter }) => {
+      const t = getTerminal(id);
+      if (!t || t.ticketId !== ticketId) return text("No such terminal on this ticket. Call list_terminals.");
+      // Agents type only into shells they opened: never into the human's, and never into another agent's.
+      if (t.agentId !== agentId) return text("That terminal was not opened by you. Read it, or open your own.");
+      if (!t.alive) return text("That terminal has exited. Open a new one.");
+      return gated(`Type into terminal "${t.title}": \`${enter ? input : JSON.stringify(input)}\``, async () => {
+        if (!getTerminal(id)?.alive) return "That terminal has exited meanwhile.";
+        writeTerminal(id, enter ? `${input}\r` : input);
+        return "Sent. Wait a moment, then terminal_read.";
+      });
+    },
+  );
+  server.registerTool(
+    "close_terminal",
+    { description: "Close a terminal you opened on this ticket (kills its process). Read-only agents: the user approves first.", inputSchema: { id: z.string() } },
+    async ({ id }) => {
+      const t = getTerminal(id);
+      if (!t || t.ticketId !== ticketId) return text("No such terminal on this ticket.");
+      if (t.agentId !== agentId) return text("That terminal was not opened by you; ask the user to close it.");
+      return gated(`Close terminal "${t.title}"`, async () => (closeTerminal(id) ? "Closed." : "Already gone."));
     },
   );
 

@@ -34,8 +34,16 @@ export type TermInfo = {
   command: string; // typed in after start (templates, "run in new terminal"); replayed on restart
   process: string; // foreground process name, e.g. zsh / node / claude
   lastDataAt: number; // epoch ms of the last output byte; drives busy / unread dots
+  tags: string[]; // @agent handles and ticket identifiers; typed into the title or set by the opener
+  ticketId: string | null; // ticket or chat this shell was opened for
+  ticketKind: "ticket" | "chat" | null;
+  agentId: string | null; // agent that opened it; null = human
 };
+export type TermLink = { tags?: string[]; ticketId?: string | null; ticketKind?: "ticket" | "chat" | null; agentId?: string | null };
 type Session = Omit<TermInfo, "process"> & { proc: pty.IPty; buf: string; events: EventEmitter; delaySec: number; timer?: NodeJS.Timeout };
+
+/** `@handle` and `ABC-12` tokens in a title become tags, so a rename is how humans tag a shell. */
+export const parseTags = (title: string) => [...new Set(title.match(/(?<!\S)(@[a-z0-9_-]+|[A-Z][A-Z0-9]{1,9}-\d+)(?!\S)/g) ?? [])];
 
 const sessions = new Map<string, Session>();
 let seq = 0;
@@ -73,9 +81,13 @@ function start(s: Session, cols: number, rows: number) {
   if (s.command) s.timer = setTimeout(() => s.proc === proc && s.alive && proc.write(s.command + "\r"), s.delaySec * 1000).unref();
 }
 
-export function spawnTerminal(workspaceId: string, cwd: string, cols = 80, rows = 24, title?: string, command = "", delaySec = 0): TermInfo {
+export function spawnTerminal(workspaceId: string, cwd: string, cols = 80, rows = 24, title?: string, command = "", delaySec = 0, link: TermLink = {}): TermInfo {
   const shell = (process.env.SHELL || "/bin/zsh").split("/").pop();
-  const s = { id: randomUUID(), workspaceId, title: title || `${shell} ${++seq}`, cwd, command, delaySec, createdAt: new Date().toISOString(), events: new EventEmitter().setMaxListeners(0) } as Session;
+  const t = title || `${shell} ${++seq}`;
+  const s = {
+    id: randomUUID(), workspaceId, title: t, cwd, command, delaySec, createdAt: new Date().toISOString(), events: new EventEmitter().setMaxListeners(0),
+    tags: [...new Set([...(link.tags ?? []), ...parseTags(t)])], ticketId: link.ticketId ?? null, ticketKind: link.ticketKind ?? null, agentId: link.agentId ?? null,
+  } as Session;
   start(s, cols, rows);
   sessions.set(s.id, s);
   return info(s);
@@ -95,9 +107,22 @@ export function restartTerminal(id: string) {
 export const getTerminal = (id: string) => sessions.get(id);
 export const renameTerminal = (id: string, title: string) => {
   const s = sessions.get(id);
-  if (s) s.title = title;
+  if (s) (s.title = title), (s.tags = [...new Set([...s.tags, ...parseTags(title)])]);
   return !!s;
 };
+export const setTags = (id: string, tags: string[]) => {
+  const s = sessions.get(id);
+  if (s) s.tags = [...new Set(tags)];
+  return !!s;
+};
+/** Last `lines` of plain-text output: ANSI and cursor sequences stripped, so an agent can read what a shell printed. */
+export function readTerminal(id: string, lines = 100) {
+  const s = sessions.get(id);
+  if (!s) return null;
+  // eslint-disable-next-line no-control-regex
+  const plain = s.buf.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "").replace(/\x1b[()][A-Z0-9]/g, "").replace(/\r/g, "");
+  return plain.split("\n").slice(-lines).join("\n");
+}
 export const writeTerminal = (id: string, data: string) => sessions.get(id)?.alive && sessions.get(id)!.proc.write(data);
 export const resizeTerminal = (id: string, cols: number, rows: number) => {
   const s = sessions.get(id);

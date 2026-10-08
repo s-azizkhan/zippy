@@ -35,7 +35,7 @@ export function NewTicketDialog({ org }: { org: Org }) {
         linearRef === null
           ? await api.post<Ticket>(`/orgs/${org.id}/tickets`, { ...d, workspaceIds })
           : await api.post<Ticket>(`/orgs/${org.id}/linear/import`, { ref: linearRef, workspaceIds, assigneeAgentId: d.assigneeAgentId });
-      if (ticketDraft) api.post(`/comments/${ticketDraft.commentId}/created`, { identifier: t.identifier }, true).catch(() => {});
+      if (ticketDraft?.commentId) api.post(`/comments/${ticketDraft.commentId}/created`, { identifier: t.identifier }, true).catch(() => {});
       if (linearRef === null && d.assigneeAgentId) await api.post(`/tickets/${t.id}/run`, {});
       queryClient.invalidateQueries({ queryKey: keys.res(org.id, "tickets") });
       setD({ ...EMPTY, workspaceIds: d.workspaceIds });

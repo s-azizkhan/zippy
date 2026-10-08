@@ -53,7 +53,7 @@ import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { closeTerminal, getTerminal, listTerminals, renameTerminal, resizeTerminal, restartTerminal, spawnTerminal, userEnv, writeTerminal } from "./term.ts";
+import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, userEnv, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -305,8 +305,30 @@ app.post("/terminals/:id/resize", async (c) => {
   return getTerminal(c.req.param("id")) ? (resizeTerminal(c.req.param("id"), cols, rows), c.body(null, 204)) : c.notFound();
 });
 app.patch("/terminals/:id", async (c) => {
-  const { title } = z.object({ title: z.string().trim().min(1).max(60) }).parse(await c.req.json());
-  return renameTerminal(c.req.param("id"), title) ? c.body(null, 204) : c.notFound();
+  const { title, tags } = z.object({ title: z.string().trim().min(1).max(60).optional(), tags: z.array(z.string().trim().min(1).max(40)).max(12).optional() }).parse(await c.req.json());
+  const id = c.req.param("id");
+  if (!getTerminal(id)) return c.notFound();
+  if (title) renameTerminal(id, title);
+  if (tags) setTags(id, tags);
+  return c.body(null, 204);
+});
+app.get("/terminals/:id/text", (c) => {
+  const text = readTerminal(c.req.param("id"), Math.min(2000, Number(c.req.query("lines")) || 200));
+  return text === null ? c.notFound() : c.text(text);
+});
+// A shell for a ticket: cwd is the folder's worktree when it has one; tagged with the ticket so it shows on the ticket and in the Terminals rail.
+app.post("/tickets/:id/terminals", async (c) => {
+  const ticketId = c.req.param("id");
+  const [t] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+  if (!t) return c.notFound();
+  const { workspaceId, command, title } = z.object({ workspaceId: z.string().uuid(), command: z.string().trim().max(2000).default(""), title: z.string().trim().max(60).optional() }).parse(await c.req.json());
+  const row = (await foldersOf(ticketId)).find((f) => f.ws.id === workspaceId);
+  if (!row) return c.json({ error: "That folder is not on this ticket." }, 400);
+  try {
+    return c.json(spawnTerminal(row.ws.id, row.folder.worktreePath ?? row.ws.path, 80, 24, title || `${t.identifier}${command ? ` ${command.split(" ").slice(0, 3).join(" ")}` : ""}`, command, 0, { tags: [t.identifier], ticketId, ticketKind: t.kind }), 201);
+  } catch (e: any) {
+    return c.json({ error: `Could not start shell: ${e.message}` }, 500);
+  }
 });
 crud("terminal-templates", terminalTemplates, terminalTemplateInput);
 // Run = one shell per step, in that step's folder, with the command typed in as if by the user.

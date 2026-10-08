@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type TicketDraft = { title: string; body: string; workspaceIds: string[]; commentId: string };
+export type TicketDraft = { title: string; body: string; workspaceIds: string[]; commentId?: string }; // commentId: the chat draft it came from
 
 type UI = {
   orgId: string | null;

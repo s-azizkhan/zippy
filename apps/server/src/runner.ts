@@ -13,7 +13,7 @@ import { desktopMcps, isOn, scanCatalog } from "./catalog.ts";
 import { forAgent } from "./files.ts";
 import { ensureWorktree } from "./git.ts";
 import { agentToken, LINEAR_MCP_URL, postComment, syncStatus } from "./linear.ts";
-import { issueToken, revokeToken } from "./mcp.ts";
+import { issueToken, revokeToken, runPendingTerm } from "./mcp.ts";
 import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
 import { userEnv } from "./term.ts";
@@ -250,6 +250,8 @@ async function systemPrompt(ticket: Ticket, agent: Agent, dirs: Dir[]) {
     "# Style\nUse the caveman skill (full). Keep your response short and to the point, no over-explaining.",
     !agent.canWrite && "You are read-only. Do not edit files.",
     `# Team\nYour replies are posted as ticket comments.${others.length ? ` Others on this ticket: ${others.map((a) => `@${a.handle}`).join(", ")}.` : ""}`,
+    "# Terminals\nFor long-running processes the user should see and keep (dev server, watcher, test loop) use `open_terminal`; it is a real shell on the Terminals page, tagged with you and this ticket. `terminal_read` / `terminal_write` drive it; `list_terminals` shows shells the user opened for this ticket too, so check it before starting a server that may already run. One-off commands: your own shell.",
+    !agent.canWrite && "You are read-only: `open_terminal`, `terminal_write` and `close_terminal` post an approval card and return at once. End your turn; the result comes as your next message.",
     agent.canWrite && "# Git\nCommit your work in each folder you change, with clear messages. Do not push; `open_pr` pushes and opens one PR per changed folder.",
     ...(ticket.kind === "chat"
       ? ["# Chat\nThis is a free-form conversation with the user, not a ticket. Discuss, investigate (read-only) and advise. Call `propose_ticket` only when the user asks for a ticket or agrees to your offer; it shows a draft the user reviews and creates."]
@@ -629,6 +631,13 @@ export async function decideApproval(commentId: string, optionId: string | null)
   const [c] = await db.select().from(comments).where(eq(comments.id, commentId));
   if (!c) return false;
   await patchComment(c.ticketId, c.id, { ...(c.payload as ApprovalPayload), decision: optionId ?? "cancelled" });
+  // Read-only agent's terminal action: run it now and tell the agent in a fresh turn.
+  const term = await runPendingTerm(c.id, optionId === "allow");
+  if (term !== null) {
+    await setStatus(c.ticketId, "in_progress");
+    if (c.agentId) runAgent(c.ticketId, c.agentId, `Your terminal request was ${optionId === "allow" ? "approved" : "denied"}. ${term}`).catch(console.error);
+    return true;
+  }
   if (resolve) {
     pendingApprovals.delete(commentId);
     resolve(optionId);

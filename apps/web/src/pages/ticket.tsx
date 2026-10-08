@@ -1,5 +1,5 @@
 import { ErrorPage } from "@/components/error-page";
-import { Archive, ArchiveRestore, ChevronDown, Columns2, PanelRight, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Square, Star } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, Columns2, PanelRight, ChevronRight, ChevronUp, GitPullRequestClosed, MoreHorizontal, Plus, Square, Star, TerminalSquare } from "lucide-react";
 import { CheckIcon as Check } from "@/components/ui/check";
 import { CopyIcon as Copy } from "@/components/ui/copy";
 import { ExternalLinkIcon as ExternalLink } from "@/components/ui/external-link";
@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, useAgents, useApiMutation, usePipelines, useTicket, useTicketEvents, useTickets, useWorkspaces } from "@/lib/api";
+import { api, keys, useAgents, useApiMutation, usePipelines, useTerminals, useTicket, useTicketEvents, useTickets, useWorkspaces, type TermInfo } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
@@ -545,6 +545,7 @@ function Properties(props: {
       </PanelSection>
 
       <PipelineSection ticket={ticket} pipeline={pipeline} agents={agents} />
+      <TerminalsSection ticket={ticket} agents={agents} />
 
       <TicketLinks title="Parent" items={parent ? [parent] : []} search={search} />
       <TicketLinks title="Sub-issues" items={subIssues} search={search} />
@@ -601,6 +602,77 @@ function Properties(props: {
       )}
     </aside>
     </>
+  );
+}
+
+/** Shells on this ticket: opened by Zippers (open_terminal) or by you here. Each runs in the folder's worktree and lives on the Terminals page. */
+function TerminalsSection({ ticket, agents }: { ticket: Ticket; agents: Agent[] }) {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const { data: workspaces = [] } = useWorkspaces(org.id);
+  const { data: terms = [] } = useTerminals(org.id);
+  const mine = terms.filter((t) => t.ticketId === ticket.id || t.tags.includes(ticket.identifier));
+  const spawn = useApiMutation((v: { workspaceId: string; command?: string; title?: string }) => api.post<TermInfo>(`/tickets/${ticket.id}/terminals`, v, true), [keys.res(org.id, "terminals")]);
+  const open = (v: { workspaceId: string; command?: string; title?: string }) => spawn.mutateAsync(v).then((t) => navigate(`/terminals/${t.id}`), (e: Error) => toast.error(e.message));
+  const folders = ticket.folders.map((f) => ({ f, ws: workspaces.find((w) => w.id === f.workspaceId) })).filter((x) => x.ws);
+  if (!folders.length && !mine.length) return null;
+  const shells = new Set(["zsh", "-zsh", "bash", "-bash", "fish", "sh", "login"]);
+  return (
+    <PanelSection
+      title="Terminals"
+      action={
+        folders.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon-xs" variant="ghost" aria-label="Open a terminal for this issue" title="Open a terminal for this issue" disabled={spawn.isPending}>
+                <Plus aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {folders.map(({ f, ws }) => (
+                <DropdownMenuItem key={ws!.id} onClick={() => open({ workspaceId: ws!.id })}>
+                  <TerminalSquare aria-hidden /> Shell in {ws!.name}{f.branch ? ` (${f.branch})` : ""}
+                </DropdownMenuItem>
+              ))}
+              {folders.some(({ ws }) => ws!.testCmd) && <DropdownMenuSeparator />}
+              {folders.filter(({ ws }) => ws!.testCmd).map(({ ws }) => (
+                <DropdownMenuItem key={`t-${ws!.id}`} onClick={() => open({ workspaceId: ws!.id, command: ws!.testCmd, title: `${ticket.identifier} tests` })}>
+                  <Play className="size-3 fill-current" aria-hidden /> Run tests in {ws!.name}
+                </DropdownMenuItem>
+              ))}
+              {folders.filter(({ ws }) => ws!.setupCmd).map(({ ws }) => (
+                <DropdownMenuItem key={`s-${ws!.id}`} onClick={() => open({ workspaceId: ws!.id, command: ws!.setupCmd, title: `${ticket.identifier} setup` })}>
+                  <Play className="size-3 fill-current" aria-hidden /> Run setup in {ws!.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      }
+    >
+      {mine.length ? (
+        <ul className="grid grid-cols-[minmax(0,1fr)]">
+          {mine.map((t) => {
+            const a = agents.find((x) => x.id === t.agentId);
+            const proc = t.process && !shells.has(t.process) ? t.process : null;
+            const busy = t.alive && Date.now() - t.lastDataAt < 1500;
+            return (
+              <li key={t.id}>
+                <Link to={`/terminals/${t.id}`} className="hover:bg-primary/[0.08] flex h-8 items-center gap-2 rounded-lg px-2 transition-colors" title={t.command ? `$ ${t.command}` : undefined}>
+                  <span className={cn("size-1.5 shrink-0 rounded-full", !t.alive ? (t.exitCode ? "bg-red-500" : "bg-muted-foreground/40") : busy ? "bg-primary animate-pulse" : "bg-emerald-500")} aria-label={!t.alive ? `exited ${t.exitCode}` : busy ? "output now" : "running"} />
+                  {a && <AgentAvatar agent={a} />}
+                  <span className="truncate font-mono text-xs">{t.title}</span>
+                  {proc && <span className="text-muted-foreground shrink-0 font-mono text-[10px]">{proc}</span>}
+                  {!t.alive && <span className={cn("ml-auto shrink-0 text-[10px]", t.exitCode ? "text-red-500" : "text-muted-foreground")}>exit {t.exitCode}</span>}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="text-muted-foreground px-2 text-xs">None yet. + opens a shell in the issue's worktree; Zippers can open them too.</p>
+      )}
+    </PanelSection>
   );
 }
 

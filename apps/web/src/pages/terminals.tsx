@@ -3,7 +3,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
+import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, FilePlus2, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
 import { motion, Reorder, useDragControls } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -21,6 +21,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api, keys, useApiMutation, useTerminalTemplates, useWorkspaces, type TermInfo } from "@/lib/api";
 import { useOrg } from "@/lib/org";
+import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { PortInfo } from "@/pages/ports";
 
@@ -41,7 +42,10 @@ const THEME = {
 };
 
 /** Interactive shell attached to a server-side PTY. Output streams over SSE, keystrokes go back over POST. */
-function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart }: { id: string; focused: boolean; fontSize: number; findReq: number; onFocus: () => void; onRestart: () => void }) {
+/** Selection, or the last `lines` non-empty rows when nothing is selected. */
+export type TermTextRef = { current: Record<string, (lines: number) => string> };
+
+function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textRef }: { id: string; focused: boolean; fontSize: number; findReq: number; onFocus: () => void; onRestart: () => void; textRef: TermTextRef }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<{ t: XTerm; fit: FitAddon; search: SearchAddon } | null>(null);
   const cb = useRef({ onFocus, onRestart });
@@ -59,6 +63,15 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart }: { i
     t.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, "_blank", "noopener")));
     t.open(el);
     term.current = { t, fit, search };
+    const getters = textRef.current;
+    getters[id] = (lines) => {
+      const sel = t.getSelection().trim();
+      if (sel) return sel;
+      const b = t.buffer.active;
+      const rows: string[] = [];
+      for (let i = b.length - 1; i >= 0 && rows.length < lines; i--) rows.unshift(b.getLine(i)?.translateToString(true) ?? "");
+      return rows.join("\n").trim();
+    };
     t.textarea?.addEventListener("focus", () => cb.current.onFocus());
     // ⌘F belongs to the focused pane's find bar, not the browser.
     t.attachCustomKeyEventHandler((e) => {
@@ -104,6 +117,7 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart }: { i
     });
 
     return () => {
+      delete getters[id];
       es.close();
       ro.disconnect();
       clearTimeout(resizeTimer);
@@ -165,6 +179,30 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart }: { i
   );
 }
 
+/** Who a shell belongs to: @zipper and ticket tags. Click opens the Zipper or ticket; × untags (pane header only). */
+function TagChips({ t, onRemove, className }: { t: TermInfo; onRemove?: (tag: string) => void; className?: string }) {
+  const navigate = useNavigate();
+  if (!t.tags.length) return null;
+  const firstTicket = t.tags.find((x) => !x.startsWith("@"));
+  const to = (tag: string) => (tag.startsWith("@") ? `/zippers/${tag.slice(1)}` : t.ticketKind === "chat" && t.ticketId && tag === firstTicket ? `/chat/${t.ticketId}` : `/t/${tag}`);
+  return (
+    <span className={cn("flex min-w-0 shrink items-center gap-1", className)}>
+      {t.tags.map((tag) => (
+        <span key={tag} className="group/tag flex max-w-28 shrink items-center rounded bg-current/[0.08] font-mono text-[10px]">
+          <button type="button" title={`Open ${tag}`} onClick={(e) => (e.stopPropagation(), navigate(to(tag)))} className="truncate px-1 py-px hover:underline">
+            {tag}
+          </button>
+          {onRemove && (
+            <button type="button" aria-label={`Remove tag ${tag}`} onClick={(e) => (e.stopPropagation(), onRemove(tag))} className="hidden pr-1 opacity-60 hover:opacity-100 group-hover/tag:inline">
+              <X className="size-2.5" aria-hidden />
+            </button>
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Live state at a glance: pulsing = output right now, blue = new output you haven't looked at, red = crashed. */
 function StatusDot({ t, unread, now }: { t: TermInfo; unread: boolean; now: number }) {
   const busy = t.alive && now - t.lastDataAt < 2000;
@@ -207,6 +245,8 @@ const SHORTCUTS: [string, string][] = [
   [`${M}P`, "Go to file (files panel open)"],
   ["⌥-click / drag file", "Paste its path into the shell"],
   [`${M}⌥R`, "Restart shell (re-runs its command)"],
+  [`${M}I`, "New issue from the selection (or last lines)"],
+  ["@handle, ZIP-12 in name", "Tag a shell with a Zipper or ticket"],
   [`${M}= / ${M}- / ${M}0`, "Font size"],
   [`${M}W`, "Close terminal (desktop)"],
   [`${M}-click / drag`, "Open in split"],
@@ -323,7 +363,19 @@ export function TerminalsPage() {
   const spawn = useApiMutation((v: { workspaceId: string; command?: string }) => api.post<TermInfo>(`/workspaces/${v.workspaceId}/terminals`, { command: v.command }, true), [key]);
   const close = useApiMutation((termId: string) => api.del(`/terminals/${termId}`), [key]);
   const restartM = useApiMutation((termId: string) => api.post<TermInfo>(`/terminals/${termId}/restart`, {}, true), [key]);
-  const rename = useApiMutation((v: { id: string; title: string }) => api.patch(`/terminals/${v.id}`, { title: v.title }, true), [key]);
+  const rename = useApiMutation((v: { id: string; title?: string; tags?: string[] }) => api.patch(`/terminals/${v.id}`, v, true), [key]);
+  const untag = (t: TermInfo, tag: string) => rename.mutate({ id: t.id, tags: t.tags.filter((x) => x !== tag) });
+  // Each pane registers a getter for its selection / last lines; ⌘I turns that into a new-issue draft with the shell's folder and command.
+  const textRef = useRef<Record<string, (lines: number) => string>>({});
+  const { openTicketDraft } = useUI();
+  const capture = (t: TermInfo | undefined) => {
+    const out = t && textRef.current[t.id]?.(40);
+    if (!t || !out) return void toast.error("Nothing to capture: select output in a terminal first");
+    const first = out.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+    const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
+    const body = `\`\`\`\n${out.slice(0, 6000)}\n\`\`\`\n\nFrom terminal **${t.title}** in \`${t.cwd}\`${t.command ? `, running \`${t.command}\`` : ""}.`;
+    openTicketDraft({ title, body, workspaceIds: [t.workspaceId] });
+  };
   const [editing, setEditing] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({}); // ponytail: in-memory fold state; persist if it ever annoys
@@ -433,12 +485,12 @@ export function TerminalsPage() {
   }, [current?.id, live.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard map. Capture phase so a focused xterm doesn't swallow these first.
-  const keyState = useRef({ ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells });
-  keyState.current = { ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells };
+  const keyState = useRef({ ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells, capture });
+  keyState.current = { ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells, capture };
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || (e.target as HTMLElement).closest("[role=dialog],[cmdk-root]")) return;
-      const { ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells } = keyState.current;
+      const { ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells, capture } = keyState.current;
       const folder = current?.workspaceId ?? workspaces[0]?.id;
       const k = e.key.toLowerCase();
       let hit = true;
@@ -454,6 +506,7 @@ export function TerminalsPage() {
         navigate(`/terminals/${live[(i + (e.key === "ArrowRight" ? 1 : -1) + live.length) % live.length]}`);
       } else if (e.shiftKey && e.key === "Enter" && current) setZoomed((z) => !z);
       else if (e.altKey && e.code === "KeyR" && current) restart(current.id);
+      else if (k === "i" && !e.shiftKey && !e.altKey) capture(current);
       else if (e.key === "=" || e.key === "+") font(Math.min(24, fontSize + 1));
       else if (e.key === "-") font(Math.max(9, fontSize - 1));
       else if (e.key === "0") font(12);
@@ -476,7 +529,7 @@ export function TerminalsPage() {
     });
 
   const needle = q.trim().toLowerCase();
-  const hit = (t: TermInfo, w: { name: string }) => !needle || [t.title, w.name, t.process, t.command, ...portsOf(t.id).map(String)].some((s) => s.toLowerCase().includes(needle));
+  const hit = (t: TermInfo, w: { name: string }) => !needle || [t.title, w.name, t.process, t.command, ...t.tags, ...portsOf(t.id).map(String)].some((s) => s.toLowerCase().includes(needle));
   const shown = zoomed && current && live.includes(current.id) ? [current.id] : live;
   const n = shown.length;
   const filesWs = workspaces.find((w) => w.id === ((pickedWs && pickedWs.under === id ? pickedWs.ws : undefined) ?? current?.workspaceId ?? workspaces[0]?.id));
@@ -513,12 +566,13 @@ export function TerminalsPage() {
         ) : (
           <button
             className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
-            title={`${t.command ? `$ ${t.command}\n` : ""}Double-click to rename · ${M}-click to split`}
+            title={`${t.command ? `$ ${t.command}\n` : ""}Double-click to rename (@handle or ZIP-12 in the name tags it) · ${M}-click to split`}
             onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)}
             onDoubleClick={() => setEditing(t.id)}
           >
             <StatusDot t={t} unread={unread(t)} now={now} />
             <span className={cn("truncate font-mono text-xs", unread(t) && "text-foreground font-semibold")}>{t.title}</span>
+            <TagChips t={t} className="text-muted-foreground" />
             {proc && <span className="text-muted-foreground shrink-0 truncate font-mono text-[10px]">{proc}</span>}
             {!t.alive && <span className={cn("shrink-0 text-[10px]", t.exitCode ? "text-red-500" : "text-muted-foreground")}>exit {t.exitCode}</span>}
           </button>
@@ -731,12 +785,14 @@ export function TerminalsPage() {
                     </span>
                   )}
                   <span className="truncate">{wsName(t.workspaceId)}</span>
+                  <TagChips t={t} onRemove={(tag) => untag(t, tag)} className="text-white/70" />
                   {proc && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-white/70">{proc}</span>}
                   {!t.alive && <span className={cn("shrink-0", t.exitCode ? "text-red-400" : "")}>exit {t.exitCode}</span>}
                   <PortChips ports={portsOf(t.id)} className="text-sky-300" />
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/h:opacity-100 focus-within:opacity-100">
                     <PaneBtn label={`${files && focused ? "Hide" : "Show"} files for ${wsName(t.workspaceId)} (${M}E)`} onClick={() => (navigate(`/terminals/${pid}`), (!files || focused) && toggleFiles())} icon={FolderOpen} active={files && focused} />
                     <PaneBtn label={`Find (${M}F)`} onClick={() => (navigate(`/terminals/${pid}`), setFindReq((x) => x + 1))} icon={Search} />
+                    <PaneBtn label={`New issue from selection (${M}I)`} onClick={() => capture(t)} icon={FilePlus2} />
                     <PaneBtn label={`Restart${t.command ? ` and re-run "${t.command}"` : ""} (${M}⌥R)`} onClick={() => restart(t.id)} icon={RotateCw} />
                     {live.length < MAX_PANES && <PaneBtn label={`Split (${M}D)`} onClick={() => open(t.workspaceId, true)} icon={Columns2} />}
                     {n > 1 || zoomed ? <PaneBtn label={`${zoomed ? "Unzoom" : "Zoom"} (${M}⇧↵)`} onClick={() => (navigate(`/terminals/${pid}`), setZoomed((z) => !z))} icon={zoomed ? Minimize2 : Maximize2} /> : null}
@@ -744,7 +800,7 @@ export function TerminalsPage() {
                     <PaneBtn label="Close terminal" onClick={() => kill(t)} icon={X} danger />
                   </span>
                 </header>
-                <PtyTerminal id={pid} focused={focused} fontSize={fontSize} findReq={focused ? findReq : 0} onFocus={() => !focused && navigate(`/terminals/${pid}`)} onRestart={() => restart(pid)} />
+                <PtyTerminal id={pid} focused={focused} fontSize={fontSize} findReq={focused ? findReq : 0} onFocus={() => !focused && navigate(`/terminals/${pid}`)} onRestart={() => restart(pid)} textRef={textRef} />
               </section>
             );
           })
