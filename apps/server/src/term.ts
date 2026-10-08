@@ -11,6 +11,15 @@ try {
   chmodSync(join(root, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper"), 0o755);
 } catch {}
 
+// Zippy's own config (.env, desktop shell, pnpm) must not leak into user shells/agents, or `pnpm dev` there picks up our PORT/DATABASE_URL.
+const OWN_ENV = new Set(["PORT", "WEB_PORT", "WEB_URL", "DATABASE_URL", "LINEAR_WEBHOOK_SECRET", "NGROK_URL", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+export function userEnv(extra: Record<string, string> = {}): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !OWN_ENV.has(k) && !/^(ZIPPY_|npm_)/.test(k)) env[k] = v;
+  if (env.PATH) env.PATH = env.PATH.split(":").filter((p) => !p.includes("/node_modules/.bin")).join(":"); // pnpm prepends ours
+  return { ...env, ...extra };
+}
+
 const SCROLLBACK = 200_000; // bytes replayed to a reconnecting client
 
 export type TermInfo = {
@@ -45,7 +54,7 @@ export const listTerminals = (workspaceIds: string[]): TermInfo[] => [...session
 /** (Re)starts the shell behind a session; the id stays put so open panes and links survive a restart. */
 function start(s: Session, cols: number, rows: number) {
   const shell = process.env.SHELL || "/bin/zsh";
-  const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd: s.cwd, env: { ...process.env, TERM: "xterm-256color" } as Record<string, string> });
+  const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd: s.cwd, env: userEnv({ TERM: "xterm-256color" }) });
   Object.assign(s, { proc, pid: proc.pid, alive: true, exitCode: null, buf: "", lastDataAt: Date.now() });
   proc.onData((d) => {
     if (s.proc !== proc) return;

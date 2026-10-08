@@ -16,6 +16,7 @@ import { agentToken, LINEAR_MCP_URL, postComment, syncStatus } from "./linear.ts
 import { issueToken, revokeToken } from "./mcp.ts";
 import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
+import { userEnv } from "./term.ts";
 import { afterTurn } from "./pipeline.ts";
 import { agentSessions, agents, comments, db, mcpServers, orgs, runs, ticketFolders, tickets, workspaces } from "./db/index.ts";
 
@@ -71,7 +72,7 @@ export async function claudeUsage(): Promise<Usage | null> {
 
 /** Spawns the ACP adapter and handshakes; resolves to its name/version or throws. */
 export async function acpHealth() {
-  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }) } });
+  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: userEnv(claudePath ? { CLAUDE_CODE_EXECUTABLE: claudePath } : {}) });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const conn = new acp.ClientSideConnection(() => ({}) as acp.Client, stream);
   try {
@@ -323,7 +324,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl, idleMinutes: orgs.idleMinutes }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const proc = spawn(process.execPath, [ADAPTER], {
     stdio: ["pipe", "pipe", "inherit"],
-    env: { ...process.env, ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) },
+    env: userEnv({ ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) }),
   });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const l = {
