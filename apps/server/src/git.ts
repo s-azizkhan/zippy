@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { and, eq } from "drizzle-orm";
 import type { DiffFile, FolderDiff, TestPayload } from "@zippy/shared";
 import { db, orgs, ticketFolders, type tickets, type workspaces } from "./db/index.ts";
+import { userEnv } from "./term.ts";
 
 const exec = promisify(execFile);
 const git = (cwd: string, ...args: string[]) => exec("git", args, { cwd }).then((r) => r.stdout.trim());
@@ -52,7 +53,7 @@ export async function ensureWorktree(ticket: Ticket, folder: Folder, ws: Workspa
   await save();
 
   if (!ws.setupCmd) return { cwd: dir, branch };
-  const setupError = await exec("sh", ["-c", ws.setupCmd], { cwd: dir, timeout: 10 * 60_000 }).then(
+  const setupError = await exec("sh", ["-c", ws.setupCmd], { cwd: dir, env: userEnv(), timeout: 10 * 60_000 }).then(
     () => undefined,
     (e: { stderr?: string; message: string }) => (e.stderr || e.message).slice(-2000),
   );
@@ -116,7 +117,7 @@ export async function folderDiff(folder: Folder, ws: Workspace, showMerged = fal
 export async function runTests(folder: Folder, ws: Workspace): Promise<TestPayload> {
   const cwd = folder.worktreePath ?? ws.path;
   const start = Date.now();
-  const r = await exec("sh", ["-c", ws.testCmd], { cwd, timeout: 15 * 60_000, maxBuffer: 32 * 1024 * 1024 }).then(
+  const r = await exec("sh", ["-c", ws.testCmd], { cwd, env: userEnv(), timeout: 15 * 60_000, maxBuffer: 32 * 1024 * 1024 }).then(
     (r) => ({ ok: true, output: r.stdout + r.stderr }),
     (e: { stdout?: string; stderr?: string; message: string }) => ({ ok: false, output: (e.stdout ?? "") + (e.stderr ?? "") || e.message }),
   );
