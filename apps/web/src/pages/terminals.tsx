@@ -3,14 +3,16 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
-import { Reorder, useDragControls } from "motion/react";
+import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
+import { motion, Reorder, useDragControls } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { TerminalTemplate, TerminalTemplateInput, Workspace } from "@zippy/shared";
 import { Field } from "@/components/field";
+import { FileBrowser } from "@/components/file-browser";
 import { OptionSelect } from "@/components/property-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,6 +27,8 @@ import type { PortInfo } from "@/pages/ports";
 const MAX_PANES = 6;
 const SHELLS = new Set(["zsh", "-zsh", "bash", "-bash", "fish", "sh", "login"]);
 const store = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} } };
+/** Quote a path for the shell line unless it's plain. */
+const shellQuote = (p: string) => (/^[\w./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`);
 
 const THEME = {
   background: "#0f0f10",
@@ -198,6 +202,10 @@ const SHORTCUTS: [string, string][] = [
   [`${M}⌥←  ${M}⌥→`, "Move between panes"],
   [`${M}⇧↵`, "Zoom pane"],
   [`${M}F`, "Find in terminal"],
+  [`${M}E`, "Files panel for this folder (tree, viewer, git)"],
+  [`${M}⇧E`, "Hide / show terminals (files only)"],
+  [`${M}P`, "Go to file (files panel open)"],
+  ["⌥-click / drag file", "Paste its path into the shell"],
   [`${M}⌥R`, "Restart shell (re-runs its command)"],
   [`${M}= / ${M}- / ${M}0`, "Font size"],
   [`${M}W`, "Close terminal (desktop)"],
@@ -325,6 +333,16 @@ export function TerminalsPage() {
   const font = (n: number) => setFontSize(() => (store.set("zippy-term-font", String(n)), n));
   const [zoomed, setZoomed] = useState(false);
   const [findReq, setFindReq] = useState(0);
+  // Files panel: tree + viewer + git for the focused pane's folder, beside the shells.
+  const [files, setFiles] = useState(() => store.get("zippy-term-files") === "1");
+  const toggleFiles = () => setFiles((f) => (store.set("zippy-term-files", f ? "0" : "1"), !f));
+  // Either section can go away, never both: hiding the shells turns files on, hiding files turns shells on.
+  const [shells, setShells] = useState(() => store.get("zippy-term-shells") !== "0");
+  const toggleShells = () => setShells((s) => (store.set("zippy-term-shells", s ? "0" : "1"), s && setFiles(() => (store.set("zippy-term-files", "1"), true)), !s));
+  const hideFiles = () => (setFiles(() => (store.set("zippy-term-files", "0"), false)), setShells(() => (store.set("zippy-term-shells", "1"), true)));
+  // Files-only mode has no focused pane to follow, so the header gets a folder picker; the pick lasts until focus moves.
+  const [pickedWs, setPickedWs] = useState<{ ws: string; under: string | undefined } | null>(null);
+  const filesLayout = useDefaultLayout({ id: "term-files", storage: localStorage });
   const [helpOpen, setHelpOpen] = useState(false);
   const { data: templates = [] } = useTerminalTemplates(org.id);
   const tkey = keys.res(org.id, "terminal-templates");
@@ -378,6 +396,14 @@ export function TerminalsPage() {
     if (tid === id) navigate(rest.length ? `/terminals/${rest[Math.min(live.indexOf(tid), rest.length - 1)]}` : "/terminals");
   };
   const clearExited = () => terms.filter((t) => !t.alive).forEach((t) => void kill(t));
+  /** Type a file path (plus a trailing space) into a shell; defaults to the focused one. */
+  const pastePath = (path: string, tid = id) => {
+    const t = terms.find((x) => x.id === tid);
+    if (!t?.alive) return void toast.error("Focus a running terminal first");
+    // A filename holding \n or \x1b would type a newline / escape sequence into the shell: never forward raw control bytes.
+    if (/[\x00-\x1f\x7f]/.test(path)) return void toast.error("Path contains control characters");
+    void api.post(`/terminals/${t.id}/input`, { data: `${shellQuote(path.startsWith("-") ? `./${path}` : path)} ` }, true).catch((e: Error) => toast.error(e.message));
+  };
 
   // Unread: output that arrived while a terminal was off screen. The first sighting is the baseline so a shell's startup prompt doesn't count.
   const seen = useRef<Record<string, number>>({});
@@ -407,17 +433,18 @@ export function TerminalsPage() {
   }, [current?.id, live.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard map. Capture phase so a focused xterm doesn't swallow these first.
-  const keyState = useRef({ ordered, live, current, workspaces, fontSize, open, show, restart, font });
-  keyState.current = { ordered, live, current, workspaces, fontSize, open, show, restart, font };
+  const keyState = useRef({ ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells });
+  keyState.current = { ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells };
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || (e.target as HTMLElement).closest("[role=dialog],[cmdk-root]")) return;
-      const { ordered, live, current, workspaces, fontSize, open, show, restart, font } = keyState.current;
+      const { ordered, live, current, workspaces, fontSize, open, show, restart, font, toggleFiles, toggleShells } = keyState.current;
       const folder = current?.workspaceId ?? workspaces[0]?.id;
       const k = e.key.toLowerCase();
       let hit = true;
       if (k === "t" && !e.shiftKey && folder) void open(folder);
       else if (k === "d" && !e.shiftKey && folder) void open(folder, live.length < MAX_PANES);
+      else if (k === "e" && !e.altKey) (e.shiftKey ? toggleShells() : toggleFiles());
       else if (/^[1-9]$/.test(e.key) && !e.altKey && !e.shiftKey && ordered[+e.key - 1]) show(ordered[+e.key - 1]!.id);
       else if (e.shiftKey && (e.code === "BracketLeft" || e.code === "BracketRight") && ordered.length) {
         const i = ordered.findIndex((t) => t.id === current?.id);
@@ -452,6 +479,8 @@ export function TerminalsPage() {
   const hit = (t: TermInfo, w: { name: string }) => !needle || [t.title, w.name, t.process, t.command, ...portsOf(t.id).map(String)].some((s) => s.toLowerCase().includes(needle));
   const shown = zoomed && current && live.includes(current.id) ? [current.id] : live;
   const n = shown.length;
+  const filesWs = workspaces.find((w) => w.id === ((pickedWs && pickedWs.under === id ? pickedWs.ws : undefined) ?? current?.workspaceId ?? workspaces[0]?.id));
+  const [dropping, setDropping] = useState<string | null>(null);
 
   const row = (t: TermInfo) => {
     const idx = ordered.indexOf(t);
@@ -519,6 +548,11 @@ export function TerminalsPage() {
             {!hidden && terms.some((t) => !t.alive) && (
               <Button size="icon-xs" variant="ghost" aria-label="Close exited terminals" title="Close exited terminals" onClick={clearExited}>
                 <Eraser aria-hidden />
+              </Button>
+            )}
+            {!hidden && workspaces.length > 0 && (
+              <Button size="icon-xs" variant="ghost" aria-label={files ? "Hide files panel" : "Show files panel"} aria-pressed={files} title={`Files panel (${M}E)`} onClick={toggleFiles} className={cn(files && "bg-foreground/[0.08]")}>
+                <FolderOpen aria-hidden />
               </Button>
             )}
             {!hidden && (
@@ -630,8 +664,11 @@ export function TerminalsPage() {
         )}
       </aside>
       {tplDialog.open && <TemplateDialog orgId={org.id} workspaces={workspaces} initial={tplDialog.edit} seed={tplDialog.seed} onClose={() => setTplDialog({ open: false, edit: null })} />}
+      <Group orientation="horizontal" id="term-files" defaultLayout={filesLayout.defaultLayout} onLayoutChanged={filesLayout.onLayoutChanged} className="min-h-0 min-w-0 flex-1">
+      {shells && (
+      <Panel id="panes" minSize="30%">
       <div
-        className="grid min-h-0 min-w-0 flex-1 gap-2 p-2"
+        className="grid h-full min-h-0 min-w-0 gap-2 p-2"
         style={{ gridTemplateColumns: `repeat(${n <= 1 ? 1 : n <= 4 ? 2 : 3}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${n <= 2 ? 1 : 2}, minmax(0, 1fr))` }}
         onDragOver={(e) => e.dataTransfer.types.includes("text/zippy-term") && e.preventDefault()}
         onDrop={(e) => {
@@ -654,7 +691,24 @@ export function TerminalsPage() {
                   focused && n > 1 ? "ring-primary/70" : "ring-white/[0.06]",
                   !shown.includes(pid) && "hidden",
                   n % 2 === 1 && n > 1 && i === 0 && "row-span-2",
+                  dropping === pid && "ring-primary ring-2",
                 )}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes("text/zippy-path")) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (dropping !== pid) setDropping(pid);
+                }}
+                onDragLeave={() => dropping === pid && setDropping(null)}
+                onDrop={(e) => {
+                  const p = e.dataTransfer.getData("text/zippy-path");
+                  if (!p) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropping(null);
+                  pastePath(p, pid);
+                  navigate(`/terminals/${pid}`);
+                }}
               >
                 <header className="group/h flex h-8 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 font-mono text-[11px] text-white/50" onClick={() => !focused && navigate(`/terminals/${pid}`)}>
                   <StatusDot t={t} unread={false} now={now} />
@@ -681,6 +735,7 @@ export function TerminalsPage() {
                   {!t.alive && <span className={cn("shrink-0", t.exitCode ? "text-red-400" : "")}>exit {t.exitCode}</span>}
                   <PortChips ports={portsOf(t.id)} className="text-sky-300" />
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/h:opacity-100 focus-within:opacity-100">
+                    <PaneBtn label={`${files && focused ? "Hide" : "Show"} files for ${wsName(t.workspaceId)} (${M}E)`} onClick={() => (navigate(`/terminals/${pid}`), (!files || focused) && toggleFiles())} icon={FolderOpen} active={files && focused} />
                     <PaneBtn label={`Find (${M}F)`} onClick={() => (navigate(`/terminals/${pid}`), setFindReq((x) => x + 1))} icon={Search} />
                     <PaneBtn label={`Restart${t.command ? ` and re-run "${t.command}"` : ""} (${M}⌥R)`} onClick={() => restart(t.id)} icon={RotateCw} />
                     {live.length < MAX_PANES && <PaneBtn label={`Split (${M}D)`} onClick={() => open(t.workspaceId, true)} icon={Columns2} />}
@@ -697,13 +752,45 @@ export function TerminalsPage() {
           <EmptyState workspaces={workspaces} templates={templates} onOpen={(wid) => open(wid)} onRun={runTemplate} hasTerms={terms.length > 0} />
         )}
       </div>
+      </Panel>
+      )}
+      {files && filesWs && (
+        <>
+          {shells && <Separator className="bg-border hover:bg-primary focus-visible:bg-primary relative w-px outline-none transition-colors after:absolute after:inset-y-0 after:-inset-x-1" />}
+          <Panel id="files" minSize="22%" defaultSize="38%" className="min-w-0">
+            <motion.div key={filesWs.id} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.18, ease: "easeOut" }} className="flex h-full min-h-0 flex-col">
+              <header className="border-foreground/[0.07] flex h-9 shrink-0 items-center gap-2 border-b px-3 text-xs">
+                <FolderOpen className="text-primary size-3.5 shrink-0" aria-hidden />
+                {shells && pickedWs?.under !== id ? (
+                  <>
+                    <span className="truncate font-medium">{filesWs.name}</span>
+                    <span className="text-muted-foreground truncate">{current ? `follows ${current.title}` : "no terminal focused"}</span>
+                  </>
+                ) : (
+                  <OptionSelect label="Folder" size="sm" value={filesWs.id} onChange={(ws) => setPickedWs({ ws, under: id })} options={workspaces.map((w) => ({ value: w.id, label: w.name }))} className="h-6 max-w-64 text-xs" />
+                )}
+                <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                  <Button size="icon-xs" variant="ghost" aria-label={shells ? "Hide terminals, files only" : "Show terminals"} aria-pressed={!shells} title={`${shells ? "Files only" : "Show terminals"} (${M}⇧E)`} onClick={toggleShells} className={cn(!shells && "bg-foreground/[0.08]")}>
+                    {shells ? <PanelLeftClose aria-hidden /> : <PanelLeftOpen aria-hidden />}
+                  </Button>
+                  <Button size="icon-xs" variant="ghost" aria-label="Close files panel" title={`Close files (${M}E)`} onClick={hideFiles}>
+                    <X aria-hidden />
+                  </Button>
+                </span>
+              </header>
+              <FileBrowser id={filesWs.id} compact={shells} onPath={(p) => pastePath(p)} />
+            </motion.div>
+          </Panel>
+        </>
+      )}
+      </Group>
     </div>
   );
 }
 
-function PaneBtn({ label, onClick, icon: Icon, danger }: { label: string; onClick: () => void; icon: typeof X; danger?: boolean }) {
+function PaneBtn({ label, onClick, icon: Icon, danger, active }: { label: string; onClick: () => void; icon: typeof X; danger?: boolean; active?: boolean }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={(e) => (e.stopPropagation(), onClick())} className={cn("flex size-6 items-center justify-center rounded text-white/50 hover:bg-white/[0.08]", danger ? "hover:text-red-400" : "hover:text-white")}>
+    <button type="button" aria-label={label} title={label} aria-pressed={active} onClick={(e) => (e.stopPropagation(), onClick())} className={cn("flex size-6 items-center justify-center rounded text-white/50 hover:bg-white/[0.08]", danger ? "hover:text-red-400" : "hover:text-white", active && "bg-white/[0.08] text-white")}>
       <Icon className="size-3.5" aria-hidden />
     </button>
   );

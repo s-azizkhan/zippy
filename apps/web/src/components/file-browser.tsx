@@ -46,7 +46,7 @@ type Identity = { name: string; email: string; local: boolean };
 const useGit = (id: string) => useQuery({ queryKey: ["git", id], queryFn: () => api.get<Branches>(`/workspaces/${id}/git`), refetchInterval: 15_000 });
 
 // Git status per file, plus every folder holding a change, for tree markers.
-const Marks = createContext<{ files: Map<string, string>; dirs: Set<string> }>({ files: new Map(), dirs: new Set() });
+const Marks = createContext<{ files: Map<string, string>; dirs: Set<string>; onPath?: (p: string) => void }>({ files: new Map(), dirs: new Set() });
 const MARK: Record<string, [string, string]> = { M: ["M", "text-amber-500"], A: ["A", "text-emerald-500"], "?": ["U", "text-emerald-500"], D: ["D", "text-red-500"], R: ["R", "text-sky-500"], U: ["!", "text-red-500"] };
 
 function Node({ id, path, name, dir, depth, sel, onSel }: { id: string; path: string; name: string; dir: boolean; depth: number; sel: string; onSel: (p: string) => void }) {
@@ -64,8 +64,10 @@ function Node({ id, path, name, dir, depth, sel, onSel }: { id: string; path: st
         ref={(el) => {
           if (sel === path) el?.scrollIntoView({ block: "nearest" });
         }}
-        title={path}
-        onClick={() => (dir ? setOpen(!open) : onSel(path))}
+        title={marks.onPath ? `${path}\n⌥-click or drag into a terminal to paste the path` : path}
+        draggable={!!marks.onPath}
+        onDragStart={(e) => (e.dataTransfer.setData("text/zippy-path", path), e.dataTransfer.setData("text/plain", path))}
+        onClick={(e) => (e.altKey && marks.onPath ? marks.onPath(path) : dir ? setOpen(!open) : onSel(path))}
         style={{ paddingLeft: 8 + depth * 12 }}
         className={cn("hover:bg-accent flex h-6 w-full items-center gap-1.5 rounded-md pr-2 text-left text-xs", sel === path && "bg-accent")}
       >
@@ -95,6 +97,7 @@ function Tree({ id, path, depth, sel, onSel }: { id: string; path: string; depth
 function Viewer({ id, path }: { id: string; path: string }) {
   const { data, isLoading, error } = useFs<FileView>(id, path);
   const [raw, setRaw] = useState(false);
+  const { onPath } = useContext(Marks);
   const isMd = /\.(md|markdown)$/i.test(path);
   const html = useMemo(() => {
     const language = langOf(path);
@@ -110,6 +113,11 @@ function Viewer({ id, path }: { id: string; path: string }) {
         <button title="Copy path" aria-label="Copy path" onClick={() => navigator.clipboard.writeText(path).then(() => toast.success("Path copied"))} className="text-muted-foreground hover:text-foreground shrink-0">
           <Copy className="size-3.5" aria-hidden />
         </button>
+        {onPath && (
+          <button title="Paste path into terminal (⌥-click a file does the same)" aria-label="Paste path into terminal" onClick={() => onPath(path)} className="text-muted-foreground hover:text-foreground shrink-0">
+            <SquareTerminal className="size-3.5" aria-hidden />
+          </button>
+        )}
         <OpenButtons id={id} path={path} />
         {isMd && (
           <button onClick={() => setRaw(!raw)} className="text-muted-foreground hover:text-foreground shrink-0 text-xs font-medium">
@@ -388,8 +396,8 @@ function FolderBar({ id, git }: { id: string; git: Branches | undefined }) {
   );
 }
 
-/** Read-only file tree + viewer for a working folder. */
-export function FileBrowser({ id }: { id: string }) {
+/** Read-only file tree + viewer for a working folder. `onPath`: ⌥-click / drag a file hands its path to the caller (terminals paste it). */
+export function FileBrowser({ id, onPath, compact }: { id: string; onPath?: (path: string) => void; compact?: boolean }) {
   const [sel, setSel] = useState("");
   const { data: git } = useGit(id);
   const marks = useMemo(() => {
@@ -399,13 +407,13 @@ export function FileBrowser({ id }: { id: string }) {
       files.set(c.path, c.status);
       for (let i = c.path.indexOf("/"); i > 0; i = c.path.indexOf("/", i + 1)) dirs.add(c.path.slice(0, i));
     }
-    return { files, dirs };
-  }, [git]);
+    return { files, dirs, onPath };
+  }, [git, onPath]);
   return (
     <Marks.Provider value={marks}>
     <div className="flex min-h-0 flex-1">
       <QuickOpen id={id} onPick={setSel} />
-      <div className={cn("flex w-full shrink-0 flex-col border-r md:w-64", sel && "max-md:hidden")}>
+      <div className={cn("flex w-full shrink-0 flex-col border-r md:w-64", compact && "md:w-56", sel && "max-md:hidden")}>
         {git && <GitBar id={id} data={git} />}
         <FolderBar id={id} git={git} />
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
