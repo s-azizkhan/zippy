@@ -20,7 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, queryClient, useApiMutation, useOrgs, useRunning, useSystem, useUsage, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useOrgs, useRunning, useSystem, useTerminals, useUsage, useWorkspaces } from "@/lib/api";
 import { useInboxView } from "@/lib/inbox";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
@@ -78,7 +78,7 @@ const navCls = (active: boolean) =>
     active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
   );
 
-function NavItem({ to, icon: Icon, label, count, match, color = "#7c87f0" }: { to: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; count?: number; match?: boolean; color?: string }) {
+function NavItem({ to, icon: Icon, label, count, countLabel = "waiting", match, color = "#7c87f0" }: { to: string; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; count?: number; countLabel?: string; match?: boolean; color?: string }) {
   return (
     <NavLink to={to} end aria-current={match ? "page" : undefined} style={{ "--c": color } as React.CSSProperties} className={({ isActive }) => navCls(match ?? isActive)}>
       {({ isActive }) => {
@@ -95,7 +95,7 @@ function NavItem({ to, icon: Icon, label, count, match, color = "#7c87f0" }: { t
             <Icon className={cn("relative size-4 shrink-0 transition-all duration-200 group-hover:-rotate-6 group-hover:scale-110 group-hover:text-[var(--c)]", on && "text-[var(--c)] drop-shadow-[0_0_6px_var(--c)]")} strokeWidth={1.75} aria-hidden />
             <span className="sr-only relative flex-1 truncate wide:not-sr-only">{label}</span>
             {!!count && (
-              <span key={count} className="pop relative bg-[color-mix(in_oklab,var(--c)_18%,transparent)] text-[var(--c)] hidden min-w-5 rounded-full px-1.5 text-center text-[11px] leading-5 font-semibold tabular-nums wide:inline" aria-label={`${count} waiting`}>
+              <span key={count} className="pop relative bg-[color-mix(in_oklab,var(--c)_18%,transparent)] text-[var(--c)] hidden min-w-5 rounded-full px-1.5 text-center text-[11px] leading-5 font-semibold tabular-nums wide:inline" aria-label={`${count} ${countLabel}`}>
                 {count}
               </span>
             )}
@@ -181,6 +181,8 @@ function Sidebar() {
   const view = params.get("view");
   const { unread: inbox } = useInboxView(org.id); // unread, not total: the badge means "new since you looked"
   const { data: running = [] } = useRunning(org.id);
+  const { data: terms = [] } = useTerminals(org.id);
+  const shells = terms.filter((t) => t.alive).length;
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
@@ -266,7 +268,7 @@ function Sidebar() {
         <Section title="Workspace">
           <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
           <NavItem to="/running" icon={ActivityIcon} color="#4cb782" label="Running" count={running.length} />
-          <NavItem to="/terminals" icon={TerminalSquare} color="#a3a3a3" label="Terminals" match={pathname.startsWith("/terminals")} />
+          <NavItem to="/terminals" icon={TerminalSquare} color="#a3a3a3" label="Terminals" count={shells} countLabel="running" match={pathname.startsWith("/terminals")} />
           <NavItem to="/ports" icon={RadioIcon} color="#34d399" label="Ports" />
           <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />
           <NavItem to="/routines" icon={RefreshCWIcon} color="#f2c94c" label="Routines" />
