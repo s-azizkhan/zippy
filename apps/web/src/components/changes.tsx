@@ -73,7 +73,8 @@ function CommentBox({ ctx, label, quote, onDone }: { ctx: Ctx; label: string; qu
   );
 }
 
-function Patch({ patch, path, ctx }: { patch: string; path: string; ctx: Ctx }) {
+/** Highlighted diff. With `ctx`, lines take review comments. */
+export function Patch({ patch, path, ctx }: { patch: string; path: string; ctx?: Ctx }) {
   const [sel, setSel] = useState<{ from: number; to: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   useEffect(() => {
@@ -117,7 +118,7 @@ function Patch({ patch, path, ctx }: { patch: string; path: string; ctx: Ctx }) 
               ) : (
                 l || " "
               )}
-              {!hunk && (
+              {!hunk && ctx && (
                 <button
                   type="button"
                   onMouseDown={(e) => {
@@ -135,7 +136,7 @@ function Patch({ patch, path, ctx }: { patch: string; path: string; ctx: Ctx }) 
                 </button>
               )}
             </div>
-            {i === hi && <CommentBox ctx={ctx} label={label} quote={picked.join("\n")} onDone={() => setSel(null)} />}
+            {ctx && i === hi && <CommentBox ctx={ctx} label={label} quote={picked.join("\n")} onDone={() => setSel(null)} />}
           </div>
         );
       })}

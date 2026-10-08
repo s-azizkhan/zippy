@@ -6,11 +6,17 @@ import { promisify } from "node:util";
 const HIDDEN = new Set([".git", "node_modules"]);
 const MAX = 512 * 1024;
 
-/** Read-only view of `rel` inside `root`. Throws on escape (incl. via symlink). */
-export async function browse(root: string, rel: string) {
+/** Absolute path of `rel` inside `root`. Throws on escape (incl. via symlink). */
+export async function resolveIn(root: string, rel: string) {
   const base = await realpath(root);
   const target = await realpath(resolve(base, rel));
   if (target !== base && !target.startsWith(base + sep)) throw new Error("Outside folder");
+  return target;
+}
+
+/** Read-only view of `rel` inside `root`. */
+export async function browse(root: string, rel: string) {
+  const target = await resolveIn(root, rel);
   const s = await stat(target);
   if (s.isDirectory()) {
     const entries = (await readdir(target, { withFileTypes: true }))

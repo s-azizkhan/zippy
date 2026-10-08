@@ -43,17 +43,17 @@ import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.t
 import { addKnowledge } from "./kb.ts";
 import { desktopNote, takeNotes } from "./notify.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
-import { browse, listFiles } from "./browse.ts";
+import { browse, listFiles, resolveIn } from "./browse.ts";
 import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
 import { bodyLimit } from "hono/body-limit";
-import { detectFolder, folderDiff, mergePr, prState, runTests } from "./git.ts";
+import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll, folderDiff, isRepo, mergePr, popStash, prState, pullFf, pushHead, runTests, setIdentity, workingDiff } from "./git.ts";
 import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { closeTerminal, getTerminal, listTerminals, renameTerminal, resizeTerminal, restartTerminal, spawnTerminal, writeTerminal } from "./term.ts";
+import { closeTerminal, getTerminal, listTerminals, renameTerminal, resizeTerminal, restartTerminal, spawnTerminal, userEnv, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -209,6 +209,59 @@ app.get("/workspaces/:id/fs", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.code === "ENOENT" ? "Not found" : e.message }, e.code === "ENOENT" ? 404 : 400);
   }
+});
+// Git controls for a working folder's own checkout (not ticket worktrees).
+app.get("/workspaces/:id/git", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  return w ? c.json(await branchInfo(w.path)) : c.notFound();
+});
+app.get("/workspaces/:id/git/diff", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  if (!w) return c.notFound();
+  return (await isRepo(w.path)) ? c.json(await workingDiff(w.path)) : c.json({ error: `${w.name} is not a git repository.` }, 400);
+});
+const gitOp = {
+  checkout: z.object({ branch: z.string().min(1), stash: z.boolean().default(false) }),
+  branch: z.object({ name: z.string().trim().min(1).max(200) }),
+  commit: z.object({ message: z.string().trim().min(1).max(10_000), files: z.array(z.string()).min(1), push: z.boolean().default(false) }),
+  fetch: z.object({}),
+  pull: z.object({}),
+  push: z.object({}),
+  pop: z.object({}),
+  identity: z.object({ name: z.string().trim().max(200).regex(/^[^\n<>]*$/, "no newlines or <>"), email: z.union([z.literal(""), z.email().max(200)]) }),
+};
+app.post("/workspaces/:id/git/:op{checkout|branch|commit|fetch|pull|push|pop|identity}", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  if (!w) return c.notFound();
+  const op = c.req.param("op") as keyof typeof gitOp;
+  try {
+    if (!(await isRepo(w.path))) return c.json({ error: `${w.name} is not a git repository.` }, 400);
+    const v: any = gitOp[op].parse(await c.req.json().catch(() => ({})));
+    if (op === "checkout") await checkout(w.path, v.branch, v.stash);
+    else if (op === "branch") await createBranch(w.path, v.name);
+    else if (op === "identity") await setIdentity(w.path, v.name, v.email);
+    else if (op === "commit") {
+      await commitFiles(w.path, v.message, v.files);
+      if (v.push) await pushHead(w.path);
+    } else await ({ fetch: fetchAll, pull: pullFf, push: pushHead, pop: popStash } as const)[op as "fetch" | "pull" | "push" | "pop"](w.path);
+    return c.body(null, 204);
+  } catch (e: any) {
+    if (e instanceof ZodError) throw e;
+    return c.json({ error: (e.stderr || e.message).trim().split("\n").filter((l: string) => !l.startsWith("Command failed")).join("\n").slice(-500) || e.message }, 400);
+  }
+});
+// Hand a folder or file to the OS: reveal in Finder or open in the user's editor. Server runs on the user's machine.
+app.post("/workspaces/:id/open", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  if (!w) return c.notFound();
+  const { path, app: target } = await body(c, z.object({ path: z.string().default(""), app: z.enum(["finder", "editor"]) }));
+  const abs = await resolveIn(w.path, path).catch(() => null);
+  if (!abs) return c.json({ error: "Not found" }, 404);
+  const mac = process.platform === "darwin";
+  const run = (cmd: string, args: string[]) => new Promise<boolean>((res) => execFile(cmd, args, { env: userEnv() }, (err) => res(!err)));
+  // ponytail: VS Code's `code` CLI, else the OS default app. Add an editor setting if people use something else.
+  const ok = target === "finder" ? await run(mac ? "open" : "xdg-open", mac && path ? ["-R", abs] : [abs]) : (await run("code", [abs])) || (await run(mac ? "open" : "xdg-open", [abs]));
+  return ok ? c.body(null, 204) : c.json({ error: `Could not open ${abs}` }, 500);
 });
 // Terminals: one PTY per session, grouped by working folder; live only as long as the server.
 app.get("/orgs/:id/terminals", async (c) => {
