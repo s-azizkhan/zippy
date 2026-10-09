@@ -248,3 +248,18 @@ export const todos = pgTable("todos", {
   done: boolean("done").notNull().default(false),
   createdAt: createdAt(),
 });
+
+// Trending tech news, refreshed from public feeds (news.ts). Global, not per org.
+// rank = position in the source's latest feed; null = dropped from the feed but kept because saved.
+export const news = pgTable("news", {
+  id: id(),
+  source: text("source").$type<import("../news.ts").Source>().notNull(),
+  title: text("title").notNull(),
+  url: text("url").notNull().unique(),
+  summary: text("summary").notNull().default(""),
+  score: integer("score").notNull().default(0),
+  rank: integer("rank"),
+  saved: boolean("saved").notNull().default(false),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});

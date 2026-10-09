@@ -50,6 +50,7 @@ import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll
 import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
+import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
@@ -685,6 +686,17 @@ setInterval(async () => {
   const due = (await db.select().from(routines).where(eq(routines.enabled, true))).filter((r) => nextRunAt(r) <= new Date());
   for (const r of due) await runRoutine(r).catch((e) => console.error("[routine]", r.name, e.message));
 }, 60_000).unref();
+
+// Trending news: public feeds, auto-refresh every 2h, "Refresh" for now.
+// First open after boot pulls fresh (not at import: the desktop app migrates the schema after this module loads).
+app.get("/news", async (c) => (refreshedAt || (await refreshNews()), c.json({ items: await listNews(), refreshedAt })));
+app.post("/news/refresh", async (c) => c.json({ errors: await refreshNews(), items: await listNews(), refreshedAt }));
+app.patch("/news/:id", async (c) => {
+  const { saved } = await body(c, z.object({ saved: z.boolean() }));
+  const row = await setSaved(c.req.param("id"), saved);
+  return row ? c.json(row) : c.notFound();
+});
+setInterval(() => refreshNews().catch((e) => console.error("[news]", e.message)), 2 * 3600_000).unref();
 
 // Agent sessions mid-turn right now (tickets and chats).
 async function runningOf(orgId: string) {
