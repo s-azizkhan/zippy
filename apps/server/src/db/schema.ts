@@ -261,5 +261,6 @@ export const news = pgTable("news", {
   rank: integer("rank"),
   saved: boolean("saved").notNull().default(false),
   publishedAt: timestamp("published_at", { withTimezone: true }),
+  readMinutes: integer("read_minutes"), // null = not an article or page unreadable
   createdAt: createdAt(),
 });

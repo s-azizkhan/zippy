@@ -100,6 +100,7 @@ export function NewsPage() {
                     <span className="shrink-0">{SOURCES[n.source]}</span>
                     <span className="shrink-0">{n.score.toLocaleString()} {UNIT[n.source]}</span>
                     {n.publishedAt && <span className="shrink-0">{ago(n.publishedAt)}</span>}
+                    {n.readMinutes && <span className="shrink-0">{n.readMinutes} min read</span>}
                     <span className="line-clamp-2 basis-full break-words">{n.summary}</span>
                   </div>
                 </a>
