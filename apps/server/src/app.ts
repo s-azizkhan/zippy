@@ -43,7 +43,7 @@ import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.t
 import { addKnowledge } from "./kb.ts";
 import { desktopNote, takeNotes } from "./notify.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
-import { browse, listFiles, resolveIn } from "./browse.ts";
+import { browse, listFiles, resolveIn, saveFile } from "./browse.ts";
 import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
 import { bodyLimit } from "hono/body-limit";
 import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll, folderDiff, isRepo, mergePr, popStash, prState, pullFf, pushHead, runTests, setIdentity, workingDiff } from "./git.ts";
@@ -209,6 +209,16 @@ app.get("/workspaces/:id/fs", async (c) => {
     return c.json(await browse(w.path, c.req.query("path") ?? ""));
   } catch (e: any) {
     return c.json({ error: e.code === "ENOENT" ? "Not found" : e.message }, e.code === "ENOENT" ? 404 : 400);
+  }
+});
+app.put("/workspaces/:id/fs", async (c) => {
+  const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
+  if (!w) return c.notFound();
+  const v = await body(c, z.object({ path: z.string().min(1), content: z.string().max(512 * 1024), mtime: z.number() }));
+  try {
+    return c.json(await saveFile(w.path, v.path, v.content, v.mtime));
+  } catch (e: any) {
+    return c.json({ error: e.code === "ENOENT" ? "Not found" : e.message }, e.code === "ENOENT" ? 404 : e.code === "STALE" ? 409 : 400);
   }
 });
 // Git controls for a working folder's own checkout (not ticket worktrees).

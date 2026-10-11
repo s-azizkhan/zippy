@@ -22,7 +22,7 @@ import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
 
 type Dir = { type: "dir"; entries: { name: string; dir: boolean }[] };
-type FileView = { type: "file"; binary: boolean; size: number; truncated?: boolean; content?: string };
+type FileView = { type: "file"; binary: boolean; size: number; mtime?: number; truncated?: boolean; content?: string };
 
 const useFs = <T extends Dir | FileView>(id: string, path: string, enabled = true) =>
   useQuery({
@@ -97,6 +97,29 @@ function Tree({ id, path, depth, sel, onSel }: { id: string; path: string; depth
 function Viewer({ id, path }: { id: string; path: string }) {
   const { data, isLoading, error } = useFs<FileView>(id, path);
   const [raw, setRaw] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null); // non-null = editing
+  useEffect(() => setDraft(null), [path]);
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: (content: string) => api.put<{ mtime: number }>(`/workspaces/${id}/fs`, { path, content, mtime: data?.mtime }),
+    onSuccess: ({ mtime }, content) => {
+      qc.setQueryData<FileView>(["fs", id, path], (d) => d && { ...d, content, mtime, size: new Blob([content]).size });
+      setDraft(null);
+      return qc.invalidateQueries({ queryKey: ["git", id] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  // ⌘S / Ctrl+S anywhere while editing, so focus on a toolbar button doesn't open the browser's "Save page".
+  useEffect(() => {
+    if (draft === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "s" || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      if (draft !== data?.content && !save.isPending) save.mutate(draft);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draft, data?.content, save]);
   const { onPath } = useContext(Marks);
   const isMd = /\.(md|markdown)$/i.test(path);
   const html = useMemo(() => {
@@ -119,14 +142,46 @@ function Viewer({ id, path }: { id: string; path: string }) {
           </button>
         )}
         <OpenButtons id={id} path={path} />
-        {isMd && (
+        {draft === null ? (
+          !data?.truncated && (
+            <button onClick={() => setDraft(data?.content ?? "")} className="text-muted-foreground hover:text-foreground shrink-0 text-xs font-medium">
+              Edit
+            </button>
+          )
+        ) : (
+          <>
+            <button onClick={() => setDraft(null)} disabled={save.isPending} className="text-muted-foreground hover:text-foreground shrink-0 text-xs font-medium">
+              Cancel
+            </button>
+            <button title="Save (⌘S)" onClick={() => save.mutate(draft)} disabled={save.isPending || draft === data?.content} className="shrink-0 text-xs font-medium text-sky-500 hover:text-sky-400 disabled:opacity-50">
+              {save.isPending ? "Saving…" : "Save"}
+            </button>
+          </>
+        )}
+        {isMd && draft === null && (
           <button onClick={() => setRaw(!raw)} className="text-muted-foreground hover:text-foreground shrink-0 text-xs font-medium">
             {raw ? "Preview" : "Raw"}
           </button>
         )}
       </div>
       {data?.truncated && <p className="text-muted-foreground border-b px-4 py-1.5 text-xs">Showing first 512 KB of {data.size} bytes.</p>}
-      {isMd && !raw ? (
+      {draft !== null ? (
+        <textarea
+          autoFocus
+          spellCheck={false}
+          aria-label={`Edit ${path}`}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && draft === data?.content) setDraft(null);
+            else if (e.key === "Tab" && !e.shiftKey) {
+              e.preventDefault();
+              document.execCommand("insertText", false, "  "); // keeps native undo
+            }
+          }}
+          className="block field-sizing-content min-h-60 w-full resize-none bg-transparent p-4 font-mono text-xs leading-5 outline-none"
+        />
+      ) : isMd && !raw ? (
         <div className="p-4 text-[13px]">{md(data?.content ?? "")}</div>
       ) : (
         <pre className="p-4 font-mono text-xs leading-5 whitespace-pre-wrap break-all">
@@ -396,7 +451,7 @@ function FolderBar({ id, git }: { id: string; git: Branches | undefined }) {
   );
 }
 
-/** Read-only file tree + viewer for a working folder. `onPath`: ⌥-click / drag a file hands its path to the caller (terminals paste it). */
+/** File tree + viewer/editor for a working folder. `onPath`: ⌥-click / drag a file hands its path to the caller (terminals paste it). */
 export function FileBrowser({ id, onPath, compact }: { id: string; onPath?: (path: string) => void; compact?: boolean }) {
   const [sel, setSel] = useState("");
   const { data: git } = useGit(id);

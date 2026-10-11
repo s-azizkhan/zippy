@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
@@ -27,7 +27,17 @@ export async function browse(root: string, rel: string) {
   }
   const buf = (await readFile(target)).subarray(0, MAX);
   if (buf.includes(0)) return { type: "file" as const, binary: true, size: s.size };
-  return { type: "file" as const, binary: false, size: s.size, truncated: s.size > MAX, content: buf.toString("utf8") };
+  return { type: "file" as const, binary: false, size: s.size, mtime: s.mtimeMs, truncated: s.size > MAX, content: buf.toString("utf8") };
+}
+
+/** Overwrite an existing file. `mtime` from the read guards against clobbering edits made on disk since. */
+export async function saveFile(root: string, rel: string, content: string, mtime: number) {
+  const target = await resolveIn(root, rel);
+  const s = await stat(target);
+  if (!s.isFile()) throw new Error("Not a file");
+  if (s.mtimeMs !== mtime) throw Object.assign(new Error("File changed on disk since you opened it. Reload to see the latest."), { code: "STALE" });
+  await writeFile(target, content);
+  return { mtime: (await stat(target)).mtimeMs };
 }
 
 const LIMIT = 20_000;
