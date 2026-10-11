@@ -340,3 +340,13 @@ html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 .eq > span { height: 100%; transform-origin: bottom; animation: eq 0.8s ease-in-out infinite; animation-delay: calc(var(--i) * -0.27s); }
 @keyframes eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
 @media (prefers-reduced-motion: reduce) { .eq > span { animation: none; transform: scaleY(0.7); } }
+
+/* News: per-source tinted rows with accent rail and cursor glow. `--tint` set per row; `--x/--y` from pointer. */
+.news-bg { background: radial-gradient(50% 30% at 50% -5%, color-mix(in oklab, var(--tint) 8%, transparent), transparent 70%) no-repeat; transition: background 0.6s ease; }
+.news-row { transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s; }
+.news-row::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; border-radius: 2px; background: var(--tint); transform: scaleY(0); transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.news-row::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: radial-gradient(260px circle at var(--x, 50%) var(--y, 50%), color-mix(in oklab, var(--tint) 10%, transparent), transparent 70%); opacity: 0; transition: opacity 0.3s; }
+.news-row:hover, .news-row:focus-within { border-color: color-mix(in oklab, var(--tint) 35%, var(--border)); box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 14px 32px -22px color-mix(in oklab, var(--tint) 60%, transparent); }
+.news-row:hover::before, .news-row:focus-within::before { transform: scaleY(1); }
+.news-row:hover::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .news-row, .news-row::before, .news-bg { transition: none; } }
