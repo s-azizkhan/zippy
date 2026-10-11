@@ -3,8 +3,8 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, FilePlus2, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
-import { motion, Reorder, useDragControls } from "motion/react";
+import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, FilePlus2, Folder, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion, MotionConfig, Reorder, useDragControls } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useNavigate, useParams } from "react-router";
@@ -203,17 +203,37 @@ function TagChips({ t, onRemove, className }: { t: TermInfo; onRemove?: (tag: st
   );
 }
 
-/** Live state at a glance: pulsing = output right now, blue = new output you haven't looked at, red = crashed. */
+/** Live state at a glance: equalizer = output right now, breathing blue = new output you haven't looked at, red = crashed. */
 function StatusDot({ t, unread, now }: { t: TermInfo; unread: boolean; now: number }) {
   const busy = t.alive && now - t.lastDataAt < 2000;
   const label = !t.alive ? `exited ${t.exitCode}` : busy ? "output now" : unread ? "new output" : "idle";
   return (
-    <span className="relative flex size-2 shrink-0" title={label} aria-label={label} role="img">
-      {busy && <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70" />}
-      <span className={cn("relative size-2 rounded-full", !t.alive ? (t.exitCode ? "bg-red-500" : "bg-muted-foreground/40") : unread ? "bg-primary" : "bg-emerald-500")} />
+    <span className="relative flex size-2.5 shrink-0 items-center justify-center" title={label} aria-label={label} role="img">
+      {busy ? (
+        <Eq />
+      ) : (
+        <span
+          className={cn("size-2 rounded-full transition-colors", !t.alive ? (t.exitCode ? "bg-red-500 shadow-[0_0_8px_rgb(239_68_68/0.7)]" : "bg-muted-foreground/40") : unread ? "unread-dot bg-primary" : "bg-emerald-500/80")}
+          style={unread ? ({ "--c": "var(--primary)" } as React.CSSProperties) : undefined}
+        />
+      )}
     </span>
   );
 }
+
+/** Three bouncing bars: a shell is printing right now. */
+function Eq() {
+  return (
+    <span className="eq flex h-2.5 w-2.5 items-end justify-between" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <span key={i} className="w-[2px] rounded-full bg-emerald-400" style={{ "--i": i } as React.CSSProperties} />
+      ))}
+    </span>
+  );
+}
+
+const spring = { type: "spring", stiffness: 500, damping: 38 } as const;
+const ago = (ms: number) => { const s = ms / 1000; return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`; };
 
 const openPort = (port: number) => window.open(`http://localhost:${port}`, "_blank", "noopener");
 function PortChips({ ports, className }: { ports: number[]; className?: string }) {
@@ -399,7 +419,7 @@ export function TerminalsPage() {
   const { data: templates = [] } = useTerminalTemplates(org.id);
   const tkey = keys.res(org.id, "terminal-templates");
   const [tplDialog, setTplDialog] = useState<{ open: boolean; edit: TerminalTemplate | null; seed?: TerminalTemplateInput["steps"] }>({ open: false, edit: null });
-  const [tplFolded, setTplFolded] = useState(false);
+  const [tplFolded, setTplFolded] = useState(true);
   const runTpl = useApiMutation((tplId: string) => api.post<TermInfo[]>(`/terminal-templates/${tplId}/run`, {}, true), [key]);
   const delTpl = useApiMutation((tplId: string) => api.del(`/terminal-templates/${tplId}`), [tkey]);
 
@@ -535,69 +555,108 @@ export function TerminalsPage() {
   const filesWs = workspaces.find((w) => w.id === ((pickedWs && pickedWs.under === id ? pickedWs.ws : undefined) ?? current?.workspaceId ?? workspaces[0]?.id));
   const [dropping, setDropping] = useState<string | null>(null);
 
+  const running = terms.filter((t) => t.alive).length;
+  const busyN = terms.filter((t) => t.alive && now - t.lastDataAt < 2000).length;
+
   const row = (t: TermInfo) => {
     const idx = ordered.indexOf(t);
     const onScreen = live.includes(t.id);
+    const active = t.id === id;
     const proc = t.process && !SHELLS.has(t.process) ? t.process : null;
+    const tports = portsOf(t.id);
     return (
-      <div
-        key={t.id}
-        draggable
-        onDragStart={(e) => e.dataTransfer.setData("text/zippy-term", t.id)}
-        className={cn(
-          "group/t hover:bg-foreground/[0.05] relative flex items-center gap-2 rounded-lg pr-1 pl-2 text-[13px]",
-          t.id === id ? "bg-foreground/[0.08]" : onScreen && "bg-foreground/[0.03]",
-        )}
-      >
-        {onScreen && <span className={cn("absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full", t.id === id ? "bg-primary" : "bg-foreground/20")} aria-hidden />}
-        {editing === t.id ? (
-          <input
-            autoFocus
-            defaultValue={t.title}
-            aria-label="Terminal name"
-            className="my-1 min-w-0 flex-1 rounded border-0 bg-transparent px-0 font-mono text-xs outline-none"
-            onBlur={(e) => {
-              const title = e.currentTarget.value.trim();
-              if (title && title !== t.title) rename.mutate({ id: t.id, title });
-              setEditing(null);
-            }}
-            onKeyDown={(e) => (e.key === "Enter" && e.currentTarget.blur(), e.key === "Escape" && ((e.currentTarget.value = t.title), e.currentTarget.blur()))}
-          />
-        ) : (
-          <button
-            className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
-            title={`${t.command ? `$ ${t.command}\n` : ""}Double-click to rename (@handle or ZIP-12 in the name tags it) · ${M}-click to split`}
-            onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)}
-            onDoubleClick={() => setEditing(t.id)}
-          >
-            <StatusDot t={t} unread={unread(t)} now={now} />
-            <span className={cn("truncate font-mono text-xs", unread(t) && "text-foreground font-semibold")}>{t.title}</span>
-            <TagChips t={t} className="text-muted-foreground" />
-            {proc && <span className="text-muted-foreground shrink-0 truncate font-mono text-[10px]">{proc}</span>}
-            {!t.alive && <span className={cn("shrink-0 text-[10px]", t.exitCode ? "text-red-500" : "text-muted-foreground")}>exit {t.exitCode}</span>}
-          </button>
-        )}
-        <PortChips ports={portsOf(t.id)} />
-        {idx < 9 && <span className="text-muted-foreground/60 shrink-0 font-mono text-[10px] group-hover/t:hidden">{M}{idx + 1}</span>}
-        <span className="hidden shrink-0 items-center group-hover/t:flex group-focus-within/t:flex">
-          {!onScreen && live.length < MAX_PANES && (
-            <button aria-label={`Open ${t.title} in split`} title="Open in split" onClick={() => show(t.id, true)} className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center rounded">
-              <Columns2 className="size-3.5" aria-hidden />
+      <motion.div key={t.id} layout="position" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -14, transition: { duration: 0.15 } }} transition={spring}>
+        <div
+          draggable
+          onDragStart={(e) => e.dataTransfer.setData("text/zippy-term", t.id)}
+          className={cn("group/t relative flex items-center gap-2 rounded-lg pr-1.5 pl-2.5 transition-colors", !active && "hover:bg-foreground/[0.04]")}
+        >
+          {active ? (
+            <motion.span layoutId="term-active" transition={spring} className="ring-primary/25 absolute inset-0 rounded-lg bg-[linear-gradient(90deg,color-mix(in_oklab,var(--primary)_16%,transparent),color-mix(in_oklab,var(--primary)_3%,transparent))] ring-1" aria-hidden>
+              <span className="bg-primary absolute top-2.5 bottom-2.5 -left-px w-0.5 rounded-full shadow-[0_0_10px_1px_var(--primary)]" />
+            </motion.span>
+          ) : (
+            onScreen && <span className="bg-foreground/20 absolute top-3 bottom-3 left-0 w-0.5 rounded-full" aria-hidden />
+          )}
+          {editing === t.id ? (
+            <input
+              autoFocus
+              defaultValue={t.title}
+              aria-label="Terminal name"
+              className="relative my-2.5 min-w-0 flex-1 rounded border-0 bg-transparent px-0 font-mono text-xs outline-none"
+              onBlur={(e) => {
+                const title = e.currentTarget.value.trim();
+                if (title && title !== t.title) rename.mutate({ id: t.id, title });
+                setEditing(null);
+              }}
+              onKeyDown={(e) => (e.key === "Enter" && e.currentTarget.blur(), e.key === "Escape" && ((e.currentTarget.value = t.title), e.currentTarget.blur()))}
+            />
+          ) : (
+            <button
+              className="relative flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-left outline-none"
+              title={`${t.command ? `$ ${t.command}\n` : ""}Double-click to rename (@handle or ZIP-12 in the name tags it) · ${M}-click to split`}
+              onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)}
+              onDoubleClick={() => setEditing(t.id)}
+            >
+              <StatusDot t={t} unread={unread(t)} now={now} />
+              <span className="grid min-w-0 flex-1 gap-px">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className={cn("truncate font-mono text-xs transition-colors", active || unread(t) ? "text-foreground" : "text-foreground/80", unread(t) && "font-semibold")}>{t.title}</span>
+                  <TagChips t={t} className="text-muted-foreground" />
+                </span>
+                <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-[10.5px] leading-4">
+                  {!t.alive ? (
+                    <span className={cn("shrink-0", t.exitCode && "text-red-500")}>exited {t.exitCode}</span>
+                  ) : proc ? (
+                    <span className="text-foreground/70 shrink-0 font-mono">{proc}</span>
+                  ) : (
+                    <span className="truncate font-mono">{t.command ? `$ ${t.command}` : "shell"}</span>
+                  )}
+                  {t.lastDataAt > 0 && <span className="text-muted-foreground/60 shrink-0 tabular-nums">· {ago(now - t.lastDataAt)}</span>}
+                </span>
+              </span>
             </button>
           )}
-          <button aria-label={`Close ${t.title}`} title="Close" onClick={() => kill(t)} className="text-muted-foreground hover:text-destructive flex size-5 items-center justify-center rounded">
-            <X className="size-3.5" aria-hidden />
-          </button>
-        </span>
-      </div>
+          {tports.length > 0 && <span className="relative flex shrink-0 items-center gap-0.5 transition-opacity group-hover/t:opacity-0"><PortChips ports={tports} /></span>}
+          {idx < 9 && !tports.length && <Kbd className="relative shrink-0 font-mono text-[10px] transition-opacity group-hover/t:opacity-0">{M}{idx + 1}</Kbd>}
+          <span className="absolute right-1.5 flex translate-x-1 items-center gap-0.5 opacity-0 transition-all duration-150 group-focus-within/t:translate-x-0 group-focus-within/t:opacity-100 group-hover/t:translate-x-0 group-hover/t:opacity-100">
+            {!onScreen && live.length < MAX_PANES && (
+              <button aria-label={`Open ${t.title} in split`} title="Open in split" onClick={() => show(t.id, true)} className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.08] bg-background/80 flex size-6 items-center justify-center rounded-md backdrop-blur">
+                <Columns2 className="size-3.5" aria-hidden />
+              </button>
+            )}
+            <button aria-label={`Close ${t.title}`} title="Close" onClick={() => kill(t)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 bg-background/80 flex size-6 items-center justify-center rounded-md backdrop-blur">
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </span>
+        </div>
+      </motion.div>
     );
   };
 
+  const sectionHead = "text-muted-foreground/80 hover:text-foreground flex min-w-0 items-center gap-1 font-mono text-[10px] font-medium tracking-[0.14em] uppercase";
+  const collapse = { initial: { height: 0, opacity: 0, overflow: "hidden" }, animate: { height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }, exit: { height: 0, opacity: 0, overflow: "hidden" }, transition: spring } as const;
+
   return (
     <div className="flex min-h-0 flex-1">
-      <aside className={cn("border-foreground/[0.07] flex shrink-0 flex-col gap-3 overflow-y-auto border-r py-4 transition-[width] duration-150", hidden ? "w-11 items-center px-1" : "w-64 px-3")} aria-label="Terminals">
-        <div className={cn("flex items-center", hidden ? "justify-center" : "justify-between px-1")}>
-          {!hidden && <h1 className="text-[15px] font-semibold tracking-tight">Terminals</h1>}
+      <MotionConfig reducedMotion="user">
+      <motion.aside initial={false} animate={{ width: hidden ? 48 : 272 }} transition={spring} className="border-foreground/[0.07] relative flex shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_4%,transparent),transparent_40%)]" aria-label="Terminals">
+        <div className={cn("bg-background/70 sticky top-0 z-10 flex items-center pt-4 pb-3 backdrop-blur-md", hidden ? "justify-center px-1" : "justify-between px-4")}>
+          {!hidden && (
+            <div className="min-w-0">
+              <h1 className="text-[15px] font-semibold tracking-tight">Terminals</h1>
+              <p className="text-muted-foreground flex items-center gap-1 text-[11px] tabular-nums">
+                <motion.span key={running} initial={{ y: -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={spring}>{running}</motion.span> running
+                <AnimatePresence>
+                  {busyN > 0 && (
+                    <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-1 text-emerald-500">
+                      · <Eq /> {busyN} active
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </p>
+            </div>
+          )}
           <div className="flex items-center">
             {!hidden && terms.some((t) => !t.alive) && (
               <Button size="icon-xs" variant="ghost" aria-label="Close exited terminals" title="Close exited terminals" onClick={clearExited}>
@@ -628,27 +687,33 @@ export function TerminalsPage() {
           </div>
         </div>
         {hidden ? (
-          ordered.map((t) => (
-            <button key={t.id} title={t.title} aria-label={t.title} onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)} className={cn("hover:bg-foreground/[0.06] flex size-8 items-center justify-center rounded-lg", t.id === id ? "bg-foreground/[0.1]" : live.includes(t.id) && "bg-foreground/[0.04]")}>
-              <StatusDot t={t} unread={unread(t)} now={now} />
-            </button>
-          ))
+          <div className="flex flex-col items-center gap-1 px-1 pb-4">
+            {ordered.map((t, i) => (
+              <button key={t.id} title={t.title} aria-label={t.title} onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)} style={{ "--i": i } as React.CSSProperties} className={cn("rise relative flex size-9 items-center justify-center rounded-lg font-mono text-[10px] uppercase", t.id === id ? "text-foreground" : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground", t.id !== id && live.includes(t.id) && "bg-foreground/[0.04]")}>
+                {t.id === id && <motion.span layoutId="term-rail-active" transition={spring} className="bg-primary/15 ring-primary/30 absolute inset-0 rounded-lg ring-1" aria-hidden />}
+                <span className="relative">{t.title.replace(/[^a-z0-9]/gi, "").slice(0, 2) || "sh"}</span>
+                <span className="absolute right-1 bottom-1"><StatusDot t={t} unread={unread(t)} now={now} /></span>
+              </button>
+            ))}
+          </div>
         ) : (
-          <>
-            <label className="border-foreground/[0.07] bg-background/40 focus-within:border-primary/40 flex h-8 items-center gap-2 rounded-lg border px-2">
+          <div className="rise grid gap-4 px-3 pb-4">
+            <label className="border-foreground/[0.07] bg-foreground/[0.02] focus-within:border-primary/40 focus-within:ring-primary/15 flex h-8 items-center gap-2 rounded-lg border px-2.5 transition-shadow focus-within:ring-4">
               <Search className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, folder, process, port…" aria-label="Search sessions" className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-xs outline-none" />
-              {q && (
-                <button aria-label="Clear search" onClick={() => setQ("")} className="text-muted-foreground hover:text-foreground">
-                  <X className="size-3" aria-hidden />
-                </button>
-              )}
+              <AnimatePresence>
+                {q && (
+                  <motion.button initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} transition={spring} aria-label="Clear search" onClick={() => setQ("")} className="text-muted-foreground hover:text-foreground">
+                    <X className="size-3" aria-hidden />
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </label>
             {!needle && (
-              <section className="grid gap-0.5">
+              <section className="grid gap-1">
                 <div className="flex items-center justify-between px-1">
-                  <button onClick={() => setTplFolded((f) => !f)} aria-expanded={!tplFolded} className="text-muted-foreground/80 hover:text-foreground flex min-w-0 items-center gap-1 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">
-                    <ChevronDown className={cn("size-3 shrink-0 transition-transform", tplFolded && "-rotate-90")} aria-hidden />
+                  <button onClick={() => setTplFolded((f) => !f)} aria-expanded={!tplFolded} className={sectionHead}>
+                    <motion.span animate={{ rotate: tplFolded ? -90 : 0 }} transition={spring} className="flex"><ChevronDown className="size-3 shrink-0" aria-hidden /></motion.span>
                     Templates
                   </button>
                   <div className="flex items-center">
@@ -662,27 +727,34 @@ export function TerminalsPage() {
                     </Button>
                   </div>
                 </div>
-                {!tplFolded &&
-                  templates.map((tpl) => (
-                    <div key={tpl.id} className="group/p hover:bg-foreground/[0.05] flex items-center gap-1 rounded-lg pr-1 pl-2 text-[13px]">
-                      <button className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left" title={tpl.steps.map((st) => (st.command || "shell") + (st.delaySec ? ` (+${st.delaySec}s)` : "")).join(" · ")} onClick={() => runTemplate(tpl.id)} disabled={runTpl.isPending}>
-                        <Play className="text-primary size-3 shrink-0 fill-current" aria-hidden />
-                        <span className="truncate text-xs">{tpl.name}</span>
-                        <span className="text-muted-foreground shrink-0 text-[10px]">{tpl.steps.length}</span>
-                      </button>
-                      <button aria-label={`Edit ${tpl.name}`} onClick={() => setTplDialog({ open: true, edit: tpl })} className="text-muted-foreground hover:text-foreground flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover/p:opacity-100 focus-visible:opacity-100">
-                        <Pencil className="size-3" aria-hidden />
-                      </button>
-                      <button aria-label={`Delete ${tpl.name}`} onClick={() => delTpl.mutate(tpl.id)} className="text-muted-foreground hover:text-destructive flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover/p:opacity-100 focus-visible:opacity-100">
-                        <Trash2 className="size-3" aria-hidden />
-                      </button>
-                    </div>
-                  ))}
-                {!tplFolded && !templates.length && (
-                  <button onClick={() => (live.length ? saveLayout() : setTplDialog({ open: true, edit: null }))} disabled={!workspaces.length} className="text-muted-foreground hover:text-foreground px-2 py-1 text-left text-xs">
-                    {live.length ? "+ Save these panes to reopen in one click" : "+ Save a set of shells to reopen in one click"}
-                  </button>
-                )}
+                <AnimatePresence initial={false}>
+                  {!tplFolded && (
+                    <motion.div key="tpl" {...collapse} className="grid gap-0.5">
+                      {templates.map((tpl) => (
+                        <div key={tpl.id} className="group/p hover:bg-foreground/[0.04] flex items-center gap-1 rounded-lg pr-1 pl-1.5 transition-colors">
+                          <div className="flex min-w-0 flex-1 items-center gap-2 py-1" title={tpl.steps.map((st) => (st.command || "shell") + (st.delaySec ? ` (+${st.delaySec}s)` : "")).join(" · ")}>
+                            <button aria-label={`Run ${tpl.name}`} title={`Run ${tpl.name}`} onClick={() => runTemplate(tpl.id)} disabled={runTpl.isPending} className="bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground flex size-5 shrink-0 items-center justify-center rounded-md transition-all hover:scale-110 hover:shadow-[0_0_12px_-2px_var(--primary)]">
+                              <Play className="size-2.5 fill-current" aria-hidden />
+                            </button>
+                            <span className="truncate text-xs">{tpl.name}</span>
+                            <span className="text-muted-foreground bg-foreground/[0.05] shrink-0 rounded px-1 text-[10px] tabular-nums">{tpl.steps.length}</span>
+                          </div>
+                          <button aria-label={`Edit ${tpl.name}`} onClick={() => setTplDialog({ open: true, edit: tpl })} className="text-muted-foreground hover:text-foreground flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover/p:opacity-100 focus-visible:opacity-100">
+                            <Pencil className="size-3" aria-hidden />
+                          </button>
+                          <button aria-label={`Delete ${tpl.name}`} onClick={() => delTpl.mutate(tpl.id)} className="text-muted-foreground hover:text-destructive flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover/p:opacity-100 focus-visible:opacity-100">
+                            <Trash2 className="size-3" aria-hidden />
+                          </button>
+                        </div>
+                      ))}
+                      {!templates.length && (
+                        <button onClick={() => (live.length ? saveLayout() : setTplDialog({ open: true, edit: null }))} disabled={!workspaces.length} className="text-muted-foreground hover:text-foreground hover:border-foreground/20 border-foreground/10 rounded-lg border border-dashed px-2.5 py-2 text-left text-xs">
+                          {live.length ? "+ Save these panes to reopen in one click" : "+ Save a set of shells to reopen in one click"}
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </section>
             )}
             {workspaces.map((w) => {
@@ -691,32 +763,40 @@ export function TerminalsPage() {
               const open_ = needle ? true : !folded[w.id];
               const attention = !open_ && mine.some((t) => unread(t) || (!t.alive && t.exitCode));
               return (
-                <section key={w.id} className="grid gap-0.5">
-                  <div className="flex items-center justify-between px-1">
-                    <button onClick={() => setFolded((f) => ({ ...f, [w.id]: !f[w.id] }))} aria-expanded={open_} className="text-muted-foreground/80 hover:text-foreground flex min-w-0 items-center gap-1 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">
-                      <ChevronDown className={cn("size-3 shrink-0 transition-transform", !open_ && "-rotate-90")} aria-hidden />
+                <section key={w.id} className="grid gap-1">
+                  <div className="group/s flex items-center justify-between px-1">
+                    <button onClick={() => setFolded((f) => ({ ...f, [w.id]: !f[w.id] }))} aria-expanded={open_} className="text-foreground/85 hover:text-foreground flex min-w-0 items-center gap-1.5 text-xs font-semibold tracking-tight">
+                      <motion.span animate={{ rotate: open_ ? 0 : -90 }} transition={spring} className="text-muted-foreground flex"><ChevronDown className="size-3 shrink-0" aria-hidden /></motion.span>
+                      <Folder className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
                       <span className="truncate">{w.name}</span>
-                      {!open_ && mine.length > 0 && <span className="text-muted-foreground/60 ml-1 normal-case tracking-normal">{mine.length}</span>}
-                      {attention && <span className="bg-primary ml-1 size-1.5 rounded-full" aria-label="new output" />}
+                      {mine.length > 0 && <span className="bg-foreground/[0.06] text-muted-foreground rounded px-1 font-mono text-[10px] font-medium tabular-nums">{mine.length}</span>}
+                      {attention && <span className="unread-dot bg-primary ml-1 size-1.5 rounded-full" style={{ "--c": "var(--primary)" } as React.CSSProperties} aria-label="new output" />}
                     </button>
-                    <Button size="icon-xs" variant="ghost" aria-label={`New terminal in ${w.name}`} title={`New terminal in ${w.name} (${M}-click to split)`} onClick={(e) => open(w.id, e.metaKey || e.ctrlKey)} disabled={spawn.isPending}>
+                    <Button size="icon-xs" variant="ghost" aria-label={`New terminal in ${w.name}`} title={`New terminal in ${w.name} (${M}-click to split)`} onClick={(e) => open(w.id, e.metaKey || e.ctrlKey)} disabled={spawn.isPending} className="opacity-60 group-hover/s:opacity-100 hover:rotate-90">
                       <Plus aria-hidden />
                     </Button>
                   </div>
-                  {open_ && mine.map(row)}
-                  {open_ && !mine.length && (
-                    <button onClick={() => open(w.id)} className="text-muted-foreground hover:text-foreground px-2 py-1 text-left text-xs">
-                      + Open shell
-                    </button>
-                  )}
+                  <AnimatePresence initial={false}>
+                    {open_ && (
+                      <motion.div key="body" {...collapse} className="grid gap-0.5">
+                        <AnimatePresence initial={false}>{mine.map(row)}</AnimatePresence>
+                        {!mine.length && (
+                          <button onClick={() => open(w.id)} className="text-muted-foreground hover:text-foreground hover:border-foreground/20 border-foreground/10 flex items-center gap-2 rounded-lg border border-dashed px-2.5 py-2 text-left text-xs">
+                            <Plus className="size-3" aria-hidden /> Open shell
+                          </button>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </section>
               );
             })}
             {needle && !terms.some((t) => hit(t, workspaces.find((w) => w.id === t.workspaceId) ?? { name: "" })) && <p className="text-muted-foreground px-1 text-xs">No sessions match.</p>}
             {!workspaces.length && <p className="text-muted-foreground px-1 text-xs">Add a working folder first.</p>}
-          </>
+          </div>
         )}
-      </aside>
+      </motion.aside>
+      </MotionConfig>
       {tplDialog.open && <TemplateDialog orgId={org.id} workspaces={workspaces} initial={tplDialog.edit} seed={tplDialog.seed} onClose={() => setTplDialog({ open: false, edit: null })} />}
       <Group orientation="horizontal" id="term-files" defaultLayout={filesLayout.defaultLayout} onLayoutChanged={filesLayout.onLayoutChanged} className="min-h-0 min-w-0 flex-1">
       {shells && (

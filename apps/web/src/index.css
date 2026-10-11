@@ -335,3 +335,8 @@ html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 .stagger > .rise:nth-child(7) { animation-delay: 240ms; }
 .stagger > .rise:nth-child(n + 8) { animation-delay: 280ms; }
 @media (prefers-reduced-motion: reduce) { .float { animation: none; } }
+
+/* Terminals: busy shell equalizer */
+.eq > span { height: 100%; transform-origin: bottom; animation: eq 0.8s ease-in-out infinite; animation-delay: calc(var(--i) * -0.27s); }
+@keyframes eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .eq > span { animation: none; transform: scaleY(0.7); } }
