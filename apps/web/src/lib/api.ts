@@ -97,8 +97,8 @@ export const useRoutines = (orgId?: string) => useApiQuery<Routine[]>(keys.res(o
 export type Todo = TodoInput & { id: string; createdAt: string };
 export const useTodos = (orgId?: string) => useApiQuery<Todo[]>(keys.res(orgId!, "todos"), orgId ? `/orgs/${orgId}/todos` : null);
 export type News = { id: string; source: "hn" | "github" | "hf" | "papers" | "lobsters" | "devto"; title: string; url: string; summary: string; score: number; rank: number | null; saved: boolean; publishedAt: string | null };
-// Server refreshes every 2h; poll so an open page picks it up.
-export const useNews = () => useQuery({ queryKey: ["news"], queryFn: () => api.get<{ items: News[]; refreshedAt: string | null }>("/news"), refetchInterval: 600_000 });
+// News page drives refreshes on the user's chosen interval (stored in localStorage).
+export const useNews = () => useQuery({ queryKey: ["news"], queryFn: () => api.get<{ items: News[]; refreshedAt: string | null }>("/news") });
 export const useAgentWork = (agentId?: string) =>
   useQuery({ queryKey: ["agent-work", agentId], queryFn: () => api.get<AgentWork[]>(`/agents/${agentId}/work`), enabled: !!agentId, refetchInterval: 5000 });
 export const useTicket = (id?: string) => useApiQuery<TicketDetail>(keys.ticket(id!), id ? `/tickets/${id}` : null);

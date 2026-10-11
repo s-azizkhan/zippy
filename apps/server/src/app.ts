@@ -706,7 +706,6 @@ app.patch("/news/:id", async (c) => {
   const row = await setSaved(c.req.param("id"), saved);
   return row ? c.json(row) : c.notFound();
 });
-setInterval(() => refreshNews().catch((e) => console.error("[news]", e.message)), 2 * 3600_000).unref();
 
 // Agent sessions mid-turn right now (tickets and chats).
 async function runningOf(orgId: string) {
