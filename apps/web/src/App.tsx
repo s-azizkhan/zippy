@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, ChevronsUpDown, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, ListChecks as ListChecksIcon, Newspaper as NewspaperIcon, Radio as RadioIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
+import { Activity as ActivityIcon, Bot as BotIcon, ChevronDown, MessageSquare, FolderGit2 as FolderGit2Icon, Inbox as MailboxIcon, Layers as LayersIcon, ListChecks as ListChecksIcon, Newspaper as NewspaperIcon, Radio as RadioIcon, RefreshCw as RefreshCWIcon, Settings as SettingsIcon, Trash2, Workflow as WorkflowIcon } from "lucide-react";
 import { PanelLeftCloseIcon as PanelLeftClose } from "@/components/ui/panel-left-close";
 import { PanelLeftOpenIcon as PanelLeftOpen } from "@/components/ui/panel-left-open";
 import { PlusIcon as Plus } from "@/components/ui/plus";
@@ -13,10 +13,10 @@ import { toast } from "sonner";
 import { createBrowserRouter, Link, NavLink, Outlet, RouterProvider, useLocation, useMatches, useNavigate, useSearchParams } from "react-router";
 import { ErrorPage, ErrorPreview, RouteError, errorCode } from "@/components/error-page";
 import { MobileNav } from "@/components/mobile-nav";
+import { OrgSwitcher } from "@/components/org-switcher";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LinearIssueModal } from "@/components/linear-issues";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -172,7 +172,7 @@ function UsageMeter() {
 
 function Sidebar() {
   const { data: orgs = [] } = useOrgs();
-  const { orgId, setOrgId, setNewTicketOpen, setPaletteOpen, setOnboardingOpen, collapsed, toggleCollapsed } = useUI();
+  const { orgId, setNewTicketOpen, setPaletteOpen, collapsed, toggleCollapsed } = useUI();
   const org = orgs.find((o) => o.id === orgId) ?? orgs[0]!;
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const { pathname, search } = useLocation();
@@ -207,33 +207,7 @@ function Sidebar() {
         </Tooltip>
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger className="border-foreground/[0.07] bg-foreground/[0.03] hover:bg-foreground/[0.06] focus-visible:ring-ring/60 relative flex h-10 min-w-0 items-center justify-center gap-2.5 rounded-xl border px-1.5 text-left outline-none transition-colors focus-visible:ring-2 wide:justify-start">
-          <span className="from-primary flex size-6 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br to-cyan-500 text-[11px] font-bold text-white shadow-sm" aria-hidden>
-            {org.name.slice(0, 1).toUpperCase()}
-          </span>
-          <span className="hidden min-w-0 flex-1 leading-tight wide:block">
-            <span className="block truncate text-[13px] font-semibold">{org.name}</span>
-            <span className="text-muted-foreground block font-mono text-[10px]">organization</span>
-          </span>
-          <ChevronsUpDown className="text-muted-foreground hidden size-3.5 wide:block" aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel className="text-muted-foreground text-xs">Switch organization</DropdownMenuLabel>
-          {orgs.map((o) => (
-            <DropdownMenuItem key={o.id} onSelect={() => setOrgId(o.id)}>
-              {o.name}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem onSelect={() => setOnboardingOpen(true)}>
-            <Plus className="size-4" aria-hidden /> New organization
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link to="/settings">Settings</Link>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <OrgSwitcher org={org} />
 
       <div className="relative hidden items-center gap-1.5 wide:flex">
         <button onClick={() => setPaletteOpen(true)} className="border-foreground/[0.07] text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/[0.06] bg-background/40 focus-visible:ring-ring/60 flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2">

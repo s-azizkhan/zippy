@@ -2,6 +2,7 @@ import { Activity, Bot, Inbox, Layers, ListChecks, Check, ChevronRight, FolderGi
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
+import { OrgAvatar, useSwitchOrg } from "@/components/org-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useOrgs, useRunning, useWorkspaces } from "@/lib/api";
@@ -64,8 +65,10 @@ function Item({ icon: Icon, label, color, on, count, to, onClick }: { icon: Icon
 
 export function MobileNav({ orgId }: { orgId: string }) {
   const { pathname, search } = useLocation();
-  const { setNewTicketOpen, setPaletteOpen, setOrgId, setOnboardingOpen } = useUI();
+  const { setNewTicketOpen, setPaletteOpen, setOnboardingOpen } = useUI();
   const { data: orgs = [] } = useOrgs();
+  const cur = orgs.find((o) => o.id === orgId);
+  const switchOrg = useSwitchOrg();
   const { unread: inbox } = useInboxView(orgId);
   const { data: running = [] } = useRunning(orgId);
   const { data: folders = [] } = useWorkspaces(orgId);
@@ -112,28 +115,37 @@ export function MobileNav({ orgId }: { orgId: string }) {
             ))}
           </div>
           <section className="grid gap-1.5">
-            <button onClick={() => setOrgOpen(!orgOpen)} aria-expanded={orgOpen} className="text-muted-foreground flex items-center gap-1.5 px-1 text-[11px] font-medium tracking-wider uppercase">
-              Organization
-              <span className="text-foreground/80 normal-case tracking-normal">· {orgs.find((o) => o.id === orgId)?.name}</span>
-              <ChevronRight className={cn("ml-auto size-3.5 transition-transform", orgOpen && "rotate-90")} aria-hidden />
+            <button onClick={() => setOrgOpen(!orgOpen)} aria-expanded={orgOpen} className="glass flex h-12 items-center gap-3 rounded-2xl px-3 text-left active:scale-[0.98] transition-transform">
+              {cur && <OrgAvatar org={cur} className="size-8 text-xs" />}
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="text-muted-foreground block text-[10px] font-medium tracking-wider uppercase">Organization</span>
+                <span className="block truncate text-[13px] font-semibold">{cur?.name}</span>
+              </span>
+              <motion.span animate={{ rotate: orgOpen ? 90 : 0 }} transition={spring}>
+                <ChevronRight className="text-muted-foreground size-4" aria-hidden />
+              </motion.span>
             </button>
-            {orgOpen && <div className="glass sheet-up divide-border/60 divide-y overflow-hidden rounded-2xl">
-              {orgs.map((o) => (
-                <button key={o.id} onClick={() => (setOrgId(o.id), setMore(false))} className="active:bg-accent/60 flex w-full items-center gap-3 px-3 py-2.5 text-left text-[13px] font-medium">
-                  <span className="from-primary flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br to-cyan-500 text-xs font-bold text-white" aria-hidden>
-                    {o.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                  {o.id === orgId && <Check className="text-primary size-4 shrink-0" aria-label="Current" />}
-                </button>
-              ))}
-              <button onClick={() => (setMore(false), setOnboardingOpen(true))} className="text-muted-foreground active:bg-accent/60 flex w-full items-center gap-3 px-3 py-2.5 text-left text-[13px] font-medium">
-                <span className="border-foreground/20 flex size-8 shrink-0 items-center justify-center rounded-lg border border-dashed">
-                  <Plus className="size-4" aria-hidden />
-                </span>
-                New organization
-              </button>
-            </div>}
+            <AnimatePresence initial={false}>
+              {orgOpen && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring} className="overflow-hidden">
+                  <div className="glass divide-border/60 divide-y overflow-hidden rounded-2xl">
+                    {orgs.map((o, i) => (
+                      <motion.button key={o.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ ...spring, delay: i * 0.03 }} onClick={() => (switchOrg(o), setMore(false))} className="active:bg-accent/60 flex w-full items-center gap-3 px-3 py-2.5 text-left text-[13px] font-medium">
+                        <OrgAvatar org={o} className="size-8 text-xs" />
+                        <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                        {o.id === orgId && <Check className="text-primary size-4 shrink-0" aria-label="Current" />}
+                      </motion.button>
+                    ))}
+                    <button onClick={() => (setMore(false), setOnboardingOpen(true))} className="text-muted-foreground active:bg-accent/60 flex w-full items-center gap-3 px-3 py-2.5 text-left text-[13px] font-medium">
+                      <span className="border-foreground/20 flex size-8 shrink-0 items-center justify-center rounded-lg border border-dashed">
+                        <Plus className="size-4" aria-hidden />
+                      </span>
+                      New organization
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </section>
           {folders.length > 0 && (
             <section className="grid gap-1.5">

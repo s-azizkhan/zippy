@@ -9,7 +9,8 @@ import type { Org } from "@zippy/shared";
 import { StatusIcon } from "@/components/status";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useThemeSwitch } from "@/components/theme-toggle";
-import { api, keys, useTerminalTemplates, useTerminals, useTickets, useWorkspaces, type TermInfo } from "@/lib/api";
+import { OrgAvatar, useSwitchOrg } from "@/components/org-switcher";
+import { api, keys, useOrgs, useTerminalTemplates, useTerminals, useTickets, useWorkspaces, type TermInfo } from "@/lib/api";
 import { SETTINGS_TABS } from "@/lib/settings-tabs";
 import { useUI } from "@/lib/store";
 
@@ -22,6 +23,8 @@ export function CommandPalette({ org }: { org: Org }) {
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const { data: templates = [] } = useTerminalTemplates(org.id);
   const qc = useQueryClient();
+  const { data: orgs = [] } = useOrgs();
+  const switchOrg = useSwitchOrg();
   const termKey = keys.res(org.id, "terminals");
   const newTerm = (workspaceId: string) =>
     api.post<TermInfo>(`/workspaces/${workspaceId}/terminals`, {}, true).then((t) => (qc.setQueryData<TermInfo[]>(termKey, (ts = []) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t])), navigate(`/terminals/${t.id}`)));
@@ -59,6 +62,15 @@ export function CommandPalette({ org }: { org: Org }) {
             </CommandItem>
           ))}
         </CommandGroup>
+        {orgs.length > 1 && (
+          <CommandGroup heading="Organizations">
+            {orgs.filter((o) => o.id !== org.id).map((o) => (
+              <CommandItem key={o.id} value={`switch organization ${o.name} ${o.id}`} onSelect={run(() => switchOrg(o))}>
+                <OrgAvatar org={o} className="size-4 rounded text-[9px]" /> Switch to {o.name}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         <CommandGroup heading="Terminals">
           {terms.map((t) => (
             <CommandItem key={t.id} value={`terminal ${t.title} ${t.process} ${workspaces.find((w) => w.id === t.workspaceId)?.name ?? ""}`} onSelect={run(() => navigate(`/terminals/${t.id}`))}>
