@@ -350,3 +350,11 @@ html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 .news-row:hover::before, .news-row:focus-within::before { transform: scaleY(1); }
 .news-row:hover::after { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .news-row, .news-row::before, .news-bg { transition: none; } }
+
+/* File viewer find (⌘F): CSS Custom Highlight API ranges, see FindBar. */
+::highlight(find) {
+  background-color: #f5c26b55;
+}
+::highlight(find-active) {
+  background-color: #8b93e6aa;
+}

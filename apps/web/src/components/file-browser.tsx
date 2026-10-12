@@ -1,11 +1,11 @@
 import type { IconType } from "@/lib/anim-icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AppWindow, ArrowDown, ArrowUp, Archive, ChevronRight, Copy, File, FileCode, FileJson, Folder, FolderSearch, GitBranch, GitCommitHorizontal, Image, MoreHorizontal, RefreshCw, SquareTerminal, UserRound } from "lucide-react";
+import { AppWindow, ArrowDown, ArrowUp, Archive, ChevronDown, ChevronRight, ChevronUp, Copy, File, FileCode, FileJson, Folder, FolderSearch, GitBranch, GitCommitHorizontal, Image, MoreHorizontal, RefreshCw, Search, SquareTerminal, UserRound, X } from "lucide-react";
 import { FileTextIcon as FileText } from "@/components/ui/file-text";
 import { FolderOpenIcon as FolderOpen } from "@/components/ui/folder-open";
 import { SettingsIcon as Settings } from "@/components/ui/settings";
 import hljs from "highlight.js/lib/common";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { md } from "@/components/activity";
@@ -94,11 +94,101 @@ function Tree({ id, path, depth, sel, onSel }: { id: string; path: string; depth
   );
 }
 
+/** Case-insensitive matches of q in root's text, spanning element boundaries (hljs splits tokens into spans). */
+function findRanges(root: Node, q: string) {
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  const starts: number[] = [];
+  let text = "";
+  for (let n; (n = walk.nextNode()); ) {
+    nodes.push(n as Text);
+    starts.push(text.length);
+    text += n.nodeValue;
+  }
+  const at = (off: number, end: boolean) => {
+    let i = starts.length - 1;
+    while (i > 0 && (end ? starts[i] >= off : starts[i] > off)) i--;
+    return [nodes[i], off - starts[i]] as const;
+  };
+  const hay = text.toLowerCase(); // ponytail: assumes lowercasing keeps lengths (true outside a few Unicode edge cases)
+  const out: Range[] = [];
+  for (let i = hay.indexOf(q); i >= 0 && out.length < 5000; i = hay.indexOf(q, i + q.length)) {
+    const r = document.createRange();
+    r.setStart(...at(i, false));
+    r.setEnd(...at(i + q.length, true));
+    out.push(r);
+  }
+  return out;
+}
+
+/** ⌘F inside a file: highlights every match via the CSS Custom Highlight API, so the rendered DOM is left untouched. */
+function FindBar({ root, deps, onClose }: { root: RefObject<HTMLElement | null>; deps: unknown[]; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [cur, setCur] = useState(0);
+  const [ranges, setRanges] = useState<Range[]>([]);
+  useEffect(() => {
+    const el = root.current;
+    setRanges(el && q ? findRanges(el, q.toLowerCase()) : []);
+    setCur(0);
+  }, [q, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const active = ranges[cur];
+    CSS.highlights.set("find", new Highlight(...ranges));
+    CSS.highlights.set("find-active", new Highlight(...(active ? [active] : [])));
+    const scroller = root.current?.closest(".overflow-auto");
+    if (active && scroller) {
+      const r = active.getBoundingClientRect();
+      const box = scroller.getBoundingClientRect();
+      if (r.top < box.top + 48 || r.bottom > box.bottom) scroller.scrollTop += r.top - box.top - box.height / 2;
+    }
+  }, [ranges, cur, root]);
+  useEffect(() => () => (CSS.highlights.delete("find"), void CSS.highlights.delete("find-active")), []);
+  const go = (dir: 1 | -1) => ranges.length && setCur((c) => (c + dir + ranges.length) % ranges.length);
+  return (
+    <div className="bg-popover/95 border-foreground/10 absolute top-full right-3 z-10 mt-2 flex items-center gap-1 rounded-lg border p-1 shadow-lg backdrop-blur">
+      <Search className="text-muted-foreground ml-1 size-3.5" aria-hidden />
+      <input
+        autoFocus
+        value={q}
+        placeholder="Find…"
+        aria-label="Find in file"
+        className="w-40 bg-transparent px-1 text-xs outline-none"
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => (e.key === "Enter" ? (e.preventDefault(), go(e.shiftKey ? -1 : 1)) : e.key === "Escape" && onClose())}
+      />
+      <span className="text-muted-foreground min-w-10 text-center text-[10px] tabular-nums">{q && (ranges.length ? `${cur + 1}/${ranges.length}` : "0/0")}</span>
+      <Button size="icon-xs" variant="ghost" aria-label="Previous match" onClick={() => go(-1)}>
+        <ChevronUp aria-hidden />
+      </Button>
+      <Button size="icon-xs" variant="ghost" aria-label="Next match" onClick={() => go(1)}>
+        <ChevronDown aria-hidden />
+      </Button>
+      <Button size="icon-xs" variant="ghost" aria-label="Close find" onClick={onClose}>
+        <X aria-hidden />
+      </Button>
+    </div>
+  );
+}
+
 function Viewer({ id, path }: { id: string; path: string }) {
   const { data, isLoading, error } = useFs<FileView>(id, path);
   const [raw, setRaw] = useState(false);
   const [draft, setDraft] = useState<string | null>(null); // non-null = editing
   useEffect(() => setDraft(null), [path]);
+  const [finding, setFinding] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
+  // ⌘F opens the find bar while viewing; a focused terminal claims it first (its handler preventDefaults).
+  useEffect(() => {
+    if (draft !== null) return setFinding(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.key !== "f" || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      setFinding(false); // remount refocuses the input when already open
+      requestAnimationFrame(() => setFinding(true));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draft]);
   const qc = useQueryClient();
   const save = useMutation({
     mutationFn: (content: string) => api.put<{ mtime: number }>(`/workspaces/${id}/fs`, { path, content, mtime: data?.mtime }),
@@ -131,7 +221,8 @@ function Viewer({ id, path }: { id: string; path: string }) {
   if (data?.binary) return <p className="text-muted-foreground p-4 text-[13px]">Binary file ({data.size} bytes).</p>;
   return (
     <>
-      <div className="bg-background sticky top-0 flex items-start gap-3 border-b px-4 py-2">
+      <div className="bg-background sticky top-0 z-10 flex items-start gap-3 border-b px-4 py-2">
+        {finding && <FindBar root={body} deps={[html, raw, data?.content]} onClose={() => setFinding(false)} />}
         <p className="min-w-0 flex-1 font-mono text-xs break-all">{path}</p>
         {draft === null ? (
           !data?.truncated && (
@@ -190,11 +281,13 @@ function Viewer({ id, path }: { id: string; path: string }) {
           className="block field-sizing-content min-h-60 w-full resize-none bg-transparent p-4 font-mono text-xs leading-5 outline-none"
         />
       ) : isMd && !raw ? (
-        <div className="p-4 text-[13px]">{md(data?.content ?? "")}</div>
+        <div ref={body} className="p-4 text-[13px]">{md(data?.content ?? "")}</div>
       ) : (
-        <pre className="p-4 font-mono text-xs leading-5 whitespace-pre-wrap break-all">
-          {html ? <code dangerouslySetInnerHTML={{ __html: html }} /> : data?.content}
-        </pre>
+        <div ref={body}>
+          <pre className="p-4 font-mono text-xs leading-5 whitespace-pre-wrap break-all">
+            {html ? <code dangerouslySetInnerHTML={{ __html: html }} /> : data?.content}
+          </pre>
+        </div>
       )}
     </>
   );
