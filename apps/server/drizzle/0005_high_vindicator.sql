@@ -1,0 +1,1 @@
+ALTER TABLE "orgs" ADD COLUMN "worktree_dir" text DEFAULT '' NOT NULL;

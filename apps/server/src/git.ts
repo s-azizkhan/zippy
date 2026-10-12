@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, join, matchesGlob } from "node:path";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { basename, dirname, join, matchesGlob } from "node:path";
 import { promisify } from "node:util";
 import { and, eq } from "drizzle-orm";
 import type { DiffFile, FolderDiff, TestPayload } from "@zippy/shared";
@@ -17,13 +16,20 @@ type Ticket = typeof tickets.$inferSelect;
 type Workspace = typeof workspaces.$inferSelect;
 type Folder = typeof ticketFolders.$inferSelect;
 
+/** Keep in-project worktrees out of the folder's own `git status` without touching its .gitignore. */
+async function ignoreZippyDir(repo: string) {
+  const file = join(await git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"), "info", "exclude");
+  const cur = await readFile(file, "utf8").catch(() => "");
+  if (!cur.split("\n").some((l) => l.trim() === ".zippy/")) await mkdir(dirname(file), { recursive: true }).then(() => appendFile(file, `${cur && !cur.endsWith("\n") ? "\n" : ""}.zippy/\n`));
+}
+
 /** One git worktree + branch per (ticket, folder), shared by every agent on the ticket. Non-git folders are used as-is. */
 export async function ensureWorktree(ticket: Ticket, folder: Folder, ws: Workspace): Promise<{ cwd: string; branch: string | null; setupError?: string }> {
   if (folder.worktreePath && (await ok(git(folder.worktreePath, "rev-parse", "--git-dir")))) return { cwd: folder.worktreePath, branch: folder.branch };
   if (!existsSync(ws.path)) throw new Error(`Working folder ${ws.name} not found at ${ws.path}. Fix its path in Settings.`);
   if (!(await ok(git(ws.path, "rev-parse", "--is-inside-work-tree")))) return { cwd: ws.path, branch: null };
 
-  const [{ key, useActiveBranch }] = await db.select({ key: orgs.key, useActiveBranch: orgs.useActiveBranch }).from(orgs).where(eq(orgs.id, ticket.orgId));
+  const [{ key, useActiveBranch, worktreeDir }] = await db.select({ key: orgs.key, useActiveBranch: orgs.useActiveBranch, worktreeDir: orgs.worktreeDir }).from(orgs).where(eq(orgs.id, ticket.orgId));
   if (useActiveBranch) {
     const branch = await git(ws.path, "rev-parse", "--abbrev-ref", "HEAD");
     await db.update(ticketFolders).set({ worktreePath: ws.path, branch }).where(and(eq(ticketFolders.ticketId, ticket.id), eq(ticketFolders.workspaceId, ws.id)));
@@ -33,7 +39,8 @@ export async function ensureWorktree(ticket: Ticket, folder: Folder, ws: Workspa
   // Identifiers repeat across orgs (Linear keys), so scope by org key unless it already prefixes the id.
   const slug = ticket.identifier.startsWith(`${key}-`) ? ticket.identifier : `${key}-${ticket.identifier}`;
   const branch = `zippy/${slug.toLowerCase()}`;
-  const dir = join(homedir(), ".zippy", "worktrees", basename(ws.path), slug);
+  const dir = worktreeDir ? join(worktreeDir, basename(ws.path), slug) : join(ws.path, ".zippy", "worktrees", slug);
+  if (!worktreeDir) await ignoreZippyDir(ws.path);
   const save = () =>
     db.update(ticketFolders).set({ worktreePath: dir, branch }).where(and(eq(ticketFolders.ticketId, ticket.id), eq(ticketFolders.workspaceId, ws.id)));
   if (existsSync(dir)) {

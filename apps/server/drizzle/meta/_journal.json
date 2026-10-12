@@ -36,6 +36,13 @@
       "when": 1791717673007,
       "tag": "0004_serious_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791832486758,
+      "tag": "0005_high_vindicator",
+      "breakpoints": true
     }
   ]
 }

@@ -59,6 +59,7 @@ export const orgInput = z.object({
   slackWebhookUrl: z.union([z.literal(""), z.string().startsWith("https://hooks.slack.com/", "a Slack incoming webhook URL")]).default(""),
   notifyDesktop: z.boolean().default(true),
   useActiveBranch: z.boolean().default(false),
+  worktreeDir: z.union([z.literal(""), z.string().startsWith("/", "absolute path")]).default(""), // "" = <folder>/.zippy/worktrees
   linearPush: z.boolean().default(true), // push status/comments/PR links to Linear
   profile: profileInput.default(() => profileInput.parse({})),
   toggles,

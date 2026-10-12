@@ -23,6 +23,7 @@ export const orgs = pgTable("orgs", {
   slackWebhookUrl: text("slack_webhook_url").notNull().default(""),
   notifyDesktop: boolean("notify_desktop").notNull().default(true),
   useActiveBranch: boolean("use_active_branch").notNull().default(false), // work in the folder on its checked-out branch, no worktree
+  worktreeDir: text("worktree_dir").notNull().default(""), // where worktrees go; "" = <folder>/.zippy/worktrees
   createdAt: createdAt(),
 });
 

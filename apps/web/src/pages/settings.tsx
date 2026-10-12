@@ -359,12 +359,16 @@ function OrgTools() {
 
 function OrgSettings({ active }: { active: boolean }) {
   const org = useOrg();
-  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, cacheTtl: org.cacheTtl, idleMinutes: org.idleMinutes, maxLive: org.maxLive, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, profile: org.profile };
+  const base = { name: org.name, key: org.key, contextMd: org.contextMd, defaultModel: org.defaultModel, defaultEffort: org.defaultEffort, cacheTtl: org.cacheTtl, idleMinutes: org.idleMinutes, maxLive: org.maxLive, budgetUsd: org.budgetUsd ?? null, slackWebhookUrl: org.slackWebhookUrl.trim(), notifyDesktop: org.notifyDesktop, useActiveBranch: org.useActiveBranch, worktreeDir: org.worktreeDir, profile: org.profile };
   const baseKey = JSON.stringify(base);
   const [form, setForm] = useState(base);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const dirty = JSON.stringify(form) !== baseKey;
   const save = useApiMutation((v: typeof form) => api.patch(`/orgs/${org.id}`, patchOf(orgInput).parse(v)), [keys.orgs]);
+  const pickWorktreeDir = async () => {
+    const { path } = await api.post<{ path: string | null }>("/system/pick-folder");
+    if (path) setForm((f) => ({ ...f, worktreeDir: path }));
+  };
 
   // Server data changed (refetch / other client): follow it unless the user has edits.
   const prevKey = useRef(baseKey);
@@ -456,6 +460,27 @@ function OrgSettings({ active }: { active: boolean }) {
         <SettingRow label="Work on the active branch" hint="No worktree or new branch: Zippers edit the folder in place on its checked-out branch. Zippers on different tickets share that checkout, so run them one at a time.">
           {(p) => <Switch {...p} checked={form.useActiveBranch} onCheckedChange={(useActiveBranch) => setForm({ ...form, useActiveBranch })} />}
         </SettingRow>
+        {!form.useActiveBranch && (
+          <Field label="Worktree location" hint={form.worktreeDir ? `Worktrees go in ${form.worktreeDir}/<folder>/<ticket>.` : "Worktrees go in each folder's .zippy/worktrees/<ticket>, hidden from its git status."}>
+            {(p) => (
+              <div className="flex gap-2">
+                <OptionSelect
+                  id={p.id}
+                  label="Worktree location"
+                  value={form.worktreeDir ? "custom" : "project"}
+                  onChange={(v) => (v === "project" ? setForm((f) => ({ ...f, worktreeDir: "" })) : pickWorktreeDir())}
+                  options={[{ value: "project", label: "Inside the project (.zippy/worktrees)" }, { value: "custom", label: "Custom folder…" }]}
+                  className="w-72"
+                />
+                {form.worktreeDir && (
+                  <Button type="button" variant="outline" size="sm" className="min-w-0 max-md:min-h-11" onClick={pickWorktreeDir}>
+                    <FolderGit2 aria-hidden /> <span className="truncate font-mono text-[13px]">{form.worktreeDir}</span>
+                  </Button>
+                )}
+              </div>
+            )}
+          </Field>
+        )}
       </Card>
       <Card title="Notifications" desc="Sent when a ticket needs input, is ready for review, or is blocked.">
         <SettingRow label="Desktop notifications" hint="macOS notification on those events.">

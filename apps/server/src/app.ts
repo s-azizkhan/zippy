@@ -132,7 +132,7 @@ app.post("/system/ports/:port/kill", async (c) => {
 // macOS-only native folder picker; server runs on the user's machine
 app.post("/system/pick-folder", (c) =>
   new Promise<Response>((res) =>
-    execFile("osascript", ["-e", 'POSIX path of (choose folder with prompt "Select working folder")'], (err, out) =>
+    execFile("osascript", ["-e", 'POSIX path of (choose folder with prompt "Select folder")'], (err, out) =>
       res(c.json({ path: err ? null : out.trim().replace(/\/$/, "") })),
     ),
   ),
