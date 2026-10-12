@@ -10,6 +10,7 @@ import { FolderGit2Icon as FolderGit2 } from "@/components/ui/folder-git-2";
 import { Link2Icon as Link2 } from "@/components/ui/link-2";
 import { PlugZapIcon as Plug } from "@/components/ui/plug-zap";
 import { PlusIcon as Plus } from "@/components/ui/plus";
+import { RefreshCWIcon as RefreshCw } from "@/components/ui/refresh-cw";
 import { SearchIcon as Search } from "@/components/ui/search";
 import { ServerIcon as Server } from "@/components/ui/server";
 import { WrenchIcon as Wrench } from "@/components/ui/wrench";
@@ -877,23 +878,29 @@ function McpForm({ server, onDone }: { server?: McpServer; onDone?: () => void }
 }
 
 function Connectors() {
-  const { data: system, isLoading } = useSystem();
+  const { data: system, isLoading, isFetching, refetch } = useSystem();
   const ok = system?.auth.loggedIn;
   const acp = useAcp();
+  const recheck = () => Promise.all([refetch(), acp.refetch()]).then(([s]) => s.data && toast[s.data.auth.loggedIn ? "success" : "error"](s.data.auth.loggedIn ? "Claude connected" : "Still not logged in"));
   return (
     <Card title="AI connection" desc="Claude Code runs every Zipper. It must be logged in on the machine running Zippy.">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Status ok={!!ok} loading={isLoading}>
           {isLoading ? "Checking…" : ok ? `Connected${system.auth.authMethod ? ` (${system.auth.authMethod})` : ""}` : system?.claudePath ? "Not logged in" : "Claude CLI not found"}
         </Status>
-        {system?.claudePath && <code className="bg-muted text-muted-foreground rounded-md px-1.5 py-1 text-xs">{system.claudePath}</code>}
+        <div className="flex items-center gap-2">
+          {system?.claudePath && <code className="bg-muted text-muted-foreground rounded-md px-1.5 py-1 text-xs">{system.claudePath}</code>}
+          <Button variant="outline" size="sm" className="max-md:min-h-11" disabled={isFetching} onClick={recheck}>
+            <RefreshCw aria-hidden className={isFetching ? "animate-spin" : undefined} /> Recheck
+          </Button>
+        </div>
       </div>
       <Status ok={!!acp.data?.ok} loading={acp.isLoading}>
         {acp.isLoading ? "Checking ACP adapter…" : acp.data?.ok ? `ACP adapter running${acp.data.version ? ` (${acp.data.agent} ${acp.data.version})` : ""}` : `ACP adapter failed: ${acp.data?.error ?? "unreachable"}`}
       </Status>
       {!isLoading && !ok && (
         <p className="text-muted-foreground mt-3 text-xs">
-          Run <code className="bg-muted rounded px-1">claude auth login</code> and start Zippy from that terminal.
+          Run <code className="bg-muted rounded px-1">claude auth login</code> in a terminal, then Recheck. No restart needed.
         </p>
       )}
     </Card>

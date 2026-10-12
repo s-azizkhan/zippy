@@ -87,7 +87,10 @@ const byIdentifier = async (c: Context) => {
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}", byIdentifier);
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
-app.get("/system", (c) => c.json({ claudePath, auth: claudeAuthStatus() }));
+app.get("/system", (c) => {
+  const auth = claudeAuthStatus(); // may detect claudePath, so read it after
+  return c.json({ claudePath, auth });
+});
 // Port manager: what is listening, which command opened it, and a way to stop it.
 app.get("/system/ports", async (c) => c.json(await listPorts()));
 app.get("/system/ports/:port", async (c) => {

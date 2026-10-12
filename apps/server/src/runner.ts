@@ -22,16 +22,21 @@ import { agentSessions, agents, comments, db, mcpServers, orgs, runs, ticketFold
 
 const ADAPTER = process.env.ZIPPY_ADAPTER ?? createRequire(import.meta.url).resolve("@agentclientprotocol/claude-agent-acp/dist/index.js");
 
-/** Local `claude` CLI if installed; otherwise the adapter's bundled CLI (subscription login). */
-export const claudePath = (() => {
-  try {
-    return execFileSync("which", ["claude"], { encoding: "utf8" }).trim() || null;
-  } catch {
-    return null;
+/** Local `claude` CLI: our PATH first, then the login shell's (desktop app launched from Finder has a bare PATH). */
+function findClaude(): string | null {
+  const tries: [string, string[]][] = [["which", ["claude"]], [process.env.SHELL || "/bin/zsh", ["-ilc", "command -v claude"]]];
+  for (const [cmd, args] of tries) {
+    try {
+      const p = execFileSync(cmd, args, { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").pop();
+      if (p?.startsWith("/")) return p;
+    } catch {}
   }
-})();
+  return null;
+}
+export let claudePath = findClaude();
 
 export function claudeAuthStatus(): { loggedIn: boolean; authMethod?: string } {
+  claudePath ??= findClaude(); // installed after start: picked up on the next check, no restart
   if (!claudePath) return { loggedIn: false };
   try {
     return JSON.parse(execFileSync(claudePath, ["auth", "status", "--json"], { encoding: "utf8", timeout: 5000 }));

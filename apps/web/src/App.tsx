@@ -400,7 +400,7 @@ function Layout() {
         {system && !system.auth.loggedIn && (
           <div role="alert" className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-[13px] text-amber-800 dark:text-amber-300">
             <TerminalSquare className="size-4 shrink-0" aria-hidden />
-            Claude is not logged in, so agents cannot run. Run <code className="bg-background rounded px-1.5 py-0.5 font-mono">claude auth login</code> and start Zippy from that terminal.
+            Claude is not logged in, so agents cannot run. Run <code className="bg-background rounded px-1.5 py-0.5 font-mono">claude auth login</code> in a terminal, then Recheck in Settings → AI connection.
           </div>
         )}
         <motion.div key={pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="flex min-h-0 flex-1 flex-col">
