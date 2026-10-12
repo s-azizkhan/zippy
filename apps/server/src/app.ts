@@ -44,6 +44,7 @@ import { addKnowledge } from "./kb.ts";
 import { desktopNote, takeNotes } from "./notify.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { browse, listFiles, resolveIn, saveFile } from "./browse.ts";
+import { listEditors, openWith } from "./editors.ts";
 import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
 import { bodyLimit } from "hono/body-limit";
 import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll, folderDiff, isRepo, mergePr, popStash, prState, pullFf, pushHead, runTests, setIdentity, workingDiff } from "./git.ts";
@@ -56,7 +57,7 @@ import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, userEnv, writeTerminal } from "./term.ts";
+import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -279,18 +280,15 @@ app.post("/workspaces/:id/git/:op{checkout|branch|commit|fetch|pull|push|pop|ide
     return c.json({ error: (e.stderr || e.message).trim().split("\n").filter((l: string) => !l.startsWith("Command failed")).join("\n").slice(-500) || e.message }, 400);
   }
 });
-// Hand a folder or file to the OS: reveal in Finder or open in the user's editor. Server runs on the user's machine.
+// Hand a folder or file to the OS: reveal in Finder or open in an installed editor. Server runs on the user's machine.
+app.get("/editors", (c) => c.json(listEditors()));
 app.post("/workspaces/:id/open", async (c) => {
   const [w] = await db.select().from(workspaces).where(eq(workspaces.id, c.req.param("id")));
   if (!w) return c.notFound();
-  const { path, app: target } = await body(c, z.object({ path: z.string().default(""), app: z.enum(["finder", "editor"]) }));
+  const { path, app: target } = await body(c, z.object({ path: z.string().default(""), app: z.string().min(1) }));
   const abs = await resolveIn(w.path, path).catch(() => null);
   if (!abs) return c.json({ error: "Not found" }, 404);
-  const mac = process.platform === "darwin";
-  const run = (cmd: string, args: string[]) => new Promise<boolean>((res) => execFile(cmd, args, { env: userEnv() }, (err) => res(!err)));
-  // ponytail: VS Code's `code` CLI, else the OS default app. Add an editor setting if people use something else.
-  const ok = target === "finder" ? await run(mac ? "open" : "xdg-open", mac && path ? ["-R", abs] : [abs]) : (await run("code", [abs])) || (await run(mac ? "open" : "xdg-open", [abs]));
-  return ok ? c.body(null, 204) : c.json({ error: `Could not open ${abs}` }, 500);
+  return (await openWith(target, abs, !!path)) ? c.body(null, 204) : c.json({ error: `Could not open ${abs}` }, 500);
 });
 // Terminals: one PTY per session, grouped by working folder; live only as long as the server.
 app.get("/orgs/:id/terminals", async (c) => {

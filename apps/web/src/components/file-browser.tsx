@@ -1,6 +1,6 @@
 import type { IconType } from "@/lib/anim-icon";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AppWindow, ArrowDown, ArrowUp, Archive, ChevronRight, Copy, File, FileCode, FileJson, Folder, FolderSearch, GitBranch, GitCommitHorizontal, Image, RefreshCw, SquareTerminal, UserRound } from "lucide-react";
+import { AppWindow, ArrowDown, ArrowUp, Archive, ChevronRight, Copy, File, FileCode, FileJson, Folder, FolderSearch, GitBranch, GitCommitHorizontal, Image, MoreHorizontal, RefreshCw, SquareTerminal, UserRound } from "lucide-react";
 import { FileTextIcon as FileText } from "@/components/ui/file-text";
 import { FolderOpenIcon as FolderOpen } from "@/components/ui/folder-open";
 import { SettingsIcon as Settings } from "@/components/ui/settings";
@@ -11,9 +11,9 @@ import { toast } from "sonner";
 import { md } from "@/components/activity";
 import { langOf, Patch } from "@/components/changes";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { PropertyMenu } from "@/components/property-menu";
 import { CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -133,15 +133,6 @@ function Viewer({ id, path }: { id: string; path: string }) {
     <>
       <div className="bg-background sticky top-0 flex items-start gap-3 border-b px-4 py-2">
         <p className="min-w-0 flex-1 font-mono text-xs break-all">{path}</p>
-        <button title="Copy path" aria-label="Copy path" onClick={() => navigator.clipboard.writeText(path).then(() => toast.success("Path copied"))} className="text-muted-foreground hover:text-foreground shrink-0">
-          <Copy className="size-3.5" aria-hidden />
-        </button>
-        {onPath && (
-          <button title="Paste path into terminal (⌥-click a file does the same)" aria-label="Paste path into terminal" onClick={() => onPath(path)} className="text-muted-foreground hover:text-foreground shrink-0">
-            <SquareTerminal className="size-3.5" aria-hidden />
-          </button>
-        )}
-        <OpenButtons id={id} path={path} />
         {draft === null ? (
           !data?.truncated && (
             <button onClick={() => setDraft(data?.content ?? "")} className="text-muted-foreground hover:text-foreground shrink-0 text-xs font-medium">
@@ -158,6 +149,23 @@ function Viewer({ id, path }: { id: string; path: string }) {
             </button>
           </>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger title="More actions" aria-label="More actions" className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground shrink-0">
+            <MoreHorizontal className="size-4" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onSelect={() => navigator.clipboard.writeText(path).then(() => toast.success("Path copied"))}>
+              <Copy aria-hidden /> Copy path
+            </DropdownMenuItem>
+            {onPath && (
+              <DropdownMenuItem title="⌥-click a file does the same" onSelect={() => onPath(path)}>
+                <SquareTerminal aria-hidden /> Paste path into terminal
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <OpenItems id={id} path={path} />
+          </DropdownMenuContent>
+        </DropdownMenu>
         {isMd && draft === null && (
           <button onClick={() => setRaw(!raw)} className="text-muted-foreground hover:text-foreground shrink-0 text-xs font-medium">
             {raw ? "Preview" : "Raw"}
@@ -241,17 +249,23 @@ function QuickOpen({ id, onPick }: { id: string; onPick: (p: string) => void }) 
   );
 }
 
-/** Open in editor / reveal in Finder. Empty path = the folder itself. */
-function OpenButtons({ id, path }: { id: string; path: string }) {
-  const open = (app: "editor" | "finder") => api.post(`/workspaces/${id}/open`, { path, app }, true).catch((e: Error) => toast.error(e.message));
+type Editor = { id: string; name: string };
+
+/** "Open in" menu items: each installed editor, then Finder. Empty path = the folder itself. */
+function OpenItems({ id, path }: { id: string; path: string }) {
+  const { data: editors = [] } = useQuery({ queryKey: ["editors"], queryFn: () => api.get<Editor[]>("/editors"), staleTime: 60_000 });
+  const open = (app: string) => api.post(`/workspaces/${id}/open`, { path, app }, true).catch((e: Error) => toast.error(e.message));
   return (
     <>
-      <button title="Open in editor" aria-label="Open in editor" onClick={() => open("editor")} className="text-muted-foreground hover:text-foreground shrink-0">
-        <AppWindow className="size-3.5" aria-hidden />
-      </button>
-      <button title="Reveal in Finder" aria-label="Reveal in Finder" onClick={() => open("finder")} className="text-muted-foreground hover:text-foreground shrink-0">
-        <FolderSearch className="size-3.5" aria-hidden />
-      </button>
+      <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">Open in</DropdownMenuLabel>
+      {(editors.length ? editors : [{ id: "default", name: "Default app" }]).map((e) => (
+        <DropdownMenuItem key={e.id} onSelect={() => open(e.id)}>
+          <AppWindow aria-hidden /> {e.name}
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuItem onSelect={() => open("finder")}>
+        <FolderSearch aria-hidden /> Finder
+      </DropdownMenuItem>
     </>
   );
 }
@@ -326,9 +340,49 @@ function CommitDialog({ id, open, onOpenChange }: { id: string; open: boolean; o
   );
 }
 
-/** Branch switcher (search, create) + fetch/pull/push for the folder's checkout. Hidden for non-git folders. */
-function GitBar({ id, data }: { id: string; data: NonNullable<Branches> }) {
+const BTN = "text-muted-foreground hover:text-foreground hover:bg-accent flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs tabular-nums disabled:opacity-50";
+
+/** Commit author for this folder: shows the effective git identity; saving writes the repo's own config. */
+function IdentityForm({ id, identity, onDone }: { id: string; identity: Identity; onDone: () => void }) {
+  const [name, setName] = useState(identity.name);
+  const [email, setEmail] = useState(identity.email);
   const run = useGitOp(id);
+  const save = (n: string, e: string) => run.mutate({ op: "identity", name: n, email: e }, { onSuccess: onDone, onError: (e) => toast.error(e.message) });
+  return (
+    <form className="grid gap-2" onSubmit={(e) => (e.preventDefault(), save(name.trim(), email.trim()))}>
+      <DialogTitle className="text-sm">Commit author for this folder</DialogTitle>
+      <DialogDescription className="text-xs">{identity.local ? "Set for this folder only." : "Using your global git config. Saving sets it for this folder only."}</DialogDescription>
+      <Input aria-label="user.name" placeholder="user.name" value={name} onChange={(e) => setName(e.target.value)} className="h-7 text-xs" />
+      <Input aria-label="user.email" type="email" placeholder="user.email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-7 text-xs" />
+      <div className="flex justify-end gap-2">
+        {identity.local && (
+          <Button type="button" size="sm" variant="ghost" disabled={run.isPending} onClick={() => save("", "")} title="Remove this folder's override">
+            Use global
+          </Button>
+        )}
+        <Button type="submit" size="sm" disabled={run.isPending || (name.trim() === identity.name && email.trim() === identity.email && identity.local)}>
+          Save
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Folder header in one row: branch switcher, changes → commit, stash pop, behind/ahead → pull/push. Everything else under ⋯. */
+function FolderBar({ id, git }: { id: string; git: Branches | undefined }) {
+  const org = useOrg();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const run = useGitOp(id);
+  const [committing, setCommitting] = useState(false);
+  const [author, setAuthor] = useState(false);
+  const termKey = keys.res(org.id, "terminals");
+  const terminal = () =>
+    api
+      .post<TermInfo>(`/workspaces/${id}/terminals`, {}, true)
+      .then((t) => (qc.setQueryData<TermInfo[]>(termKey, (ts = []) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t])), navigate(`/terminals/${t.id}`)))
+      .catch((e: Error) => toast.error(e.message));
+  const op = (o: "fetch" | "pull" | "push" | "pop") => run.mutate({ op: o }, { onError: (e) => toast.error(e.message) });
   const switchTo = (branch: string) =>
     run.mutate(
       { op: "checkout", branch },
@@ -340,113 +394,97 @@ function GitBar({ id, data }: { id: string; data: NonNullable<Branches> }) {
       },
     );
   const busy = run.isPending ? run.variables.op : null;
+  const n = git?.changes.length ?? 0;
+  const who = git?.identity;
   return (
     <div className="flex items-center gap-0.5 border-b p-1.5">
-      <PropertyMenu
-        numbered={false}
-        value={data.current}
-        onChange={(branch) => branch !== data.current && switchTo(branch)}
-        onCreate={(name) => run.mutate({ op: "branch", name }, { onError: (e) => toast.error(e.message) })}
-        options={[...data.local.map((b) => ({ value: b, label: b, group: "Local" })), ...data.remote.map((b) => ({ value: b, label: b, group: "Remote" }))]}
-        triggerLabel="Switch branch"
-        placeholder="Switch or create branch…"
-        className="h-7 flex-1 gap-1.5 px-1.5 text-xs"
-        trigger={
-          <>
-            <GitBranch className={cn("size-3.5 shrink-0", (busy === "checkout" || busy === "branch") && "animate-pulse")} aria-hidden />
-            <span className="truncate font-medium">{data.current || "(detached)"}</span>
-          </>
-        }
-      />
-      <button title="Fetch all remotes" aria-label="Git fetch" disabled={!!busy} onClick={() => run.mutate({ op: "fetch" }, { onError: (e) => toast.error(e.message) })} className={BTN}>
-        <RefreshCw className={cn("size-3.5", busy === "fetch" && "animate-spin")} aria-hidden />
-      </button>
-      <button title={data.upstream ? "Pull (fast-forward only)" : "No upstream to pull from"} aria-label="Git pull" disabled={!!busy || !data.upstream} onClick={() => run.mutate({ op: "pull" }, { onError: (e) => toast.error(e.message) })} className={BTN}>
-        <ArrowDown className={cn("size-3.5", busy === "pull" && "animate-pulse")} aria-hidden />
-        {data.behind > 0 && data.behind}
-      </button>
-      <button title={data.upstream ? "Push" : "Push and set upstream"} aria-label="Git push" disabled={!!busy || !data.current} onClick={() => run.mutate({ op: "push" }, { onError: (e) => toast.error(e.message) })} className={BTN}>
-        <ArrowUp className={cn("size-3.5", busy === "push" && "animate-pulse")} aria-hidden />
-        {data.ahead > 0 && data.ahead}
-      </button>
-    </div>
-  );
-}
-
-const BTN = "text-muted-foreground hover:text-foreground hover:bg-accent flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs tabular-nums disabled:opacity-50";
-
-/** Commit author for this folder: shows the effective git identity; saving writes the repo's own config. */
-function IdentityMenu({ id, identity }: { id: string; identity: Identity }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const run = useGitOp(id);
-  const save = (n: string, e: string) => run.mutate({ op: "identity", name: n, email: e }, { onSuccess: () => setOpen(false), onError: (e) => toast.error(e.message) });
-  return (
-    <Popover open={open} onOpenChange={(o) => (setOpen(o), o && (setName(identity.name), setEmail(identity.email)))}>
-      <PopoverTrigger title={`Commit as ${identity.name || "?"} <${identity.email || "?"}>${identity.local ? " (this folder)" : " (global)"}`} aria-label="Git author" className={cn(BTN, identity.local && "text-sky-500")}>
-        <UserRound className="size-3.5" aria-hidden />
-        {!identity.email && <span className="text-red-500">!</span>}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="grid w-72 gap-2 p-3">
-        <form className="grid gap-2" onSubmit={(e) => (e.preventDefault(), save(name.trim(), email.trim()))}>
-          <p className="text-xs font-medium">Commit author for this folder</p>
-          <p className="text-muted-foreground text-xs">{identity.local ? "Set for this folder only." : "Using your global git config. Saving sets it for this folder only."}</p>
-          <Input aria-label="user.name" placeholder="user.name" value={name} onChange={(e) => setName(e.target.value)} className="h-7 text-xs" />
-          <Input aria-label="user.email" type="email" placeholder="user.email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-7 text-xs" />
-          <div className="flex justify-end gap-2">
-            {identity.local && (
-              <Button type="button" size="sm" variant="ghost" disabled={run.isPending} onClick={() => save("", "")} title="Remove this folder's override">
-                Use global
-              </Button>
-            )}
-            <Button type="submit" size="sm" disabled={run.isPending || (name.trim() === identity.name && email.trim() === identity.email && identity.local)}>
-              Save
-            </Button>
-          </div>
-        </form>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** Folder actions: uncommitted changes → commit, stash pop, terminal, editor, Finder. */
-function FolderBar({ id, git }: { id: string; git: Branches | undefined }) {
-  const org = useOrg();
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const run = useGitOp(id);
-  const [committing, setCommitting] = useState(false);
-  const termKey = keys.res(org.id, "terminals");
-  const terminal = () =>
-    api
-      .post<TermInfo>(`/workspaces/${id}/terminals`, {}, true)
-      .then((t) => (qc.setQueryData<TermInfo[]>(termKey, (ts = []) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t])), navigate(`/terminals/${t.id}`)))
-      .catch((e: Error) => toast.error(e.message));
-  const n = git?.changes.length ?? 0;
-  return (
-    <div className="flex items-center gap-0.5 border-b px-1.5 py-1">
-      {git && (
-        <button title={n ? "Review & commit changes" : "No uncommitted changes"} disabled={!n} onClick={() => setCommitting(true)} className={cn(BTN, n > 0 && "text-amber-500 hover:text-amber-400")}>
+      {git ? (
+        <PropertyMenu
+          numbered={false}
+          value={git.current}
+          onChange={(branch) => branch !== git.current && switchTo(branch)}
+          onCreate={(name) => run.mutate({ op: "branch", name }, { onError: (e) => toast.error(e.message) })}
+          options={[...git.local.map((b) => ({ value: b, label: b, group: "Local" })), ...git.remote.map((b) => ({ value: b, label: b, group: "Remote" }))]}
+          triggerLabel="Switch branch"
+          placeholder="Switch or create branch…"
+          className="h-7 min-w-0 flex-1 gap-1.5 px-1.5 text-xs"
+          trigger={
+            <>
+              <GitBranch className={cn("size-3.5 shrink-0", (busy === "checkout" || busy === "branch") && "animate-pulse")} aria-hidden />
+              <span className="truncate font-medium">{git.current || "(detached)"}</span>
+            </>
+          }
+        />
+      ) : (
+        <span className="flex-1" />
+      )}
+      {n > 0 && (
+        <button title={`${n} changed: review & commit`} aria-label={`${n} changed files, review and commit`} onClick={() => setCommitting(true)} className={cn(BTN, "text-amber-500 hover:text-amber-400")}>
           <GitCommitHorizontal className="size-3.5" aria-hidden />
-          {n > 0 ? `${n} changed` : "Clean"}
+          {n}
         </button>
       )}
       {!!git?.stashes && (
-        <button title={`Pop latest stash (${git.stashes} stashed)`} disabled={run.isPending} onClick={() => run.mutate({ op: "pop" }, { onError: (e) => toast.error(e.message) })} className={BTN}>
+        <button title={`Pop latest stash (${git.stashes} stashed)`} disabled={run.isPending} onClick={() => op("pop")} className={BTN}>
           <Archive className="size-3.5" aria-hidden />
           {git.stashes}
         </button>
       )}
-      {git && <IdentityMenu id={id} identity={git.identity} />}
-      <span className="flex-1" />
-      <button title="Open terminal here" aria-label="Open terminal here" onClick={terminal} className={BTN}>
-        <SquareTerminal className="size-3.5" aria-hidden />
-      </button>
-      <span className="flex items-center gap-2 px-1.5">
-        <OpenButtons id={id} path="" />
-      </span>
+      {!!git?.behind && (
+        <button title="Pull (fast-forward only)" aria-label={`Pull ${git.behind} commits`} disabled={!!busy} onClick={() => op("pull")} className={BTN}>
+          <ArrowDown className={cn("size-3.5", busy === "pull" && "animate-pulse")} aria-hidden />
+          {git.behind}
+        </button>
+      )}
+      {!!git?.ahead && (
+        <button title="Push" aria-label={`Push ${git.ahead} commits`} disabled={!!busy} onClick={() => op("push")} className={BTN}>
+          <ArrowUp className={cn("size-3.5", busy === "push" && "animate-pulse")} aria-hidden />
+          {git.ahead}
+        </button>
+      )}
+      {/* modal={false}: a modal menu leaves pointer-events locked when it opens the author dialog */}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger title="Folder actions" aria-label="Folder actions" className={cn(BTN, "relative data-[state=open]:bg-accent data-[state=open]:text-foreground")}>
+          <MoreHorizontal className={cn("size-4", busy && "animate-pulse")} aria-hidden />
+          {who && !who.email && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-red-500" aria-hidden />}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          {git && who && (
+            <>
+              <DropdownMenuItem disabled={!!busy} onSelect={() => op("fetch")}>
+                <RefreshCw aria-hidden /> Fetch all remotes
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!!busy || !git.upstream} onSelect={() => op("pull")}>
+                <ArrowDown aria-hidden /> {git.upstream ? "Pull" : "Pull (no upstream)"}
+                {git.behind > 0 && <DropdownMenuShortcut>{git.behind}</DropdownMenuShortcut>}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!!busy || !git.current} onSelect={() => op("push")}>
+                <ArrowUp aria-hidden /> {git.upstream ? "Push" : "Push & set upstream"}
+                {git.ahead > 0 && <DropdownMenuShortcut>{git.ahead}</DropdownMenuShortcut>}
+              </DropdownMenuItem>
+              <DropdownMenuItem title={`${who.name || "?"} <${who.email || "?"}>${who.local ? " (this folder)" : " (global)"}`} onSelect={() => setAuthor(true)}>
+                <UserRound aria-hidden className={cn(who.local && "text-sky-500")} />
+                <span className="truncate">Commit as {who.name || "?"}</span>
+                {!who.email && <span className="ml-auto text-red-500">!</span>}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <DropdownMenuItem onSelect={terminal}>
+            <SquareTerminal aria-hidden /> Open terminal here
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <OpenItems id={id} path="" />
+        </DropdownMenuContent>
+      </DropdownMenu>
       {git && <CommitDialog id={id} open={committing} onOpenChange={setCommitting} />}
+      {who && (
+        <Dialog open={author} onOpenChange={setAuthor}>
+          <DialogContent className="p-4 sm:max-w-sm">
+            <IdentityForm id={id} identity={who} onDone={() => setAuthor(false)} />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -469,7 +507,6 @@ export function FileBrowser({ id, onPath, compact }: { id: string; onPath?: (pat
     <div className="flex min-h-0 flex-1">
       <QuickOpen id={id} onPick={setSel} />
       <div className={cn("flex w-full shrink-0 flex-col border-r md:w-64", compact && "md:w-56", sel && "max-md:hidden")}>
-        {git && <GitBar id={id} data={git} />}
         <FolderBar id={id} git={git} />
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           <Tree id={id} path="" depth={0} sel={sel} onSel={setSel} />
