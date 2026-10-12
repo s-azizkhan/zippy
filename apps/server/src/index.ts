@@ -16,14 +16,23 @@ if (process.env.ZIPPY_CONFIG) {
 // Desktop shell: serve the built web app from the same origin as /api.
 const dist = process.env.ZIPPY_WEB_DIST;
 const root = dist && relative(process.cwd(), dist);
+// index.html must revalidate, or the webview keeps old chunk hashes across app updates
+const noCacheHtml = (path: string, c: { header: (k: string, v: string) => void }) => {
+  if (path.endsWith(".html")) c.header("Cache-Control", "no-cache");
+};
 const main = root
-  ? new Hono().route("/", app).all("/api/*", (c) => c.notFound()).use("*", serveStatic({ root })).get("*", serveStatic({ root, rewriteRequestPath: () => "/index.html" }))
+  ? new Hono()
+      .route("/", app)
+      .all("/api/*", (c) => c.notFound())
+      .use("*", serveStatic({ root, onFound: noCacheHtml }))
+      .all("/assets/*", (c) => c.notFound()) // stale chunk hash must 404, not get index.html as JS
+      .get("*", serveStatic({ root, rewriteRequestPath: () => "/index.html", onFound: noCacheHtml }))
   : app;
 
 const port = Number(process.env.PORT ?? 3001);
 serve({ fetch: main.fetch, port, hostname: "127.0.0.1" }, () => console.log(`zippy server http://127.0.0.1:${port}`));
 const { startDomain } = await import("./domain.ts");
 startDomain(main.fetch).catch((e) => console.error("https://zippy.localhost:", e.message)); // no-op until set up in Settings
+(await import("./phone.ts")).initPhone(main.fetch);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => (shutdown(), closeAllTerminals(), process.exit(0)));
-(await import("./phone.ts")).initPhone(main.fetch);
