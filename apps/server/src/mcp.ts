@@ -50,6 +50,8 @@ async function humanOf(orgId: string, handle: string) {
   return org?.profile.handle && org.profile.handle === handle.replace(/^@/, "") ? { org } : undefined;
 }
 
+export const termLine = (t: ReturnType<typeof listTerminals>[number]) => `${t.id}  ${t.alive ? (t.process && !/^(-?zsh|-?bash|fish|sh)$/.test(t.process) ? `running ${t.process}` : "idle") : `exited ${t.exitCode}`}  "${t.title}"${t.command ? `  $ ${t.command}` : ""}  [${t.tags.join(" ")}]`;
+
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 
 function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPlace: boolean, chat: boolean) {
@@ -224,7 +226,6 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
   );
 
   // Terminals: real PTY shells that outlive the turn. Read-only agents and chats get list/read; opening and typing need canWrite. The human sees them live on the Terminals page, tagged with this ticket and the agent.
-  const termLine = (t: ReturnType<typeof listTerminals>[number]) => `${t.id}  ${t.alive ? (t.process && !/^(-?zsh|-?bash|fish|sh)$/.test(t.process) ? `running ${t.process}` : "idle") : `exited ${t.exitCode}`}  "${t.title}"${t.command ? `  $ ${t.command}` : ""}  [${t.tags.join(" ")}]`;
   const ownTerms = async () => {
     const dirs = await foldersOf(ticketId);
     return listTerminals(dirs.map((d) => d.ws.id)).filter((t) => t.ticketId === ticketId);

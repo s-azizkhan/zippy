@@ -42,7 +42,7 @@ export function scanCatalog(): Omit<Catalog, "presets"> {
   const fromPlugins = Object.entries<{ installPath: string }[]>(plugins)
     .filter(([key]) => enabled[key])
     .flatMap(([key, [p]]) => skillsIn(join(p!.installPath, "skills"), `${key.split("@")[0]}:`, `plugin ${key}`));
-  const code = mcpsOf(json(join(HOME, ".claude.json")).mcpServers, "Claude Code", true);
+  const code = mcpsOf(json(join(HOME, ".claude.json")).mcpServers, "Claude Code", true).filter((m) => m.name !== "zippy-hub"); // the human's own hub; Zippers never get it
   const seen = new Set(code.map((m) => m.name));
   const desktop = mcpsOf(desktopMcps(), "Claude Desktop", false).filter((m) => !seen.has(m.name));
   const linear: CatalogItem = { id: "mcp:linear", kind: "mcp", name: "linear", description: "Linear issues and projects (~32k tokens per turn).", source: "Zippy", defaultOn: false };

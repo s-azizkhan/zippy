@@ -50,6 +50,8 @@ import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll
 import { checkPrs } from "./github.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
+import { mountHub } from "./hub.ts";
+import { disableDomain, domainStatus, removeDomain, setupDomain } from "./domain.ts";
 import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
@@ -99,6 +101,11 @@ app.post("/system/claude-token", async (c) => {
   writeConfig({ claudeToken: token ?? undefined });
   return c.body(null, 204);
 });
+// https://zippy.localhost: local CA + cert, trusted in the login keychain, served on 443.
+app.get("/system/domain", async (c) => c.json(await domainStatus()));
+app.post("/system/domain/setup", async (c) => (await setupDomain(), c.json(await domainStatus())));
+app.post("/system/domain/disable", async (c) => (await disableDomain(), c.json(await domainStatus())));
+app.post("/system/domain/remove", async (c) => (await removeDomain(), c.json(await domainStatus())));
 // Port manager: what is listening, which command opened it, and a way to stop it.
 app.get("/system/ports", async (c) => c.json(await listPorts()));
 app.get("/system/ports/:port", async (c) => {
@@ -885,6 +892,7 @@ app.post("/linear/webhook", async (c) => {
 });
 
 app.all("/mcp", handleMcp);
+mountHub(app);
 
 // Verify: branch diff per folder, and on-demand test runs posted as timeline cards.
 app.get("/tickets/:id/diff", async (c) => c.json(await Promise.all((await foldersOf(c.req.param("id"))).map(({ folder, ws }) => folderDiff(folder, ws, c.req.query("merged") === "1")))));

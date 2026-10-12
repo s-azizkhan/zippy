@@ -464,7 +464,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const items = scanCatalog().items.map((i) => ({ i, on: isOn({ id: i.id, defaultOn: ALWAYS_ON.has(i.id) }, org?.toggles ?? {}, agent.toggles) }));
   const offMcp = items.filter((x) => x.i.kind === "mcp" && !x.on && x.i.source === "Claude Code").map((x) => `mcp__${x.i.name}`);
   const offSkill = items.some((x) => x.i.kind === "skill" && !x.on);
-  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "Agent", "TodoWrite", "mcp__zippy__open_pr"]), ...activeRules(org, agent).flatMap((r) => r.blocks ?? []), ...offMcp];
+  const disallowedTools = [...(agent.canWrite ? [] : ["Edit", "Write", "NotebookEdit", "MultiEdit", "Agent", "TodoWrite", "mcp__zippy__open_pr"]), ...activeRules(org, agent).flatMap((r) => r.blocks ?? []), ...offMcp, "mcp__zippy-hub"]; // user-scope hub acts as the human: keep it out of Zippers' tool list (not a sandbox: a Zipper with a shell can reach the local API anyway)
   const meta = {
     systemPrompt: { append: await systemPrompt(ticket, agent, dirs) },
     claudeCode: {

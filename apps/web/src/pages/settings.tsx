@@ -145,7 +145,11 @@ export function SettingsPage() {
               <McpServers />
             </Pane>
             <Pane value="connectors" active={tab}>
-              <Connectors />
+              <div className="stagger grid gap-5">
+                <Connectors />
+                <ClaudeHub />
+                <LocalDomain />
+              </div>
             </Pane>
             <Pane value="linear" active={tab}>
               <LinearSettings />
@@ -933,6 +937,211 @@ function ClaudeToken({ set }: { set: boolean }) {
         )}
       </div>
     </form>
+  );
+}
+
+type HubTool = { name: string; group: string; risk: "read" | "write" | "danger"; summary: string; enabled: boolean };
+type Hub = { name: string; url: string; enabled: boolean; token: string | null; command: string | null; registered: boolean; current: boolean; tools: HubTool[] };
+const RISK: Record<HubTool["risk"], { label: string; cls: string }> = {
+  read: { label: "read", cls: "text-muted-foreground bg-muted" },
+  write: { label: "writes", cls: "text-amber-700 bg-amber-500/10 dark:text-amber-400" },
+  danger: { label: "irreversible", cls: "text-red-700 bg-red-500/10 dark:text-red-400" },
+};
+
+/** Card header switch: on/off for the whole feature. */
+function EnableSwitch({ id, checked, disabled, onChange }: { id: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-2 text-xs font-medium max-md:min-h-11">
+      {checked ? "Enabled" : "Disabled"}
+      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
+    </label>
+  );
+}
+
+/** Zippy Hub: tickets, agents and terminals as an MCP server in Claude Code (user scope), for Claude sessions outside Zippy. */
+function ClaudeHub() {
+  const qc = useQueryClient();
+  const { data: hub, isLoading } = useQuery({ queryKey: ["system", "hub"], queryFn: () => api.get<Hub>("/system/hub") });
+  const act = useMutation({
+    mutationFn: ({ op, body = {} }: { op: "register" | "rotate" | "unregister" | "enabled" | "revoke"; body?: object }) => api.post<Hub>(`/system/hub/${op}`, body, true),
+    onSuccess: (h, { op }) => {
+      qc.setQueryData(["system", "hub"], h);
+      toast.success({ register: "Registered in Claude Code", rotate: "New token issued", unregister: "Removed from Claude Code", enabled: h.enabled ? "Zippy Hub enabled" : "Zippy Hub disabled", revoke: "Access revoked" }[op]);
+      setRevoking(false);
+    },
+  });
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const copy = () =>
+    hub?.command &&
+    navigator.clipboard.writeText(hub.command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }, () => toast.error("Could not copy. Select the command and copy it by hand."));
+  const busy = act.isPending;
+  const on = hub?.enabled ?? true;
+  return (
+    <Card title="Claude Code MCP" desc="Use your whole Zippy from any Claude Code session: tickets, agents, inbox, pipelines, diffs, knowledge base and live terminals. Registered once for your user, works in every project.">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Status ok={!!hub?.current && on} loading={isLoading}>
+          {isLoading ? "Checking…" : !on ? "Disabled: clients are refused" : hub?.current ? `Registered as ${hub.name}` : hub?.registered ? "Registered with an old URL or token" : "Not registered"}
+        </Status>
+        <div className="flex flex-wrap items-center gap-2">
+          {hub?.registered && (
+            <Button variant="outline" size="sm" className="max-md:min-h-11" disabled={busy} onClick={() => act.mutate({ op: "unregister" })}>
+              Remove
+            </Button>
+          )}
+          {!hub?.current && on && (
+            <Button size="sm" className="max-md:min-h-11" disabled={busy || isLoading} onClick={() => act.mutate({ op: "register" })}>
+              <Plug aria-hidden /> {hub?.registered ? "Update" : "Register in Claude Code"}
+            </Button>
+          )}
+          {hub && <EnableSwitch id="hub-enabled" checked={on} disabled={busy} onChange={(enabled) => act.mutate({ op: "enabled", body: { enabled } })} />}
+        </div>
+      </div>
+      {hub && <HubTools tools={hub.tools} />}
+      {hub?.command && (
+        <div className="grid gap-2 border-t pt-4">
+          <p className="text-muted-foreground text-xs">
+            Manual setup: run this in a terminal, or point any other HTTP MCP client at <code className="bg-muted rounded px-1">{hub.url}</code> with the bearer token. Zippy must be running.
+          </p>
+          <div className="flex items-start gap-2">
+            <code className="bg-muted min-w-0 flex-1 rounded-md px-2 py-1.5 text-xs break-all">{hub.command}</code>
+            <Button variant="outline" size="icon" aria-label="Copy command" className="max-md:size-11 shrink-0" onClick={copy}>
+              {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" className="max-md:min-h-11" disabled={busy} onClick={() => act.mutate({ op: "rotate" })}>
+              <RefreshCw aria-hidden /> New token
+            </Button>
+            <Button variant="ghost" size="sm" className="text-destructive max-md:min-h-11" disabled={busy} onClick={() => setRevoking(true)}>
+              Revoke access
+            </Button>
+          </div>
+        </div>
+      )}
+      <ConfirmDialog
+        open={revoking}
+        onOpenChange={setRevoking}
+        title="Revoke Zippy Hub access?"
+        desc="Deletes the token and removes the Claude Code registration. Every client using it stops working at once. Register again to get a new token."
+        action="Revoke access"
+        pending={busy}
+        onConfirm={() => act.mutate({ op: "revoke" })}
+      />
+    </Card>
+  );
+}
+
+type Domain = { domain: string; url: string; certs: boolean; trusted: boolean; enabled: boolean; active: boolean; via: "herd" | "zippy" | null };
+
+/** https://zippy.localhost with no port: local CA trusted in the keychain, served on 443 (through Herd's nginx when installed). */
+function LocalDomain() {
+  const qc = useQueryClient();
+  const { data: d, isLoading } = useQuery({ queryKey: ["system", "domain"], queryFn: () => api.get<Domain>("/system/domain") });
+  const [revoking, setRevoking] = useState(false);
+  const act = useMutation({
+    mutationFn: (op: "setup" | "disable" | "remove") => api.post<Domain>(`/system/domain/${op}`, {}, true),
+    onSuccess: (r, op) => {
+      qc.setQueryData(["system", "domain"], r);
+      qc.invalidateQueries({ queryKey: ["system", "hub"] }); // hub URL follows the domain
+      toast.success({ setup: `${r.url} is ready`, disable: "Local domain disabled", remove: "Certificate revoked and removed" }[op]);
+      setRevoking(false);
+    },
+  });
+  const ok = !!d?.active && d.trusted;
+  return (
+    <Card title="Local domain" desc="Open Zippy at https://zippy.localhost, no port, with a certificate your Mac trusts. Claude Code reaches the MCP at http://zippy.localhost (Update the registration above after changing this).">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Status ok={ok} loading={isLoading}>
+          {isLoading ? "Checking…" : ok ? (
+            <a href={d.url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+              {d.url}
+              {d.via === "herd" && <span className="text-muted-foreground font-normal"> (via Laravel Herd)</span>}
+            </a>
+          ) : d?.certs && !d.enabled ? "Disabled" : d?.certs && !d.trusted ? "Certificate not trusted" : d?.certs ? "Set up, not serving (port 443 taken?)" : "Not set up"}
+        </Status>
+        <div className="flex flex-wrap items-center gap-2">
+          {d?.certs && (
+            <Button variant="outline" size="sm" className="text-destructive max-md:min-h-11" disabled={act.isPending} onClick={() => setRevoking(true)}>
+              Revoke
+            </Button>
+          )}
+          {!ok && (!d?.certs || d.enabled) && (
+            <Button size="sm" className="max-md:min-h-11" disabled={act.isPending || isLoading} onClick={() => act.mutate("setup")}>
+              {act.isPending ? "Waiting for your password…" : d?.certs ? "Repair" : "Set up HTTPS"}
+            </Button>
+          )}
+          {d?.certs && <EnableSwitch id="domain-enabled" checked={d.enabled} disabled={act.isPending} onChange={(v) => act.mutate(v ? "setup" : "disable")} />}
+        </div>
+      </div>
+      {!d?.certs && (
+        <p className="text-muted-foreground text-xs">
+          Creates a certificate authority limited to localhost names and adds it to your login keychain; macOS asks for your password once. Firefox may need <code className="bg-muted rounded px-1">security.enterprise_roots.enabled</code>.
+        </p>
+      )}
+      <ConfirmDialog
+        open={revoking}
+        onOpenChange={setRevoking}
+        title="Revoke the local certificate?"
+        desc="Stops serving https://zippy.localhost, removes Zippy's certificate authority from your keychain and deletes its keys. Set up again any time."
+        action="Revoke"
+        pending={act.isPending}
+        onConfirm={() => act.mutate("remove")}
+      />
+    </Card>
+  );
+}
+
+/** Which hub tools Claude may call, by group. Danger tools start off. */
+function HubTools({ tools }: { tools: HubTool[] }) {
+  const qc = useQueryClient();
+  const set = useMutation({
+    mutationFn: (patch: Record<string, boolean>) => api.post<Hub>("/system/hub/tools", patch, true),
+    onSuccess: (h) => qc.setQueryData(["system", "hub"], h),
+  });
+  const groups = [...new Set(tools.map((t) => t.group))];
+  const on = tools.filter((t) => t.enabled).length;
+  return (
+    <Collapsible.Root className="border-t pt-4">
+      <Collapsible.Trigger className="group flex w-full items-center justify-between gap-3 text-left text-sm font-medium max-md:min-h-11">
+        <span>
+          Allowed tools <span className="text-muted-foreground font-normal">({on} of {tools.length})</span>
+        </span>
+        <ChevronRight aria-hidden className="text-muted-foreground size-4 transition-transform group-data-[state=open]:rotate-90" />
+      </Collapsible.Trigger>
+      <Collapsible.Content className="grid gap-4 pt-3">
+        <p className="text-muted-foreground text-xs">Off tools are hidden from Claude. Changes apply to new Claude Code sessions (or run /mcp to reconnect).</p>
+        {groups.map((g) => {
+          const list = tools.filter((t) => t.group === g);
+          const all = list.every((t) => t.enabled);
+          return (
+            <fieldset key={g} className="grid gap-1">
+              <div className="flex items-center justify-between gap-3">
+                <legend className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{g}</legend>
+                <Button type="button" variant="ghost" size="sm" className="h-7 text-xs max-md:min-h-11" disabled={set.isPending} onClick={() => set.mutate(Object.fromEntries(list.map((t) => [t.name, !all])))}>
+                  {all ? "Turn all off" : "Turn all on"}
+                </Button>
+              </div>
+              {list.map((t) => (
+                <label key={t.name} className="hover:bg-muted/50 flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 max-md:min-h-11">
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <code className="text-xs">{t.name}</code>
+                      <span className={`rounded px-1.5 py-px text-[10px] font-medium ${RISK[t.risk].cls}`}>{RISK[t.risk].label}</span>
+                    </span>
+                    <span className="text-muted-foreground block text-xs">{t.summary}</span>
+                  </span>
+                  <Switch checked={t.enabled} disabled={set.isPending} onCheckedChange={(v) => set.mutate({ [t.name]: v })} aria-label={`Allow ${t.name}`} />
+                </label>
+              ))}
+            </fieldset>
+          );
+        })}
+      </Collapsible.Content>
+    </Collapsible.Root>
   );
 }
 
