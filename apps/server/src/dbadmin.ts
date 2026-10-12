@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -53,7 +53,7 @@ export async function ensureSchema() {
   }
 }
 
-/** Desktop shell's config.json (ZIPPY_CONFIG). Keys: databaseUrl, hotkey. */
+/** Desktop shell's config.json (ZIPPY_CONFIG). Keys: databaseUrl, hotkey, claudeToken. */
 export function readConfig(): Record<string, unknown> {
   try { return JSON.parse(readFileSync(process.env.ZIPPY_CONFIG!, "utf8")); } catch { return {}; }
 }
@@ -61,6 +61,7 @@ export function writeConfig(patch: Record<string, unknown>) {
   const cfg = { ...readConfig(), ...patch };
   for (const k of Object.keys(patch)) if (patch[k] === undefined) delete cfg[k];
   writeFileSync(process.env.ZIPPY_CONFIG!, JSON.stringify(cfg, null, 2));
+  chmodSync(process.env.ZIPPY_CONFIG!, 0o600); // holds claudeToken
 }
 
 /** Desktop shell restarts the server after a DB change. `null` = built-in DB. */

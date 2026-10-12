@@ -903,7 +903,36 @@ function Connectors() {
           Run <code className="bg-muted rounded px-1">claude auth login</code> in a terminal, then Recheck. No restart needed.
         </p>
       )}
+      {system?.desktop && (!ok || system.tokenSet) && <ClaudeToken set={system.tokenSet} />}
     </Card>
+  );
+}
+
+/** Desktop app opened from Finder can't read the keychain login; a `claude setup-token` token works instead. */
+function ClaudeToken({ set }: { set: boolean }) {
+  const [token, setToken] = useState("");
+  const save = useApiMutation((t: string | null) => api.post("/system/claude-token", { token: t }, true), [keys.system]);
+  const submit = (t: string | null) => save.mutate(t, { onSuccess: () => (setToken(""), toast.success(t ? "Token saved" : "Token removed")) });
+  return (
+    <form className="mt-4 grid gap-2 border-t pt-4" onSubmit={(e) => (e.preventDefault(), token.trim() && submit(token))}>
+      <label htmlFor="claude-token" className="text-sm font-medium">
+        Login token {set && <span className="text-muted-foreground font-normal">(saved)</span>}
+      </label>
+      <p className="text-muted-foreground text-xs">
+        Still not logged in? Run <code className="bg-muted rounded px-1">claude setup-token</code> in a terminal and paste the token. Stored only in this Mac's Zippy config, readable by your user.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Input id="claude-token" type="password" autoComplete="off" placeholder={set ? "Replace token" : "sk-ant-…"} value={token} onChange={(e) => setToken(e.target.value)} className="min-w-0 flex-1" />
+        <Button type="submit" size="sm" className="max-md:min-h-11" disabled={!token.trim() || save.isPending}>
+          Save
+        </Button>
+        {set && (
+          <Button type="button" variant="outline" size="sm" className="max-md:min-h-11" disabled={save.isPending} onClick={() => submit(null)}>
+            Remove
+          </Button>
+        )}
+      </div>
+    </form>
   );
 }
 

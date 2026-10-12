@@ -17,6 +17,7 @@ import { issueToken, revokeToken, runPendingTerm } from "./mcp.ts";
 import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
 import { userEnv } from "./term.ts";
+import { readConfig } from "./dbadmin.ts";
 import { afterTurn } from "./pipeline.ts";
 import { agentSessions, agents, comments, db, mcpServers, orgs, runs, ticketFolders, tickets, workspaces } from "./db/index.ts";
 
@@ -35,11 +36,17 @@ function findClaude(): string | null {
 }
 export let claudePath = findClaude();
 
+/** Env for every `claude` we spawn. Desktop app from Finder can't read the keychain login, so it can use a `claude setup-token` token instead. */
+function claudeEnv(): Record<string, string> {
+  const token = process.env.ZIPPY_CONFIG ? readConfig().claudeToken : undefined;
+  return { ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), ...(typeof token === "string" && { CLAUDE_CODE_OAUTH_TOKEN: token }) };
+}
+
 export function claudeAuthStatus(): { loggedIn: boolean; authMethod?: string } {
   claudePath ??= findClaude(); // installed after start: picked up on the next check, no restart
   if (!claudePath) return { loggedIn: false };
   try {
-    return JSON.parse(execFileSync(claudePath, ["auth", "status", "--json"], { encoding: "utf8", timeout: 5000 }));
+    return JSON.parse(execFileSync(claudePath, ["auth", "status", "--json"], { encoding: "utf8", timeout: 5000, env: userEnv(claudeEnv()) }));
   } catch {
     return { loggedIn: false };
   }
@@ -77,7 +84,7 @@ export async function claudeUsage(): Promise<Usage | null> {
 
 /** Spawns the ACP adapter and handshakes; resolves to its name/version or throws. */
 export async function acpHealth() {
-  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: userEnv(claudePath ? { CLAUDE_CODE_EXECUTABLE: claudePath } : {}) });
+  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: userEnv(claudeEnv()) });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const conn = new acp.ClientSideConnection(() => ({}) as acp.Client, stream);
   try {
@@ -331,7 +338,7 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl, idleMinutes: orgs.idleMinutes }).from(orgs).where(eq(orgs.id, ticket.orgId));
   const proc = spawn(process.execPath, [ADAPTER], {
     stdio: ["pipe", "pipe", "inherit"],
-    env: userEnv({ ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) }),
+    env: userEnv({ ...claudeEnv(), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) }),
   });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const l = {

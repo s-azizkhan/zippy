@@ -89,7 +89,15 @@ app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
 app.get("/system", (c) => {
   const auth = claudeAuthStatus(); // may detect claudePath, so read it after
-  return c.json({ claudePath, auth });
+  const desktop = !!process.env.ZIPPY_CONFIG;
+  return c.json({ claudePath, auth, desktop, tokenSet: desktop && typeof readConfig().claudeToken === "string" });
+});
+// Desktop only: `claude setup-token` token, for when the app can't read the keychain login. Never sent back.
+app.post("/system/claude-token", async (c) => {
+  if (!process.env.ZIPPY_CONFIG) return c.json({ error: "desktop app only" }, 400);
+  const { token } = await body(c, z.object({ token: z.string().trim().regex(/^sk-ant-\S+$/, "paste the sk-ant-… token from claude setup-token").nullable() }));
+  writeConfig({ claudeToken: token ?? undefined });
+  return c.body(null, 204);
 });
 // Port manager: what is listening, which command opened it, and a way to stop it.
 app.get("/system/ports", async (c) => c.json(await listPorts()));
