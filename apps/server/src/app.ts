@@ -53,6 +53,7 @@ import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownComme
 import { handleMcp, resetHops } from "./mcp.ts";
 import { mountHub } from "./hub.ts";
 import { disableDomain, domainStatus, removeDomain, setupDomain } from "./domain.ts";
+import { connectHost, forgetHost, phoneStatus, rotatePhone, startPhone, stopPhone } from "./phone.ts";
 import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
@@ -107,6 +108,17 @@ app.get("/system/domain", async (c) => c.json(await domainStatus()));
 app.post("/system/domain/setup", async (c) => (await setupDomain(), c.json(await domainStatus())));
 app.post("/system/domain/disable", async (c) => (await disableDomain(), c.json(await domainStatus())));
 app.post("/system/domain/remove", async (c) => (await removeDomain(), c.json(await domainStatus())));
+// Phone access: token-gated Cloudflare quick tunnel, QR in Settings.
+app.get("/system/phone", async (c) => c.json(await phoneStatus()));
+app.post("/system/phone/start", async (c) => (await startPhone(), c.json(await phoneStatus())));
+app.post("/system/phone/stop", async (c) => (stopPhone(true), c.json(await phoneStatus())));
+app.post("/system/phone/rotate", async (c) => (await rotatePhone(), c.json(await phoneStatus())));
+app.post("/system/phone/forget", async (c) => (forgetHost(), c.json(await phoneStatus())));
+app.post("/system/phone/host", async (c) => {
+  const { host } = await body(c, z.object({ host: z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/, "a hostname like zippy.example.com") }));
+  await connectHost(host);
+  return c.json(await phoneStatus());
+});
 // Port manager: what is listening, which command opened it, and a way to stop it.
 app.get("/system/ports", async (c) => c.json(await listPorts()));
 app.get("/system/ports/:port", async (c) => {

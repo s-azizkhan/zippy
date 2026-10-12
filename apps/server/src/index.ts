@@ -26,3 +26,4 @@ const { startDomain } = await import("./domain.ts");
 startDomain(main.fetch).catch((e) => console.error("https://zippy.localhost:", e.message)); // no-op until set up in Settings
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => (shutdown(), closeAllTerminals(), process.exit(0)));
+(await import("./phone.ts")).initPhone(main.fetch);

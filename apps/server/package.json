@@ -21,10 +21,12 @@
     "hono": "^4.13.12",
     "node-pty": "^1.1.0",
     "postgres": "^3.4.9",
+    "qrcode": "1.5.4",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "@types/qrcode": "1.5.5",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"

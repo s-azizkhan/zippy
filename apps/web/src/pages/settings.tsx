@@ -149,6 +149,7 @@ export function SettingsPage() {
                 <Connectors />
                 <ClaudeHub />
                 <LocalDomain />
+                <PhoneAccess />
               </div>
             </Pane>
             <Pane value="linear" active={tab}>
@@ -1116,6 +1117,77 @@ function LocalDomain() {
         pending={act.isPending}
         onConfirm={() => act.mutate("remove")}
       />
+    </Card>
+  );
+}
+
+type Phone = { installed: boolean; host: string | null; enabled: boolean; url: string | null; qr: string | null; error: string | null };
+type PhoneOp = { op: "start" | "stop" | "rotate" | "forget" } | { op: "host"; host: string };
+
+/** Open Zippy on your phone: token-gated Cloudflare tunnel, scan the QR to sign the phone in. */
+function PhoneAccess() {
+  const qc = useQueryClient();
+  const { data: p, isLoading } = useQuery({ queryKey: ["system", "phone"], queryFn: () => api.get<Phone>("/system/phone") });
+  const [host, setHost] = useState("");
+  const act = useMutation({
+    mutationFn: (a: PhoneOp) => api.post<Phone>(`/system/phone/${a.op}`, a.op === "host" ? { host: a.host } : {}, true),
+    onSuccess: (r, a) => {
+      qc.setQueryData(["system", "phone"], r);
+      if (a.op === "host") (setHost(""), toast.success(`Connected https://${r.host}`));
+      if (a.op === "rotate") toast.success("New link: phones signed in before must scan again");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const busy = act.isPending ? act.variables.op : null;
+  return (
+    <Card
+      title="Phone access"
+      desc="Use Zippy from your phone, anywhere, through a Cloudflare tunnel. Only a phone that scanned this QR code gets in. Without your own domain the link changes each time you turn it on."
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Status ok={!!p?.url} loading={isLoading}>
+          {isLoading ? "Checking…" : busy === "start" ? "Starting tunnel…" : p?.url ? "On: scan with your phone camera" : p?.installed === false ? "Needs cloudflared: brew install cloudflared" : p?.error ?? "Off"}
+        </Status>
+        <div className="flex flex-wrap items-center gap-2">
+          {p?.host && (
+            <Button variant="outline" size="sm" className="max-md:min-h-11" disabled={!!busy} onClick={() => act.mutate({ op: "rotate" })}>
+              New link
+            </Button>
+          )}
+          <EnableSwitch id="phone-enabled" checked={!!p?.enabled} disabled={!!busy || isLoading || p?.installed === false} onChange={(v) => act.mutate({ op: v ? "start" : "stop" })} />
+        </div>
+      </div>
+      {p?.qr && (
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="size-44 rounded-lg bg-white p-2 [&_svg]:size-full" dangerouslySetInnerHTML={{ __html: p.qr }} />
+          <p className="text-muted-foreground max-w-xs text-xs">
+            Anyone with this link can control Zippy on this Mac. Don't share it. {p.host ? "Use New link to sign every phone out." : "Turn this off to revoke it."}
+          </p>
+        </div>
+      )}
+      {p?.host ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+          <span className="text-muted-foreground">
+            Fixed address <span className="text-foreground font-medium">https://{p.host}</span>, back on when Zippy starts.
+          </span>
+          <Button variant="outline" size="sm" className="text-destructive max-md:min-h-11" disabled={!!busy} onClick={() => act.mutate({ op: "forget" })}>
+            Remove domain
+          </Button>
+        </div>
+      ) : (
+        p?.installed && (
+          <form className="grid gap-2" onSubmit={(e) => (e.preventDefault(), host.trim() && act.mutate({ op: "host", host: host.trim() }))}>
+            <label htmlFor="phone-host" className="text-xs font-medium">Keep the same link (optional)</label>
+            <div className="flex flex-wrap gap-2">
+              <Input id="phone-host" value={host} onChange={(e) => setHost(e.target.value)} placeholder="zippy.example.com" className="max-w-xs flex-1 font-mono text-[13px]" />
+              <Button type="submit" size="sm" className="max-md:min-h-11" disabled={!!busy || !host.trim()}>
+                {busy === "host" ? "Waiting for Cloudflare…" : "Connect domain"}
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">Needs a domain on your Cloudflare account. Your browser opens once to log in to Cloudflare; Zippy then creates a tunnel named “zippy” and a DNS record for this hostname.</p>
+          </form>
+        )
+      )}
     </Card>
   );
 }
