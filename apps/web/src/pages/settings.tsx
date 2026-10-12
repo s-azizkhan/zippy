@@ -941,7 +941,7 @@ function ClaudeToken({ set }: { set: boolean }) {
 }
 
 type HubTool = { name: string; group: string; risk: "read" | "write" | "danger"; summary: string; enabled: boolean };
-type Hub = { name: string; url: string; enabled: boolean; token: string | null; command: string | null; registered: boolean; current: boolean; tools: HubTool[] };
+type Hub = { name: string; url: string; enabled: boolean; token: string | null; command: string | null; registered: boolean; current: boolean; desktop: boolean | null; tools: HubTool[] };
 const RISK: Record<HubTool["risk"], { label: string; cls: string }> = {
   read: { label: "read", cls: "text-muted-foreground bg-muted" },
   write: { label: "writes", cls: "text-amber-700 bg-amber-500/10 dark:text-amber-400" },
@@ -966,7 +966,7 @@ function ClaudeHub() {
     mutationFn: ({ op, body = {} }: { op: "register" | "rotate" | "unregister" | "enabled" | "revoke"; body?: object }) => api.post<Hub>(`/system/hub/${op}`, body, true),
     onSuccess: (h, { op }) => {
       qc.setQueryData(["system", "hub"], h);
-      toast.success({ register: "Registered in Claude Code", rotate: "New token issued", unregister: "Removed from Claude Code", enabled: h.enabled ? "Zippy Hub enabled" : "Zippy Hub disabled", revoke: "Access revoked" }[op]);
+      toast.success({ register: h.desktop !== null ? "Registered in Claude Code and Claude Desktop (restart Desktop to load it)" : "Registered in Claude Code", rotate: "New token issued", unregister: "Removed from Claude Code and Claude Desktop", enabled: h.enabled ? "Zippy Hub enabled" : "Zippy Hub disabled", revoke: "Access revoked" }[op]);
       setRevoking(false);
     },
   });
@@ -981,7 +981,7 @@ function ClaudeHub() {
   const busy = act.isPending;
   const on = hub?.enabled ?? true;
   return (
-    <Card title="Claude Code MCP" desc="Use your whole Zippy from any Claude Code session: tickets, agents, inbox, pipelines, diffs, knowledge base and live terminals. Registered once for your user, works in every project.">
+    <Card title="Claude MCP" desc="Use your whole Zippy from any Claude Code session or Claude Desktop: tickets, agents, inbox, pipelines, diffs, knowledge base and live terminals. Registered once for your user, works in every project.">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Status ok={!!hub?.current && on} loading={isLoading}>
           {isLoading ? "Checking…" : !on ? "Disabled: clients are refused" : hub?.current ? `Registered as ${hub.name}` : hub?.registered ? "Registered with an old URL or token" : "Not registered"}
@@ -994,7 +994,7 @@ function ClaudeHub() {
           )}
           {!hub?.current && on && (
             <Button size="sm" className="max-md:min-h-11" disabled={busy || isLoading} onClick={() => act.mutate({ op: "register" })}>
-              <Plug aria-hidden /> {hub?.registered ? "Update" : "Register in Claude Code"}
+              <Plug aria-hidden /> {hub?.registered ? "Update" : hub?.desktop !== null ? "Register in Claude Code and Desktop" : "Register in Claude Code"}
             </Button>
           )}
           {hub && <EnableSwitch id="hub-enabled" checked={on} disabled={busy} onChange={(enabled) => act.mutate({ op: "enabled", body: { enabled } })} />}
@@ -1026,7 +1026,7 @@ function ClaudeHub() {
         open={revoking}
         onOpenChange={setRevoking}
         title="Revoke Zippy Hub access?"
-        desc="Deletes the token and removes the Claude Code registration. Every client using it stops working at once. Register again to get a new token."
+        desc="Deletes the token and removes the Claude Code and Claude Desktop registrations. Every client using it stops working at once. Register again to get a new token."
         action="Revoke access"
         pending={busy}
         onConfirm={() => act.mutate({ op: "revoke" })}

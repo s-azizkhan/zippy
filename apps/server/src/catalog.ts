@@ -34,7 +34,10 @@ const DESKTOP = join(HOME, "Library/Application Support/Claude/claude_desktop_co
 export const desktopMcps = (): Record<string, { command: string; args?: string[]; env?: Record<string, string> }> => json(DESKTOP).mcpServers ?? {};
 
 /** Raw MCP configs from Claude Code and Desktop (Code wins on name clash). */
-export const importableMcps = (): Record<string, unknown> => ({ ...desktopMcps(), ...json(join(HOME, ".claude.json")).mcpServers });
+export const importableMcps = (): Record<string, unknown> => {
+  const { "zippy-hub": _hub, ...rest } = { ...desktopMcps(), ...json(join(HOME, ".claude.json")).mcpServers }; // the human's own hub
+  return rest;
+};
 
 export function scanCatalog(): Omit<Catalog, "presets"> {
   const plugins = json(join(HOME, ".claude/plugins/installed_plugins.json")).plugins ?? {};
@@ -44,7 +47,7 @@ export function scanCatalog(): Omit<Catalog, "presets"> {
     .flatMap(([key, [p]]) => skillsIn(join(p!.installPath, "skills"), `${key.split("@")[0]}:`, `plugin ${key}`));
   const code = mcpsOf(json(join(HOME, ".claude.json")).mcpServers, "Claude Code", true).filter((m) => m.name !== "zippy-hub"); // the human's own hub; Zippers never get it
   const seen = new Set(code.map((m) => m.name));
-  const desktop = mcpsOf(desktopMcps(), "Claude Desktop", false).filter((m) => !seen.has(m.name));
+  const desktop = mcpsOf(desktopMcps(), "Claude Desktop", false).filter((m) => !seen.has(m.name) && m.name !== "zippy-hub");
   const linear: CatalogItem = { id: "mcp:linear", kind: "mcp", name: "linear", description: "Linear issues and projects (~32k tokens per turn).", source: "Zippy", defaultOn: false };
   return { items: [linear, ...skillsIn(join(HOME, ".claude/skills"), "", "~/.claude/skills"), ...fromPlugins, ...code, ...desktop] };
 }

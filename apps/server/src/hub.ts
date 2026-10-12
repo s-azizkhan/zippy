@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -83,13 +83,48 @@ export const HUB_TOOLS: Record<string, ToolInfo> = {
 };
 const enabled = (name: string, cfg = readConfig()) => cfg.tools?.[name] ?? HUB_TOOLS[name]!.risk !== "danger";
 
-/** What ~/.claude.json has for the hub: registered with this URL and token, or stale (an old port/token). */
-function registration(token: string | null) {
-  let cfg: { url?: string; headers?: Record<string, string> } | undefined;
+// Claude Desktop's config only takes stdio servers: bridge to the HTTP hub with mcp-remote. The token sits in a 0600 header file,
+// not in the config or the process list, so a token rotation needs no Desktop config change.
+const DESKTOP_DIR = join(homedir(), "Library/Application Support/Claude");
+const DESKTOP_CONFIG = join(DESKTOP_DIR, "claude_desktop_config.json");
+const HEADER_FILE = join(homedir(), ".zippy", "hub-header");
+const readJson = (p: string) => {
   try {
-    cfg = JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8")).mcpServers?.[HUB_NAME];
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return {};
+  }
+};
+const desktopArgs = () => ["-y", "mcp-remote@0.14.3", hubUrl(), "--allow-http", "--header-file", HEADER_FILE];
+function writeDesktop(token: string | null) {
+  if (!existsSync(DESKTOP_DIR)) return; // Desktop not installed
+  const cfg = readJson(DESKTOP_CONFIG);
+  const servers = { ...cfg.mcpServers };
+  if (token) {
+    writeFileSync(HEADER_FILE, `Authorization: Bearer ${token}\n`, { mode: 0o600 });
+    chmodSync(HEADER_FILE, 0o600);
+    // Desktop launches with a bare PATH: absolute npx, and our PATH so its `#!/usr/bin/env node` resolves.
+    const PATH = userEnv().PATH ?? "";
+    const npx = PATH.split(":").map((d) => join(d, "npx")).find((f) => existsSync(f)) ?? "npx";
+    servers[HUB_NAME] = { command: npx, args: desktopArgs(), env: { PATH } };
+  } else {
+    if (!servers[HUB_NAME]) return;
+    delete servers[HUB_NAME];
+  }
+  writeFileSync(DESKTOP_CONFIG, JSON.stringify({ ...cfg, mcpServers: servers }, null, 2));
+}
+
+/** Hub registration in Claude Code (~/.claude.json) and Claude Desktop: registered, or current (this URL and token everywhere). */
+function registration(token: string | null) {
+  const code: { url?: string; headers?: Record<string, string> } | undefined = readJson(join(homedir(), ".claude.json")).mcpServers?.[HUB_NAME];
+  const desktop: { args?: string[] } | undefined = existsSync(DESKTOP_DIR) ? readJson(DESKTOP_CONFIG).mcpServers?.[HUB_NAME] : undefined;
+  let header = "";
+  try {
+    header = readFileSync(HEADER_FILE, "utf8").trim();
   } catch {}
-  return { registered: !!cfg, current: !!cfg && cfg.url === hubUrl() && cfg.headers?.Authorization === `Bearer ${token}` };
+  const codeOk = !!code && code.url === hubUrl() && code.headers?.Authorization === `Bearer ${token}`;
+  const desktopOk = !existsSync(DESKTOP_DIR) || (!!desktop && desktop.args?.includes(hubUrl()) === true && header === `Authorization: Bearer ${token}`);
+  return { registered: !!code || !!desktop, current: codeOk && desktopOk, desktop: existsSync(DESKTOP_DIR) ? !!desktop : null };
 }
 
 const run = promisify(execFile);
@@ -101,6 +136,7 @@ async function register(token: string) {
   await run(claude, addArgs(token), { env: userEnv() }).catch((e: { stderr?: string }) => {
     throw new Error(`claude mcp add failed: ${e.stderr?.trim().replaceAll(token, "***") || "unknown error"}`);
   });
+  writeDesktop(token);
 }
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
@@ -679,7 +715,10 @@ export function mountHub(app: Hono) {
     if (was) await register(token);
     return c.json(status());
   });
-  const unregister = () => run(claudePath ?? "claude", ["mcp", "remove", "--scope", "user", HUB_NAME], { env: userEnv() });
+  const unregister = async () => {
+    writeDesktop(null);
+    await run(claudePath ?? "claude", ["mcp", "remove", "--scope", "user", HUB_NAME], { env: userEnv() }).catch(() => {}); // may be Desktop-only
+  };
   app.post("/system/hub/unregister", async (c) => (await unregister(), c.json(status())));
   // Off: every client gets 403, registration and token kept. Back on: works again, nothing to re-register.
   app.post("/system/hub/enabled", async (c) => {
