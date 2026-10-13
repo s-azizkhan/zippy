@@ -16,9 +16,10 @@ if (process.env.ZIPPY_CONFIG) {
 // Desktop shell: serve the built web app from the same origin as /api.
 const dist = process.env.ZIPPY_WEB_DIST;
 const root = dist && relative(process.cwd(), dist);
-// index.html must revalidate, or the webview keeps old chunk hashes across app updates
+// index.html must revalidate, or the webview keeps old chunk hashes across app updates; hashed chunks never change
 const noCacheHtml = (path: string, c: { header: (k: string, v: string) => void }) => {
   if (path.endsWith(".html")) c.header("Cache-Control", "no-cache");
+  else if (path.includes("/assets/")) c.header("Cache-Control", "public, max-age=31536000, immutable");
 };
 const main = root
   ? new Hono()
