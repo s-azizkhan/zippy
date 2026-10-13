@@ -65,6 +65,9 @@ function Item({ icon: Icon, label, color, on, count, to, onClick }: { icon: Icon
   );
 }
 
+/** Phone terminal screen: full-bleed, no dock (pane header has a back button). */
+export const isTermScreen = (pathname: string) => /^\/terminals\/[^/]+/.test(pathname);
+
 export function MobileNav({ orgId }: { orgId: string }) {
   const { pathname, search } = useLocation();
   const { setNewTicketOpen, setPaletteOpen, setOnboardingOpen } = useUI();
@@ -81,7 +84,7 @@ export function MobileNav({ orgId }: { orgId: string }) {
 
   return (
     <>
-      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 flex items-center justify-center gap-2.5 px-3 md:hidden">
+      <div className={`pointer-events-none fixed inset-x-0 ${isTermScreen(pathname) ? "hidden" : ""} bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 flex items-center justify-center gap-2.5 px-3 md:hidden`}>
         <motion.nav initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ ...spring, delay: 0.1 }} aria-label="Main" className="liquid pointer-events-auto flex items-center gap-0.5 rounded-full p-1.5">
           <Item to="/" icon={Layers} label="Issues" color="#7c87f0" on={issuesOn} />
           <Item to="/inbox" icon={Inbox} label="Inbox" color="#f2994a" on={pathname.startsWith("/inbox")} count={inbox} />

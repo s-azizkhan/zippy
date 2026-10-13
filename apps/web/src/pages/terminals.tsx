@@ -94,12 +94,16 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textR
     });
 
     let resizeTimer: ReturnType<typeof setTimeout>;
-    const resize = () => {
-      if (!el.offsetWidth) return; // hidden (another pane is zoomed)
-      fit.fit();
+    const post = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => void api.post(`/terminals/${id}/resize`, { cols: t.cols, rows: t.rows }, true).catch(() => {}), 80);
     };
+    const resize = () => {
+      if (!el.offsetWidth) return; // hidden (another pane is zoomed)
+      fit.fit();
+      post();
+    };
+    t.onResize(post); // font size changes refit without the host resizing
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(el);
@@ -155,7 +159,7 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textR
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={host} className="h-full w-full overflow-hidden px-2 pt-1 pb-1" />
+      <div ref={host} className="h-full w-full overflow-hidden px-2 pt-1 pb-1 max-md:px-1" />
       {find !== null && (
         <div className="bg-popover/95 border-foreground/10 absolute top-2 right-3 z-10 flex items-center gap-1 rounded-lg border p-1 shadow-lg backdrop-blur">
           <Search className="text-muted-foreground ml-1 size-3.5" aria-hidden />
@@ -614,6 +618,10 @@ export function TerminalsPage() {
                 <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-[10.5px] leading-4">
                   {!t.alive ? (
                     <span className={cn("shrink-0", t.exitCode && "text-red-500")}>exited {t.exitCode}</span>
+                  ) : proc === "claude" ? (
+                    <span className="flex shrink-0 items-center gap-1 rounded bg-[#d97757]/15 px-1 font-medium text-[#d97757]">
+                      <span aria-hidden>✻</span>Claude
+                    </span>
                   ) : proc ? (
                     <span className="text-foreground/70 shrink-0 font-mono">{proc}</span>
                   ) : (
@@ -696,9 +704,13 @@ export function TerminalsPage() {
         {hidden ? (
           <div className="flex flex-col items-center gap-1 px-1 pb-4">
             {ordered.map((t, i) => (
-              <button key={t.id} title={t.title} aria-label={t.title} onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)} style={{ "--i": i } as React.CSSProperties} className={cn("rise relative flex size-9 items-center justify-center rounded-lg font-mono text-[10px] uppercase", t.id === id ? "text-foreground" : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground", t.id !== id && live.includes(t.id) && "bg-foreground/[0.04]")}>
+              <button key={t.id} title={t.title} aria-label={t.alive && t.process === "claude" ? `${t.title} (Claude)` : t.title} onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)} style={{ "--i": i } as React.CSSProperties} className={cn("rise relative flex size-9 items-center justify-center rounded-lg font-mono text-[10px] uppercase", t.id === id ? "text-foreground" : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground", t.id !== id && live.includes(t.id) && "bg-foreground/[0.04]")}>
                 {t.id === id && <motion.span layoutId="term-rail-active" transition={spring} className="bg-primary/15 ring-primary/30 absolute inset-0 rounded-lg ring-1" aria-hidden />}
-                <span className="relative">{t.title.replace(/[^a-z0-9]/gi, "").slice(0, 2) || "sh"}</span>
+                {t.alive && t.process === "claude" ? (
+                  <span className="relative text-sm text-[#d97757]" aria-hidden>✻</span>
+                ) : (
+                  <span className="relative">{t.title.replace(/[^a-z0-9]/gi, "").slice(0, 2) || "sh"}</span>
+                )}
                 <span className="absolute right-1 bottom-1"><StatusDot t={t} unread={unread(t)} now={now} /></span>
               </button>
             ))}
@@ -809,7 +821,7 @@ export function TerminalsPage() {
       {panes_ && (
       <Panel id="panes" minSize="30%">
       <div
-        className="grid h-full min-h-0 min-w-0 gap-2 p-2"
+        className="grid h-full min-h-0 min-w-0 gap-2 p-2 max-md:p-0"
         style={{ gridTemplateColumns: `repeat(${n <= 1 ? 1 : n <= 4 ? 2 : 3}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${n <= 2 ? 1 : 2}, minmax(0, 1fr))` }}
         onDragOver={(e) => e.dataTransfer.types.includes("text/zippy-term") && e.preventDefault()}
         onDrop={(e) => {
@@ -828,7 +840,7 @@ export function TerminalsPage() {
                 key={pid}
                 aria-label={t.title}
                 className={cn(
-                  "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-[#0f0f10] ring-1 transition-shadow",
+                  "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-[#0f0f10] ring-1 transition-shadow max-md:rounded-none max-md:ring-0",
                   focused && n > 1 ? "ring-primary/70" : "ring-white/[0.06]",
                   !shown.includes(pid) && "hidden",
                   n % 2 === 1 && n > 1 && i === 0 && "row-span-2",
@@ -877,14 +889,14 @@ export function TerminalsPage() {
                     </span>
                   )}
                   <span className="truncate max-md:hidden">{wsName(t.workspaceId)}</span>
-                  <TagChips t={t} onRemove={(tag) => untag(t, tag)} className="text-white/70" />
+                  <TagChips t={t} onRemove={(tag) => untag(t, tag)} className="text-white/70 max-md:hidden" />
                   {proc && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-white/70">{proc}</span>}
                   {!t.alive && <span className={cn("shrink-0", t.exitCode ? "text-red-400" : "")}>exit {t.exitCode}</span>}
                   <PortChips ports={portsOf(t.id)} className="text-sky-300" />
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/h:opacity-100 focus-within:opacity-100 max-md:opacity-100">
                     <PaneBtn label={`${files && focused ? "Hide" : "Show"} files for ${wsName(t.workspaceId)} (${M}E)`} onClick={() => (navigate(`/terminals/${pid}`), (!files || focused) && toggleFiles())} icon={FolderOpen} active={files && focused} />
                     <PaneBtn label={`Find (${M}F)`} onClick={() => (navigate(`/terminals/${pid}`), setFindReq((x) => x + 1))} icon={Search} />
-                    <PaneBtn label={`New issue from selection (${M}I)`} onClick={() => capture(t)} icon={FilePlus2} />
+                    {!phone && <PaneBtn label={`New issue from selection (${M}I)`} onClick={() => capture(t)} icon={FilePlus2} />}
                     <PaneBtn label={`Restart${t.command ? ` and re-run "${t.command}"` : ""} (${M}⌥R)`} onClick={() => restart(t.id)} icon={RotateCw} />
                     {!phone && live.length < MAX_PANES && <PaneBtn label={`Split (${M}D)`} onClick={() => open(t.workspaceId, true)} icon={Columns2} />}
                     {!phone && (n > 1 || zoomed) ? <PaneBtn label={`${zoomed ? "Unzoom" : "Zoom"} (${M}⇧↵)`} onClick={() => (navigate(`/terminals/${pid}`), setZoomed((z) => !z))} icon={zoomed ? Minimize2 : Maximize2} /> : null}
@@ -898,6 +910,12 @@ export function TerminalsPage() {
                     {KEYS.map(([label, data]) => (
                       // preventDefault on pointerdown keeps xterm focused so the phone keyboard stays up.
                       <button key={label} type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void api.post(`/terminals/${t.id}/input`, { data }, true).catch(() => {})} className="h-8 min-w-9 shrink-0 rounded-md bg-white/[0.07] px-2 active:bg-white/20">
+                        {label}
+                      </button>
+                    ))}
+                    {/* Font size sets cols × rows, the main lever for fitting output on a phone. */}
+                    {([["A−", -1], ["A+", 1]] as const).map(([label, d]) => (
+                      <button key={label} type="button" aria-label={d < 0 ? "Smaller text" : "Larger text"} onPointerDown={(e) => e.preventDefault()} onClick={() => font(Math.min(24, Math.max(8, fontSize + d)))} className="h-8 min-w-9 shrink-0 rounded-md bg-white/[0.04] px-2 text-white/60 active:bg-white/20">
                         {label}
                       </button>
                     ))}

@@ -48,11 +48,17 @@ export const parseTags = (title: string) => [...new Set(title.match(/(?<!\S)(@[a
 const sessions = new Map<string, Session>();
 let seq = 0;
 
+/** Native Claude Code runs from ~/.local/share/claude/versions/<semver>, so the OS reports its name as e.g. "2.1.296". */
+export const procName = (path: string) => {
+  const name = path.split("/").pop()!;
+  return /^\d+\.\d+\.\d+$/.test(name) ? "claude" : name;
+};
+
 const info = (s: Session): TermInfo => {
   const { proc, buf: _b, events: _e, delaySec: _d, timer: _t, ...rest } = s;
   let p = "";
   try {
-    p = s.alive ? proc.process.split("/").pop()! : "";
+    p = s.alive ? procName(proc.process) : "";
   } catch {}
   return { ...rest, process: p };
 };
