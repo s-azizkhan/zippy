@@ -1,4 +1,4 @@
-import { Activity, Bot, Inbox, Layers, ListChecks, Check, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Newspaper, Plus, RefreshCw, Search, Settings, Workflow } from "lucide-react";
+import { Activity, Bot, Inbox, Layers, ListChecks, Check, ChevronRight, FolderGit2, MessageSquare, MoreHorizontal, Newspaper, Plus, Radio, RefreshCw, SquareTerminal, Search, Settings, Workflow } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
@@ -17,6 +17,8 @@ const MORE: { to: string; label: string; icon: Icon; color: string }[] = [
   { to: "/todo", label: "Todo", icon: ListChecks, color: "#f472b6" },
   { to: "/news", label: "Trending", icon: Newspaper, color: "#60a5fa" },
   { to: "/running", label: "Running", icon: Activity, color: "#4cb782" },
+  { to: "/terminals", label: "Terminals", icon: SquareTerminal, color: "#a3a3a3" },
+  { to: "/ports", label: "Ports", icon: Radio, color: "#34d399" },
   { to: "/pipelines", label: "Pipelines", icon: Workflow, color: "#26b5ce" },
   { to: "/routines", label: "Routines", icon: RefreshCw, color: "#f2c94c" },
   { to: "/settings", label: "Settings", icon: Settings, color: "#94a3b8" },

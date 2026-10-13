@@ -3,9 +3,9 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { BookmarkPlus, ChevronDown, ChevronUp, Columns2, Eraser, FilePlus2, Folder, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
+import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronUp, Columns2, Eraser, FilePlus2, Folder, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, Reorder, useDragControls } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +26,10 @@ import { cn } from "@/lib/utils";
 import type { PortInfo } from "@/pages/ports";
 
 const MAX_PANES = 6;
+// Phone: list and terminal are separate screens, one pane at a time, plus a key bar for keys a phone keyboard lacks.
+const phoneMq = matchMedia("(max-width: 47.99rem)");
+const usePhone = () => useSyncExternalStore((cb) => (phoneMq.addEventListener("change", cb), () => phoneMq.removeEventListener("change", cb)), () => phoneMq.matches);
+const KEYS: [string, string][] = [["esc", "\x1b"], ["tab", "\t"], ["^C", "\x03"], ["^D", "\x04"], ["^L", "\x0c"], ["^R", "\x12"], ["←", "\x1b[D"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["→", "\x1b[C"], ["|", "|"], ["~", "~"], ["/", "/"], ["-", "-"]];
 const SHELLS = new Set(["zsh", "-zsh", "bash", "-bash", "fish", "sh", "login"]);
 const store = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} } };
 /** Quote a path for the shell line unless it's plain. */
@@ -399,7 +403,9 @@ export function TerminalsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({}); // ponytail: in-memory fold state; persist if it ever annoys
-  const [hidden, setHidden] = useState(() => store.get("zippy-term-rail") === "1");
+  const phone = usePhone();
+  const [railPref, setHidden] = useState(() => store.get("zippy-term-rail") === "1");
+  const hidden = railPref && !phone;
   const toggleRail = () => setHidden((h) => (store.set("zippy-term-rail", h ? "0" : "1"), !h));
   const [fontSize, setFontSize] = useState(() => Number(store.get("zippy-term-font")) || 12);
   const font = (n: number) => setFontSize(() => (store.set("zippy-term-font", String(n)), n));
@@ -449,7 +455,7 @@ export function TerminalsPage() {
   // Arriving from elsewhere (palette, Ports page, back button) with an id that isn't on screen.
   useEffect(() => {
     if (id && isSuccess && terms.some((t) => t.id === id) && !live.includes(id)) show(id);
-    else if (!id && live.length) navigate(`/terminals/${live[0]}`, { replace: true });
+    else if (!id && live.length && !phone) navigate(`/terminals/${live[0]}`, { replace: true });
   }, [id, isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addTerms = (opened: TermInfo[]) => qc.setQueryData<TermInfo[]>(key, (ts = []) => [...ts, ...opened.filter((t) => !ts.some((x) => x.id === t.id))]);
@@ -550,11 +556,12 @@ export function TerminalsPage() {
 
   const needle = q.trim().toLowerCase();
   const hit = (t: TermInfo, w: { name: string }) => !needle || [t.title, w.name, t.process, t.command, ...t.tags, ...portsOf(t.id).map(String)].some((s) => s.toLowerCase().includes(needle));
-  const shown = zoomed && current && live.includes(current.id) ? [current.id] : live;
+  const shown = (zoomed || phone) && current && live.includes(current.id) ? [current.id] : live;
   const n = shown.length;
   const filesWs = workspaces.find((w) => w.id === ((pickedWs && pickedWs.under === id ? pickedWs.ws : undefined) ?? current?.workspaceId ?? workspaces[0]?.id));
   const [dropping, setDropping] = useState<string | null>(null);
 
+  const panes_ = shells && !(phone && files); // phone: files panel takes the whole screen
   const running = terms.filter((t) => t.alive).length;
   const busyN = terms.filter((t) => t.alive && now - t.lastDataAt < 2000).length;
 
@@ -640,7 +647,7 @@ export function TerminalsPage() {
   return (
     <div className="flex min-h-0 flex-1">
       <MotionConfig reducedMotion="user">
-      <motion.aside initial={false} animate={{ width: hidden ? 48 : 272 }} transition={spring} className="border-foreground/[0.07] relative flex shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_4%,transparent),transparent_40%)]" aria-label="Terminals">
+      <motion.aside initial={false} animate={{ width: phone ? "100%" : hidden ? 48 : 272 }} transition={spring} className={cn(phone && id && "hidden", "border-foreground/[0.07] relative flex shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_4%,transparent),transparent_40%)]")} aria-label="Terminals">
         <div className={cn("bg-background/70 sticky top-0 z-10 flex items-center pt-4 pb-3 backdrop-blur-md", hidden ? "justify-center px-1" : "justify-between px-4")}>
           {!hidden && (
             <div className="min-w-0">
@@ -798,8 +805,8 @@ export function TerminalsPage() {
       </motion.aside>
       </MotionConfig>
       {tplDialog.open && <TemplateDialog orgId={org.id} workspaces={workspaces} initial={tplDialog.edit} seed={tplDialog.seed} onClose={() => setTplDialog({ open: false, edit: null })} />}
-      <Group orientation="horizontal" id="term-files" defaultLayout={filesLayout.defaultLayout} onLayoutChanged={filesLayout.onLayoutChanged} className="min-h-0 min-w-0 flex-1">
-      {shells && (
+      <Group orientation="horizontal" id="term-files" defaultLayout={filesLayout.defaultLayout} onLayoutChanged={filesLayout.onLayoutChanged} className={cn("min-h-0 min-w-0 flex-1", phone && !id && "hidden")}>
+      {panes_ && (
       <Panel id="panes" minSize="30%">
       <div
         className="grid h-full min-h-0 min-w-0 gap-2 p-2"
@@ -845,6 +852,11 @@ export function TerminalsPage() {
                 }}
               >
                 <header className="group/h flex h-8 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 font-mono text-[11px] text-white/50" onClick={() => !focused && navigate(`/terminals/${pid}`)}>
+                  {phone && (
+                    <button type="button" aria-label="All terminals" onClick={(e) => (e.stopPropagation(), navigate("/terminals"))} className="-ml-2 flex size-6 shrink-0 items-center justify-center rounded text-white/70">
+                      <ChevronLeft className="size-4" aria-hidden />
+                    </button>
+                  )}
                   <StatusDot t={t} unread={false} now={now} />
                   {editing === `pane:${t.id}` ? (
                     <input
@@ -864,23 +876,33 @@ export function TerminalsPage() {
                       {t.title}
                     </span>
                   )}
-                  <span className="truncate">{wsName(t.workspaceId)}</span>
+                  <span className="truncate max-md:hidden">{wsName(t.workspaceId)}</span>
                   <TagChips t={t} onRemove={(tag) => untag(t, tag)} className="text-white/70" />
                   {proc && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-white/70">{proc}</span>}
                   {!t.alive && <span className={cn("shrink-0", t.exitCode ? "text-red-400" : "")}>exit {t.exitCode}</span>}
                   <PortChips ports={portsOf(t.id)} className="text-sky-300" />
-                  <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/h:opacity-100 focus-within:opacity-100">
+                  <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/h:opacity-100 focus-within:opacity-100 max-md:opacity-100">
                     <PaneBtn label={`${files && focused ? "Hide" : "Show"} files for ${wsName(t.workspaceId)} (${M}E)`} onClick={() => (navigate(`/terminals/${pid}`), (!files || focused) && toggleFiles())} icon={FolderOpen} active={files && focused} />
                     <PaneBtn label={`Find (${M}F)`} onClick={() => (navigate(`/terminals/${pid}`), setFindReq((x) => x + 1))} icon={Search} />
                     <PaneBtn label={`New issue from selection (${M}I)`} onClick={() => capture(t)} icon={FilePlus2} />
                     <PaneBtn label={`Restart${t.command ? ` and re-run "${t.command}"` : ""} (${M}⌥R)`} onClick={() => restart(t.id)} icon={RotateCw} />
-                    {live.length < MAX_PANES && <PaneBtn label={`Split (${M}D)`} onClick={() => open(t.workspaceId, true)} icon={Columns2} />}
-                    {n > 1 || zoomed ? <PaneBtn label={`${zoomed ? "Unzoom" : "Zoom"} (${M}⇧↵)`} onClick={() => (navigate(`/terminals/${pid}`), setZoomed((z) => !z))} icon={zoomed ? Minimize2 : Maximize2} /> : null}
-                    {live.length > 1 && <PaneBtn label="Remove from view (keeps running)" onClick={() => unsplit(pid)} icon={SquareX} />}
+                    {!phone && live.length < MAX_PANES && <PaneBtn label={`Split (${M}D)`} onClick={() => open(t.workspaceId, true)} icon={Columns2} />}
+                    {!phone && (n > 1 || zoomed) ? <PaneBtn label={`${zoomed ? "Unzoom" : "Zoom"} (${M}⇧↵)`} onClick={() => (navigate(`/terminals/${pid}`), setZoomed((z) => !z))} icon={zoomed ? Minimize2 : Maximize2} /> : null}
+                    {!phone && live.length > 1 && <PaneBtn label="Remove from view (keeps running)" onClick={() => unsplit(pid)} icon={SquareX} />}
                     <PaneBtn label="Close terminal" onClick={() => kill(t)} icon={X} danger />
                   </span>
                 </header>
                 <PtyTerminal id={pid} focused={focused} fontSize={fontSize} findReq={focused ? findReq : 0} onFocus={() => !focused && navigate(`/terminals/${pid}`)} onRestart={() => restart(pid)} textRef={textRef} />
+                {phone && focused && t.alive && (
+                  <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/[0.06] p-1.5 font-mono text-xs text-white/80" aria-label="Terminal keys">
+                    {KEYS.map(([label, data]) => (
+                      // preventDefault on pointerdown keeps xterm focused so the phone keyboard stays up.
+                      <button key={label} type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void api.post(`/terminals/${t.id}/input`, { data }, true).catch(() => {})} className="h-8 min-w-9 shrink-0 rounded-md bg-white/[0.07] px-2 active:bg-white/20">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </section>
             );
           })
@@ -892,7 +914,7 @@ export function TerminalsPage() {
       )}
       {files && filesWs && (
         <>
-          {shells && <Separator className="bg-border hover:bg-primary focus-visible:bg-primary relative w-px outline-none transition-colors after:absolute after:inset-y-0 after:-inset-x-1" />}
+          {panes_ && <Separator className="bg-border hover:bg-primary focus-visible:bg-primary relative w-px outline-none transition-colors after:absolute after:inset-y-0 after:-inset-x-1" />}
           <Panel id="files" minSize="22%" defaultSize="38%" className="min-w-0">
             <motion.div key={filesWs.id} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.18, ease: "easeOut" }} className="flex h-full min-h-0 flex-col">
               <header className="border-foreground/[0.07] flex h-9 shrink-0 items-center gap-2 border-b px-3 text-xs">
