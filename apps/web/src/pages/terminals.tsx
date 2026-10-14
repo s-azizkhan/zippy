@@ -655,7 +655,7 @@ export function TerminalsPage() {
   return (
     <div className="flex min-h-0 flex-1">
       <MotionConfig reducedMotion="user">
-      <motion.aside initial={false} animate={{ width: phone ? "100%" : hidden ? 48 : 272 }} transition={spring} className={cn(phone && id && "hidden", "border-foreground/[0.07] relative flex shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_4%,transparent),transparent_40%)]")} aria-label="Terminals">
+      <motion.aside initial={false} animate={{ width: phone ? "100%" : hidden ? 48 : 272 }} transition={spring} className={cn("border-foreground/[0.07] relative flex shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r bg-[linear-gradient(180deg,color-mix(in_oklab,var(--primary)_4%,transparent),transparent_40%)]", phone && id && "hidden")} aria-label="Terminals">
         <div className={cn("bg-background/70 sticky top-0 z-10 flex items-center pt-4 pb-3 backdrop-blur-md", hidden ? "justify-center px-1" : "justify-between px-4")}>
           {!hidden && (
             <div className="min-w-0">
