@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Boxes, Clock, FileText, Flame, GitFork, Layers, MessagesSquare, Newspaper, PenLine, RefreshCw, Star, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Boxes, Briefcase, Globe, Clock, FileText, Flame, GitFork, Layers, MessagesSquare, Newspaper, PenLine, RefreshCw, Star, type LucideIcon } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent } from "react";
 import { toast } from "sonner";
@@ -10,9 +10,9 @@ import { api, useApiMutation, useNews, type News } from "@/lib/api";
 import { ago, cn } from "@/lib/utils";
 
 type Source = News["source"];
-const SOURCES = { hn: "Hacker News", github: "GitHub", hf: "Models", papers: "Papers", lobsters: "Lobsters", devto: "DEV" } as const;
-const UNIT = { hn: "points", github: "stars", hf: "likes", papers: "upvotes", lobsters: "points", devto: "reactions" } as const;
-const ICONS: Record<Source | "all" | "saved", LucideIcon> = { all: Layers, hn: Flame, github: GitFork, hf: Boxes, papers: FileText, lobsters: MessagesSquare, devto: PenLine, saved: Star };
+const SOURCES = { hn: "Hacker News", github: "GitHub", hf: "Models", papers: "Papers", lobsters: "Lobsters", devto: "DEV", bw: "Business Wire", gnews: "Google News" } as const;
+const UNIT = { hn: "points", github: "stars", hf: "likes", papers: "upvotes", lobsters: "points", devto: "reactions", bw: "", gnews: "" } as const;
+const ICONS: Record<Source | "all" | "saved", LucideIcon> = { all: Layers, hn: Flame, github: GitFork, hf: Boxes, papers: FileText, lobsters: MessagesSquare, devto: PenLine, bw: Briefcase, gnews: Globe, saved: Star };
 const TINTS: Record<Source | "all" | "saved", string> = {
   all: "var(--primary)",
   hn: "oklch(0.7 0.19 45)",
@@ -21,6 +21,8 @@ const TINTS: Record<Source | "all" | "saved", string> = {
   papers: "oklch(0.68 0.17 300)",
   lobsters: "oklch(0.64 0.2 25)",
   devto: "oklch(0.72 0.12 195)",
+  bw: "oklch(0.7 0.14 155)",
+  gnews: "oklch(0.68 0.16 250)",
   saved: "oklch(0.8 0.16 80)",
 };
 // Sources linking out to arbitrary sites; show the domain so the reader knows where they land.
@@ -225,17 +227,19 @@ function Row({ n, i, ranked, heat, reduce, onSave }: { n: News; i: number; ranke
         <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <span className="font-medium text-(--tint)">{SOURCES[n.source]}</span>
           {host && <span className="truncate">{host}</span>}
-          <span className="inline-flex items-center gap-1.5 tabular-nums" title={`${n.score.toLocaleString()} ${UNIT[n.source]}`}>
-            <span className="bg-muted relative h-1 w-8 overflow-hidden rounded-full" aria-hidden>
-              <motion.span
-                className="absolute inset-y-0 left-0 rounded-full bg-(--tint)"
-                initial={reduce ? false : { width: 0 }}
-                animate={{ width: `${Math.max(6, heat * 100)}%` }}
-                transition={{ duration: 0.8, delay: 0.15 + Math.min(i, 12) * 0.03, ease: [0.2, 0.8, 0.2, 1] }}
-              />
+          {UNIT[n.source] && (
+            <span className="inline-flex items-center gap-1.5 tabular-nums" title={`${n.score.toLocaleString()} ${UNIT[n.source]}`}>
+              <span className="bg-muted relative h-1 w-8 overflow-hidden rounded-full" aria-hidden>
+                <motion.span
+                  className="absolute inset-y-0 left-0 rounded-full bg-(--tint)"
+                  initial={reduce ? false : { width: 0 }}
+                  animate={{ width: `${Math.max(6, heat * 100)}%` }}
+                  transition={{ duration: 0.8, delay: 0.15 + Math.min(i, 12) * 0.03, ease: [0.2, 0.8, 0.2, 1] }}
+                />
+              </span>
+              {n.score.toLocaleString()} {UNIT[n.source]}
             </span>
-            {n.score.toLocaleString()} {UNIT[n.source]}
-          </span>
+          )}
           {n.publishedAt && <span>{ago(n.publishedAt)}</span>}
           {n.readMinutes && (
             <span className="inline-flex items-center gap-1">

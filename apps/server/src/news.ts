@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import { db, news } from "./db/index.ts";
 
-export type Source = "hn" | "github" | "hf" | "papers" | "lobsters" | "devto";
+export type Source = "hn" | "github" | "hf" | "papers" | "lobsters" | "devto" | "bw" | "gnews";
 type Item = { source: Source; title: string; url: string; summary: string; score: number; publishedAt: Date | null; readMinutes?: number | null };
 
 const get = async (url: string) => {
@@ -11,6 +11,20 @@ const get = async (url: string) => {
   if (!res.ok) throw new Error(`${new URL(url).host} ${res.status}`);
   return res.json() as Promise<any>;
 };
+
+const tag = (xml: string, name: string) =>
+  xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") ?? "";
+
+// Google News RSS; links are news.google.com redirects, titles end with " - Publisher".
+async function gnews(path: string, source: Source): Promise<Item[]> {
+  const res = await fetch(`https://news.google.com/rss/${path}${path.includes("?") ? "&" : "?"}hl=en-US&gl=US&ceid=US:en`, { headers: { "user-agent": "zippy" }, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`news.google.com ${res.status}`);
+  return [...(await res.text()).matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 30).map(([, x]) => {
+    const publisher = x.match(/<source[^>]*>([^<]*)<\/source>/)?.[1] ?? "";
+    const title = tag(x, "title");
+    return { source, title: publisher && title.endsWith(` - ${publisher}`) ? title.slice(0, -publisher.length - 3) : title, url: tag(x, "link"), summary: publisher, score: 0, publishedAt: new Date(tag(x, "pubDate")) };
+  });
+}
 
 const sources: Record<Source, () => Promise<Item[]>> = {
   hn: async () =>
@@ -45,6 +59,13 @@ const sources: Record<Source, () => Promise<Item[]>> = {
     ((await get("https://dev.to/api/articles?top=1&per_page=25")) as any[]).map((a) => ({
       source: "devto", title: a.title, url: a.url, summary: a.description ?? "", score: a.public_reactions_count ?? 0, publishedAt: new Date(a.published_timestamp), readMinutes: a.reading_time_minutes ?? null,
     })),
+  // ponytail: businesswire.com blocks scripts and its tech RSS codes are dead, so read it through Google News; newest first.
+  bw: async () =>
+    (await gnews("search?q=site:businesswire.com+(AI+OR+%22artificial+intelligence%22)+when:7d", "bw"))
+      .sort((a, b) => +b.publishedAt! - +a.publishedAt!)
+      .map((i) => ({ ...i, summary: "Business Wire press release" })),
+  // Google's Technology section, in its own trending order.
+  gnews: () => gnews("headlines/section/topic/TECHNOLOGY", "gnews"),
 };
 
 // Sources linking out to articles; their reading time comes from the page itself.

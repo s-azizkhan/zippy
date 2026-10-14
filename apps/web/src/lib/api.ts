@@ -96,7 +96,7 @@ export const usePipelines = (orgId?: string) => useApiQuery<Pipeline[]>(keys.res
 export const useRoutines = (orgId?: string) => useApiQuery<Routine[]>(keys.res(orgId!, "routines"), orgId ? `/orgs/${orgId}/routines` : null);
 export type Todo = TodoInput & { id: string; createdAt: string };
 export const useTodos = (orgId?: string) => useApiQuery<Todo[]>(keys.res(orgId!, "todos"), orgId ? `/orgs/${orgId}/todos` : null);
-export type News = { id: string; source: "hn" | "github" | "hf" | "papers" | "lobsters" | "devto"; title: string; url: string; summary: string; score: number; rank: number | null; saved: boolean; publishedAt: string | null; readMinutes: number | null };
+export type News = { id: string; source: "hn" | "github" | "hf" | "papers" | "lobsters" | "devto" | "bw" | "gnews"; title: string; url: string; summary: string; score: number; rank: number | null; saved: boolean; publishedAt: string | null; readMinutes: number | null };
 // News page drives refreshes on the user's chosen interval (stored in localStorage).
 export const useNews = () => useQuery({ queryKey: ["news"], queryFn: () => api.get<{ items: News[]; refreshedAt: string | null }>("/news") });
 export const useAgentWork = (agentId?: string) =>
