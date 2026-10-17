@@ -42,10 +42,20 @@ function guard(req: Request) {
     const cookie = `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000`;
     return new Response(null, { status: 302, headers: { location: u.pathname + u.search, "set-cookie": cookie } });
   }
+  if (PUBLIC.has(u.pathname)) return appFetch!(req); // browsers fetch the manifest without cookies; PWA install needs it
   const c = new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`).exec(req.headers.get("cookie") ?? "")?.[1];
-  if (!c || !same(c)) return new Response("Scan the QR code in Zippy → Settings → Connectors → Phone access.", { status: 401 });
+  if (!c || !same(c)) return new Response(SIGN_IN, { status: 401, headers: { "content-type": "text/html; charset=utf-8" } });
   return appFetch!(req);
 }
+
+const PUBLIC = new Set(["/site.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/favicon.ico", "/favicon.svg", "/robots.txt"]);
+// A browser without the cookie (desktop, or an installed iOS app, which has its own cookie jar) pastes the link here.
+const SIGN_IN = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zippy</title>
+<body style="font:16px system-ui;background:#0B0C10;color:#eee;display:grid;place-items:center;min-height:90vh;margin:16px">
+<form action="/" style="display:grid;gap:12px;max-width:420px;width:100%" onsubmit="try{this.t.value=new URL(this.t.value).searchParams.get('t')??this.t.value}catch{}">
+<p>Scan the QR code in Zippy → Settings → Connectors → Phone access, or paste its link here.</p>
+<input name="t" required autofocus placeholder="https://…/?t=…" style="font:inherit;padding:10px;border-radius:8px;border:1px solid #444;background:#15161c;color:inherit">
+<button style="font:inherit;padding:10px;border-radius:8px;border:0;background:#eee;color:#0B0C10">Sign in</button></form>`;
 
 const cloudflared = () =>
   [...(userEnv().PATH ?? "").split(":"), "/opt/homebrew/bin", "/usr/local/bin"].map((d) => d && join(d, "cloudflared")).find((f) => f && existsSync(f));
@@ -78,8 +88,8 @@ export async function startPhone() {
   tunnel = proc;
   await new Promise<void>((res, rej) => {
     const fail = (m: string) => (stopPhone(), (error = m), rej(new Error(m)));
-    const timer = setTimeout(() => fail("cloudflared did not connect in 30s"), 30_000);
     let last = "";
+    const timer = setTimeout(() => fail(`cloudflared did not connect in 30s${last && `: ${last}`}`), 30_000);
     createInterface({ input: proc.stderr! }).on("line", (line) => {
       if (/\bERR\b/.test(line)) last = line.replace(/^\S+\s+ERR\s+/, "");
       const ready = host ? /Registered tunnel connection/.test(line) && `https://${host}` : QUICK_RE.exec(line)?.[0];
