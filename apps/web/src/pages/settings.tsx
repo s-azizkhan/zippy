@@ -953,6 +953,7 @@ export function SetupTools({ signIn = false }: { signIn?: boolean }) {
   const { data, isFetching, refetch } = useTools();
   const run = useApiMutation((job: keyof Tools["jobs"]) => api.post(`/system/tools/${job}`, {}, true), [["system", "tools"]]);
   const running = Object.values(data?.jobs ?? {}).some((j) => j?.running);
+  const [confirmClean, setConfirmClean] = useState(false);
   const was = useRef(running);
   useEffect(() => {
     if (was.current && !running) qc.invalidateQueries({ queryKey: ["system"] }); // banner + AI connection follow a finished install
@@ -1002,9 +1003,26 @@ export function SetupTools({ signIn = false }: { signIn?: boolean }) {
           );
         })}
       </ul>
-      <Button variant="outline" size="sm" className="justify-self-start max-md:min-h-11" disabled={isFetching} onClick={() => refetch()}>
-        <RefreshCw aria-hidden className={isFetching ? "animate-spin" : undefined} /> Recheck
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" className="max-md:min-h-11" disabled={isFetching} onClick={() => refetch()}>
+          <RefreshCw aria-hidden className={isFetching ? "animate-spin" : undefined} /> Recheck
+        </Button>
+        {!!data?.installedByZippy.length && (
+          <Button variant="ghost" size="sm" className="text-destructive max-md:min-h-11" disabled={running} onClick={() => setConfirmClean(true)}>
+            <Trash2 aria-hidden /> {data.jobs.clean?.running ? "Removing…" : "Remove what Zippy installed"}
+          </Button>
+        )}
+      </div>
+      {data?.jobs.clean?.error && <p role="alert" className="text-destructive text-xs">{data.jobs.clean.error}</p>}
+      <ConfirmDialog
+        open={confirmClean}
+        onOpenChange={setConfirmClean}
+        title="Remove what Zippy installed?"
+        desc={`Removes: ${data?.installedByZippy.join("; ")}. Tools you installed yourself (Homebrew, Apple's Command Line Tools) stay. Zippers can't run until they're installed again.`}
+        action="Remove"
+        pending={run.isPending}
+        onConfirm={() => run.mutate("clean", { onSuccess: () => setConfirmClean(false), onError: (e) => toast.error(e.message) })}
+      />
     </div>
   );
 }
