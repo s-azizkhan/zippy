@@ -16,7 +16,7 @@ import { ToggleList } from "@/components/toggle-list";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { FoldersPicker } from "@/components/pickers";
+import { AccountPicker, FoldersPicker } from "@/components/pickers";
 import { OptionSelect } from "@/components/property-menu";
 import { api, keys, useAgentWork, useAgents, useApiMutation, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
@@ -42,7 +42,7 @@ You are a ... Describe what this Zipper is responsible for.
 - Lead with the answer. Then the evidence: file paths, lines, commands run.
 `;
 
-const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: TEMPLATE, model: "default", effort: "default", canWrite: false, color: "arctic-blue", toggles: {} };
+const BLANK: AgentInput = { name: "", handle: "", rolePromptMd: TEMPLATE, model: "default", effort: "default", canWrite: false, color: "arctic-blue", toggles: {}, claudeAccountId: null };
 
 const STARTERS: { label: string; canWrite: boolean; color: string; rolePromptMd: string }[] = [
   { label: "Reviewer", canWrite: false, color: "arctic-blue", rolePromptMd: "# Role\n\nYou review code changes.\n\n- Look for bugs, security issues and missing tests.\n- Cite file and line for every finding.\n- Do not change code.\n" },
@@ -290,6 +290,9 @@ function AgentStudio({ agent, onClose }: { agent: Agent | undefined; onClose: (a
             </Field>
             <Field label="Thinking level" hint="default uses the org default. Lower levels cost less; keep high ones for planning and building.">
               {(p) => <OptionSelect id={p.id} label="Thinking level" value={form.effort} onChange={(v) => set("effort", v)} options={EFFORTS.map((m) => ({ value: m, label: m }))} />}
+            </Field>
+            <Field label="Claude account" hint="Run this Zipper as a specific account. Pinned Zippers never fail over when it hits a limit. A ticket's own account wins.">
+              {() => <AccountPicker value={form.claudeAccountId ?? null} onChange={(v) => set("claudeAccountId", v)} />}
             </Field>
             <Field label="Role prompt" hint="Markdown. Added to the Claude Code system prompt, after org and folder context.">
               {(p) => <MdEditor id={p.id} value={form.rolePromptMd} onChange={(v) => set("rolePromptMd", v)} className="min-h-72" />}

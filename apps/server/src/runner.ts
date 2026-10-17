@@ -1,7 +1,5 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { Readable, Writable } from "node:stream";
@@ -17,7 +15,7 @@ import { issueToken, revokeToken, runPendingTerm } from "./mcp.ts";
 import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
 import { userEnv } from "./term.ts";
-import { readConfig } from "./dbadmin.ts";
+import { accountEnv, allAccounts, defaultAccount, getAccount, LIMIT_RE, parseProbe, type ClaudeAccount, type Usage } from "./claude-accounts.ts";
 import { afterTurn } from "./pipeline.ts";
 import { agentSessions, agents, comments, db, mcpServers, orgs, runs, ticketFolders, tickets, workspaces } from "./db/index.ts";
 
@@ -36,55 +34,73 @@ function findClaude(): string | null {
 }
 export let claudePath = findClaude();
 
-/** Env for every `claude` we spawn. Desktop app from Finder can't read the keychain login, so it can use a `claude setup-token` token instead. */
-function claudeEnv(): Record<string, string> {
-  const token = process.env.ZIPPY_CONFIG ? readConfig().claudeToken : undefined;
-  return { ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), ...(typeof token === "string" && { CLAUDE_CODE_OAUTH_TOKEN: token }) };
+/** Env for a `claude` we spawn as `account` (null = the machine's own login). */
+const claudeEnv = (account: ClaudeAccount | null): Record<string, string> => ({ ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), ...accountEnv(account) });
+
+// Failover: an account that hit its limit sits out until it resets (or this long when we can't tell).
+// ponytail: in-memory, 30 min blind cooldown; persist and read the real reset time if restarts matter.
+const COOLDOWN_MS = 30 * 60_000;
+const cooldown = new Map<string, number>();
+
+/** Out of quota: cooling down after a limit error, or the last usage probe says a window is full and hasn't reset. */
+function isLimited(a: ClaudeAccount) {
+  if ((cooldown.get(a.id) ?? 0) > Date.now()) return true;
+  const u = probes.get(a.id)?.data.usage;
+  return !!u && Object.values(u).some((w) => w && w.utilization >= 100 && Date.parse(w.resets_at) > Date.now());
 }
 
-export function claudeAuthStatus(): { loggedIn: boolean; authMethod?: string } {
+/** Account a Zipper process runs as: ticket pin, then agent pin (never failed over), else the default, else the first account that still has quota. */
+async function chooseAccount(ticket: Ticket, agent: Agent): Promise<{ account: ClaudeAccount | null; pinned: boolean }> {
+  const pin = ticket.claudeAccountId ?? agent.claudeAccountId;
+  const pinned = pin ? await getAccount(pin) : null;
+  if (pinned) return { account: pinned, pinned: true };
+  const def = defaultAccount();
+  if (!def || !isLimited(def)) return { account: def, pinned: false };
+  const alt = (await allAccounts()).find((a) => a.id !== def.id && !isLimited(a));
+  return { account: alt ?? def, pinned: false };
+}
+
+// Same markers Paperclip's claude adapter uses to tell "needs login" from other failures.
+const LOGIN_RE = /not\s+logged\s+in|failed\s+to\s+authenticate|session\s+expired|please\s+(?:log\s+in|run\s+(?:`?claude\s+login`?|\/login))|login\s+required|unauthorized|authentication[_\s-](?:failed|error|required)|invalid\s+(?:api\s+key|bearer\s+token)|(?:expired|revoked)[\s\S]{0,40}token/i;
+type Auth = { loggedIn: boolean; error?: string };
+type Probe = Auth & { usage?: Usage };
+const probes = new Map<string, { at: number; data: Probe; pending?: Promise<Probe> }>(); // keyed by account id; "" = machine login
+
+/** Real one-turn `claude -p` as `account` (default account when omitted; null = machine login): tests the exact path agents use, so keychain vs token vs API key all just work, and its rate_limit_event carries the plan usage. Cached: success 5 min, failure 5 s (Recheck stays live). */
+function probe(account: ClaudeAccount | null): Promise<Probe> {
   claudePath ??= findClaude(); // installed after start: picked up on the next check, no restart
-  if (!claudePath) return { loggedIn: false };
-  try {
-    return JSON.parse(execFileSync(claudePath, ["auth", "status", "--json"], { encoding: "utf8", timeout: 5000, env: userEnv(claudeEnv()) }));
-  } catch {
-    return { loggedIn: false };
-  }
+  if (!claudePath) return Promise.resolve({ loggedIn: false });
+  const key = account?.id ?? "";
+  const hit = probes.get(key);
+  if (hit?.pending) return hit.pending;
+  if (hit && Date.now() - hit.at < (hit.data.loggedIn ? 300_000 : 5_000)) return Promise.resolve(hit.data);
+  const pending = new Promise<Probe>((resolve) => {
+    execFile(claudePath!, ["-p", "Reply with: ok", "--output-format", "stream-json", "--verbose", "--max-turns", "1", "--model", "haiku"], { encoding: "utf8", timeout: 60_000, env: userEnv(claudeEnv(account)) }, (err, stdout, stderr) => {
+      const { result, isError, usage } = parseProbe(stdout);
+      if (!err && result !== null && !isError) return resolve({ loggedIn: true, usage });
+      const text = [result, stdout, stderr, err?.message].filter(Boolean).join("\n").trim();
+      resolve(LOGIN_RE.test(text) ? { loggedIn: false } : { loggedIn: false, error: text.slice(0, 300) });
+    });
+  });
+  probes.set(key, { at: hit?.at ?? 0, data: hit?.data ?? { loggedIn: false }, pending });
+  return pending.then((data) => (probes.set(key, { at: Date.now(), data }), data));
 }
 
-export type Usage = Record<"five_hour" | "seven_day", { utilization: number; resets_at: string } | null>;
-const USAGE_FILE = join(tmpdir(), "zippy-usage.json"); // survives dev restarts
-let usage: { at: number; data: Usage | null } = (() => {
-  try {
-    return JSON.parse(readFileSync(USAGE_FILE, "utf8"));
-  } catch {
-    return { at: 0, data: null };
-  }
-})();
+/** `account` omitted = the default account. */
+export async function claudeAuthStatus(account?: ClaudeAccount | null): Promise<Auth> {
+  const { loggedIn, error } = await probe(account === undefined ? defaultAccount() : account);
+  return { loggedIn, error };
+}
 
-/** Claude subscription 5h/weekly limits (same source as `/usage`); cached since the endpoint is rate-limited. */
-export async function claudeUsage(): Promise<Usage | null> {
-  if (Date.now() - usage.at < 300_000) return usage.data;
-  usage.at = Date.now();
-  try {
-    const raw = execFileSync("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
-      headers: { authorization: `Bearer ${JSON.parse(raw).claudeAiOauth.accessToken}`, "anthropic-beta": "oauth-2025-04-20" },
-    });
-    if (res.ok) usage.data = (await res.json()) as Usage;
-    else console.error("claudeUsage:", res.status, await res.text());
-  } catch (e) {
-    console.error("claudeUsage:", (e as Error).message); // not macOS / not logged in: keep last value
-  }
-  try {
-    writeFileSync(USAGE_FILE, JSON.stringify(usage));
-  } catch {}
-  return usage.data;
+/** 5h / weekly plan limits per connected OAuth account (same numbers as `/usage`). API-key accounts are pay-per-use: no windows. */
+export async function accountUsage(accounts: ClaudeAccount[]): Promise<Record<string, Usage | null>> {
+  const oauth = accounts.filter((a) => a.method === "oauth");
+  return Object.fromEntries(await Promise.all(oauth.map(async (a) => [a.id, (await probe(a)).usage ?? null] as const)));
 }
 
 /** Spawns the ACP adapter and handshakes; resolves to its name/version or throws. */
 export async function acpHealth() {
-  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: userEnv(claudeEnv()) });
+  const proc = spawn(process.execPath, [ADAPTER], { stdio: ["pipe", "pipe", "ignore"], env: userEnv(claudeEnv(defaultAccount())) });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const conn = new acp.ClientSideConnection(() => ({}) as acp.Client, stream);
   try {
@@ -131,6 +147,8 @@ type Live = {
   costBase: number; // DB cost when this process started; ACP cost restarts at 0 per process
   ctx: number; // context tokens, from the last usage_update
   overBudget: boolean;
+  account: ClaudeAccount | null; // credential this process runs as
+  pinned: boolean; // ticket/agent pinned it: no failover
   idleTimer?: NodeJS.Timeout;
   orgId: string;
   ticketId: string;
@@ -336,9 +354,10 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
   const cwd = dirs[0]!.cwd;
   const additionalDirectories = dirs.slice(1).map((d) => d.cwd);
   const [org] = await db.select({ toggles: orgs.toggles, profile: orgs.profile, defaultModel: orgs.defaultModel, defaultEffort: orgs.defaultEffort, cacheTtl: orgs.cacheTtl, idleMinutes: orgs.idleMinutes }).from(orgs).where(eq(orgs.id, ticket.orgId));
+  const { account, pinned } = await chooseAccount(ticket, agent);
   const proc = spawn(process.execPath, [ADAPTER], {
     stdio: ["pipe", "pipe", "inherit"],
-    env: userEnv({ ...claudeEnv(), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) }),
+    env: userEnv({ ...claudeEnv(account), CLAUDE_CODE_PROMPT_CACHE_TTL: org?.cacheTtl ?? "5m", ...gitIdentity(org?.profile) }),
   });
   const stream = acp.ndJsonStream(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>, Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>);
   const l = {
@@ -355,6 +374,8 @@ async function start(sessionRow: typeof agentSessions.$inferSelect, ticket: Tick
     costBase: sessionRow.costUsd,
     ctx: sessionRow.ctxTokens,
     overBudget: false,
+    account,
+    pinned,
   } as unknown as Live;
   const queue = (fn: () => Promise<unknown>) => (l.work = l.work.then(fn).catch((e) => console.error("[runner]", e)));
 
@@ -522,7 +543,7 @@ async function catchUp(sessionRow: typeof agentSessions.$inferSelect, ticketId: 
 }
 
 /** Run one agent turn on a ticket. Resolves when the turn ends. */
-export async function runAgent(ticketId: string, agentId: string, message: string, triggerCommentId?: string) {
+export async function runAgent(ticketId: string, agentId: string, message: string, triggerCommentId?: string, failedOver = false): Promise<unknown> {
   const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
   if (!ticket || !agent) throw new Error("ticket or agent not found");
@@ -616,8 +637,19 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
     } catch (e) {
       const msg = (e as Error).message;
       await record("error").catch(console.error);
+      // Out of quota on an unpinned account: rerun the turn on one that still has some (the session resumes from its on-disk history).
+      if (LIMIT_RE.test(msg) && !failedOver && !l.pinned && l.account) {
+        cooldown.set(l.account.id, Date.now() + COOLDOWN_MS);
+        const { account: next } = await chooseAccount(ticket, agent);
+        if (next && next.id !== l.account.id) {
+          await addComment(ticketId, agent.id, "text", { text: `${l.account.label} hit its usage limit. Continuing on ${next.label}.` });
+          live.delete(sessionRow!.id);
+          l.proc.kill();
+          return runAgent(ticketId, agentId, message, triggerCommentId, true);
+        }
+      }
       await addComment(ticketId, agent.id, "error", {
-        text: /auth/i.test(msg) ? "Claude is not logged in. Run `claude auth login` in a terminal, then retry." : msg,
+        text: /auth/i.test(msg) ? (l.account ? `Claude account "${l.account.label}" is not authorized. Test or re-add it in Settings → Connectors, then retry.` : "Claude is not logged in. Run `claude auth login` in a terminal, then retry.") : msg,
       });
       await setStatus(ticketId, "blocked");
     }

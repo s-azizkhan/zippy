@@ -31,7 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, keys, useApiMutation, useAcp, useKnowledge, useMcpServers, useSystem, useWorkspaces } from "@/lib/api";
+import { api, keys, useApiMutation, useAcp, useClaudeAccounts, useKnowledge, useMcpServers, useSystem, useUsage, useWorkspaces } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -913,7 +913,7 @@ function Connectors() {
   const acp = useAcp();
   const recheck = () => Promise.all([refetch(), acp.refetch()]).then(([s]) => s.data && toast[s.data.auth.loggedIn ? "success" : "error"](s.data.auth.loggedIn ? "Claude connected" : "Still not logged in"));
   return (
-    <Card title="AI connection" desc="Claude Code runs every Zipper. It must be logged in on the machine running Zippy.">
+    <Card title="AI connection" desc="Claude Code runs every Zipper, as the default account below or this machine's own login.">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Status ok={!!ok} loading={isLoading}>
           {isLoading ? "Checking…" : ok ? "Connected" : system?.claudePath ? (system.auth.error ? `Claude check failed: ${system.auth.error}` : "Not logged in") : "Claude CLI not found"}
@@ -930,38 +930,170 @@ function Connectors() {
       </Status>
       {!isLoading && !ok && (
         <p className="text-muted-foreground mt-3 text-xs">
-          Run <code className="bg-muted rounded px-1">claude auth login</code> in a terminal, then Recheck. No restart needed.
+          Add an account below, or run <code className="bg-muted rounded px-1">claude auth login</code> in a terminal and Recheck.
         </p>
       )}
-      {system?.desktop && (!ok || system.tokenSet) && <ClaudeToken set={system.tokenSet} />}
+      <ClaudeAccounts />
     </Card>
   );
 }
 
-/** Desktop app opened from Finder can't read the keychain login; a `claude setup-token` token works instead. */
-function ClaudeToken({ set }: { set: boolean }) {
-  const [token, setToken] = useState("");
-  const save = useApiMutation((t: string | null) => api.post("/system/claude-token", { token: t }, true), [keys.system]);
-  const submit = (t: string | null) => save.mutate(t, { onSuccess: () => (setToken(""), toast.success(t ? "Token saved" : "Token removed")) });
+const METHOD_LABEL = { oauth: "Claude sign-in", api_key: "API key" } as const;
+
+/** Claude credentials Zippers run as: the machine login, plus any number of OAuth or API-key accounts. One is the default. */
+function ClaudeAccounts() {
+  const { data: accounts = [] } = useClaudeAccounts();
+  const { data: usage } = useUsage();
+  const refresh = [["system"]];
+  const setDefault = useApiMutation((id: string | null) => api.put("/system/claude-accounts/default", { id }), refresh);
+  const remove = useApiMutation((id: string) => api.del(`/system/claude-accounts/${id}`), refresh);
+  const test = useApiMutation((id: string) => api.post<{ loggedIn: boolean; error?: string }>(`/system/claude-accounts/${id}/test`, {}, true));
+  const hasDefault = accounts.some((a) => a.isDefault);
+  const rowCls = "flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[13px]";
   return (
-    <form className="mt-4 grid gap-2 border-t pt-4" onSubmit={(e) => (e.preventDefault(), token.trim() && submit(token))}>
-      <label htmlFor="claude-token" className="text-sm font-medium">
-        Login token {set && <span className="text-muted-foreground font-normal">(saved)</span>}
-      </label>
-      <p className="text-muted-foreground text-xs">
-        Still not logged in? Run <code className="bg-muted rounded px-1">claude setup-token</code> in a terminal and paste the token. Stored only in this Mac's Zippy config, readable by your user.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Input id="claude-token" type="password" autoComplete="off" placeholder={set ? "Replace token" : "sk-ant-…"} value={token} onChange={(e) => setToken(e.target.value)} className="min-w-0 flex-1" />
-        <Button type="submit" size="sm" className="max-md:min-h-11" disabled={!token.trim() || save.isPending}>
-          Save
-        </Button>
-        {set && (
-          <Button type="button" variant="outline" size="sm" className="max-md:min-h-11" disabled={save.isPending} onClick={() => submit(null)}>
-            Remove
+    <div className="mt-4 grid gap-2 border-t pt-4">
+      <h4 className="text-sm font-medium">Accounts</h4>
+      <p className="text-muted-foreground text-xs">New Zipper sessions use the default. Running ones keep the account they started with.</p>
+      <div className={rowCls}>
+        <span>
+          This machine's login {!hasDefault && <span className="text-emerald-600 text-xs font-medium dark:text-emerald-400">default</span>}
+        </span>
+        {hasDefault && (
+          <Button variant="outline" size="sm" disabled={setDefault.isPending} onClick={() => setDefault.mutate(null)}>
+            Make default
           </Button>
         )}
       </div>
+      {accounts.map((a) => (
+        <div key={a.id} className={rowCls}>
+          <span className="min-w-0">
+            <RenameLabel account={a} /> <span className="text-muted-foreground text-xs">{METHOD_LABEL[a.method]} {a.hint}</span>{" "}
+            {a.isDefault && <span className="text-emerald-600 text-xs font-medium dark:text-emerald-400">default</span>}
+            {usage?.[a.id] && (
+              <span className="text-muted-foreground mt-0.5 block font-mono text-[11px] tabular-nums">
+                5h {Math.round(usage[a.id]!.five_hour?.utilization ?? 0)}% · week {Math.round(usage[a.id]!.seven_day?.utilization ?? 0)}%
+              </span>
+            )}
+          </span>
+          <span className="flex gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={test.isPending}
+              onClick={() => test.mutate(a.id, { onSuccess: (r) => (r.loggedIn ? toast.success(`${a.label} works`) : toast.error(r.error ?? `${a.label} is not authorized`)) })}
+            >
+              Test
+            </Button>
+            {!a.isDefault && (
+              <Button variant="outline" size="sm" disabled={setDefault.isPending} onClick={() => setDefault.mutate(a.id)}>
+                Make default
+              </Button>
+            )}
+            <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate(a.id, { onSuccess: () => toast.success("Account removed") })}>
+              Remove
+            </Button>
+          </span>
+        </div>
+      ))}
+      <AddAccount />
+    </div>
+  );
+}
+
+/** Account name; click to edit, Enter saves, Escape cancels. */
+function RenameLabel({ account }: { account: { id: string; label: string } }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const rename = useApiMutation((label: string) => api.patch(`/system/claude-accounts/${account.id}`, { label }, true), [["system"]]);
+  if (draft === null)
+    return (
+      <button type="button" className="hover:underline" title="Rename" onClick={() => setDraft(account.label)}>
+        {account.label}
+      </button>
+    );
+  const save = () => {
+    const label = draft.trim();
+    if (label && label !== account.label) rename.mutate(label, { onError: (e) => toast.error(e.message) });
+    setDraft(null);
+  };
+  return (
+    <Input
+      autoFocus
+      aria-label="Account name"
+      value={draft}
+      maxLength={60}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => (e.key === "Enter" ? save() : e.key === "Escape" && setDraft(null))}
+      className="inline-block h-7 w-40"
+    />
+  );
+}
+
+type Login = { status: "starting" | "awaiting_code" | "saving" | "done" | "error"; url?: string; error?: string };
+
+function AddAccount() {
+  const qc = useQueryClient();
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [code, setCode] = useState("");
+  const [loginId, setLoginId] = useState<string | null>(null);
+  const done = () => (qc.invalidateQueries({ queryKey: ["system"] }), setLabel(""), setKey(""), setCode(""), setLoginId(null));
+  const addKey = useApiMutation((v: { method: "api_key"; secret: string }) => api.post("/system/claude-accounts", { label, ...v }, true), []);
+  const start = useApiMutation(() => api.post<{ id: string }>("/system/claude-accounts/login", { label }, true));
+  const sendCode = useApiMutation(() => api.post(`/system/claude-accounts/login/${loginId}/code`, { code }, true));
+  const login = useQuery({
+    queryKey: ["system", "claude-login", loginId],
+    queryFn: () => api.get<Login>(`/system/claude-accounts/login/${loginId}`),
+    enabled: !!loginId,
+    refetchInterval: (q) => (q.state.data?.status === "done" || q.state.data?.status === "error" ? false : 1000),
+  });
+  const st = login.data?.status;
+  useEffect(() => {
+    if (st === "done") (toast.success("Claude account added"), done());
+  }, [st]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cancel = () => (loginId && api.del(`/system/claude-accounts/login/${loginId}`), setLoginId(null), setCode(""));
+  const busy = !!loginId && st !== "error";
+  const fail = (e: Error) => toast.error(e.message);
+  return (
+    <form className="grid gap-2 rounded-lg border border-dashed p-3" onSubmit={(e) => e.preventDefault()}>
+      <label htmlFor="claude-acct-label" className="text-sm font-medium">Add account</label>
+      <Input id="claude-acct-label" placeholder="Label, e.g. Work Max" value={label} onChange={(e) => setLabel(e.target.value)} disabled={busy} maxLength={60} />
+      {!busy && (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <Input type="password" autoComplete="off" aria-label="Anthropic API key" placeholder="API key  sk-ant-api…" value={key} onChange={(e) => setKey(e.target.value)} className="min-w-0 flex-1" />
+            <Button type="submit" size="sm" disabled={!label.trim() || !key.trim() || addKey.isPending} onClick={() => addKey.mutate({ method: "api_key", secret: key }, { onSuccess: () => (toast.success("API key added"), done()), onError: fail })}>
+              Save key
+            </Button>
+          </div>
+          <Button type="button" variant="outline" size="sm" disabled={!label.trim() || start.isPending} onClick={() => start.mutate(undefined, { onSuccess: (r) => setLoginId(r.id), onError: fail })}>
+            Sign in with Claude
+          </Button>
+          {st === "error" && login.data?.error && <p className="text-destructive text-xs">{login.data.error}</p>}
+        </>
+      )}
+      {busy && (
+        <div className="grid gap-2 text-[13px]">
+          {st === "awaiting_code" && login.data?.url ? (
+            <>
+              <p>
+                <a href={login.data.url} target="_blank" rel="noreferrer" className="text-primary underline">Open Claude sign-in</a>, authorize, then paste the code it shows:
+              </p>
+              <div className="flex gap-2">
+                <Input autoComplete="off" aria-label="Authorization code" placeholder="Code from claude.ai" value={code} onChange={(e) => setCode(e.target.value)} className="min-w-0 flex-1" />
+                <Button type="submit" size="sm" disabled={!code.trim() || sendCode.isPending} onClick={() => sendCode.mutate(undefined, { onError: fail })}>
+                  Submit
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-muted-foreground">{st === "saving" ? "Saving…" : "Starting sign-in…"}</p>
+          )}
+          <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={cancel}>
+            Cancel
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

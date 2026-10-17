@@ -51,13 +51,15 @@ export const keys = {
 };
 
 export const useSystem = () =>
-  useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; error?: string }; desktop: boolean; tokenSet: boolean }>("/system") });
+  useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; error?: string }; desktop: boolean }>("/system") });
+export type ClaudeAccount = { id: string; label: string; method: "oauth" | "api_key"; hint: string; isDefault: boolean };
+export const useClaudeAccounts = () => useQuery({ queryKey: ["system", "claude-accounts"], queryFn: () => api.get<ClaudeAccount[]>("/system/claude-accounts") });
 export const useDb = () =>
   useQuery({ queryKey: ["system", "db"], queryFn: () => api.get<{ desktop: boolean; mode: "embedded" | "custom" | "env"; url: string }>("/system/db") });
 export const useAcp = () =>
   useQuery({ queryKey: ["system", "acp"], queryFn: () => api.get<{ ok: boolean; agent?: string; version?: string; error?: string }>("/system/acp"), staleTime: 60_000, retry: false });
 export type Usage = Record<"five_hour" | "seven_day", { utilization: number; resets_at: string } | null>;
-export const useUsage = () => useQuery({ queryKey: ["system", "usage"], queryFn: () => api.get<Usage | null>("/system/usage"), refetchInterval: 300_000, retry: false });
+export const useUsage = () => useQuery({ queryKey: ["system", "usage"], queryFn: () => api.get<Record<string, Usage | null>>("/system/usage"), refetchInterval: 300_000, retry: false });
 export const useOrgs = () => useApiQuery<Org[]>(keys.orgs, "/orgs");
 export const useWorkspaces = (orgId?: string) => useApiQuery<Workspace[]>(keys.res(orgId!, "workspaces"), orgId ? `/orgs/${orgId}/workspaces` : null);
 export const useMcpServers = (orgId?: string) => useApiQuery<McpServer[]>(keys.res(orgId!, "mcp"), orgId ? `/orgs/${orgId}/mcp` : null);

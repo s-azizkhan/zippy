@@ -20,7 +20,7 @@ import { LinearIssueModal } from "@/components/linear-issues";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { api, keys, queryClient, useApiMutation, useOrgs, useRunning, useSystem, useTerminals, useUsage, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useApiMutation, useOrgs, useClaudeAccounts, useRunning, useSystem, useTerminals, useUsage, useWorkspaces } from "@/lib/api";
 import { useInboxView } from "@/lib/inbox";
 import { useUI } from "@/lib/store";
 import { cn, isTyping } from "@/lib/utils";
@@ -144,11 +144,15 @@ const WINDOWS = [
   { k: "seven_day", title: "Week · all models", ms: 7 * 86400_000 },
 ] as const;
 
+/** Plan usage of the default Claude account; hidden on the machine login or an API key. */
 function UsageMeter() {
-  const { data } = useUsage();
+  const { data: usage } = useUsage();
+  const { data: accounts } = useClaudeAccounts();
+  const def = accounts?.find((a) => a.isDefault);
+  const data = def && usage?.[def.id];
   if (!data) return null;
   return (
-    <div className="border-foreground/[0.07] bg-foreground/[0.03] mb-1 hidden gap-3 rounded-xl border p-3 wide:grid" aria-label="Claude usage">
+    <div className="border-foreground/[0.07] bg-foreground/[0.03] mb-1 hidden gap-3 rounded-xl border p-3 wide:grid" aria-label={`Claude usage · ${def.label}`}>
       {WINDOWS.map(({ k, title, ms }) => {
         const w = data[k];
         if (!w) return null;

@@ -97,6 +97,7 @@ export const agentInput = z.object({
   canWrite: z.boolean().default(false),
   color: z.string().default("#6366f1"),
   toggles,
+  claudeAccountId: z.string().uuid().nullable().optional(),
 });
 
 export const ticketInput = z.object({
@@ -108,6 +109,7 @@ export const ticketInput = z.object({
   priority: z.enum(PRIORITIES).default("none"),
   labelIds: z.array(z.string().uuid()).default([]),
   status: ticketStatus.default("todo"),
+  claudeAccountId: z.string().uuid().nullable().optional(),
 });
 
 /** PATCH schema: every field optional, defaults dropped. zod 4 still applies defaults inside .partial(), which would reset unsent fields. */

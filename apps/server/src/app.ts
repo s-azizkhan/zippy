@@ -37,7 +37,8 @@ import {
 } from "@zippy/shared";
 import { bus, emit } from "./bus.ts";
 import { reqlog } from "./reqlog.ts";
-import { agentSessions, agents, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, terminalTemplates, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
+import { agentSessions, agents, claudeAccounts, comments, db, knowledge, labels, mcpServers, orgs, pipelineStages, pipelines, routines, terminalTemplates, ticketFolders, tickets, todos, workspaces } from "./db/index.ts";
+import { addAccount, cancelLogin, getAccount, listAccounts, loginState, removeAccount, renameAccount, setDefault, startLogin, submitLoginCode } from "./claude-accounts.ts";
 import { createDb, maskUrl, readConfig, saveDbUrl, testDb, writeConfig } from "./dbadmin.ts";
 import { importableMcps, installPreset, presets, scanCatalog } from "./catalog.ts";
 import { addKnowledge } from "./kb.ts";
@@ -59,7 +60,7 @@ import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
-import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, claudeUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
+import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
 app.use(reqlog);
@@ -91,18 +92,52 @@ const byIdentifier = async (c: Context) => {
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}", byIdentifier);
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
-app.get("/system", (c) => {
-  const auth = claudeAuthStatus(); // may detect claudePath, so read it after
-  const desktop = !!process.env.ZIPPY_CONFIG;
-  return c.json({ claudePath, auth, desktop, tokenSet: desktop && typeof readConfig().claudeToken === "string" });
+app.get("/system", async (c) => {
+  const auth = await claudeAuthStatus(); // may detect claudePath, so read it after
+  return c.json({ claudePath, auth, desktop: !!process.env.ZIPPY_CONFIG });
 });
-// Desktop only: `claude setup-token` token, for when the app can't read the keychain login. Never sent back.
-app.post("/system/claude-token", async (c) => {
-  if (!process.env.ZIPPY_CONFIG) return c.json({ error: "desktop app only" }, 400);
-  const { token } = await body(c, z.object({ token: z.string().trim().regex(/^sk-ant-\S+$/, "paste the sk-ant-… token from claude setup-token").nullable() }));
-  writeConfig({ claudeToken: token ?? undefined });
+// Claude accounts agents run as: OAuth (Sign in with Claude / setup-token) or API key. Secrets never leave the server.
+app.get("/system/claude-accounts", async (c) => {
+  const legacy = process.env.ZIPPY_CONFIG ? readConfig().claudeToken : undefined; // pre-accounts desktop token: import once
+  if (typeof legacy === "string") {
+    if (!(await listAccounts()).length) await addAccount("Imported token", "oauth", legacy);
+    writeConfig({ claudeToken: undefined });
+  }
+  return c.json(await listAccounts());
+});
+app.post("/system/claude-accounts", async (c) => {
+  const { label, method, secret } = await body(c, z.object({ label: z.string().trim().min(1).max(60), method: z.enum(["oauth", "api_key"]), secret: z.string().trim().regex(/^sk-ant-\S+$/, "expected an sk-ant-… key or token") }));
+  return c.json({ id: await addAccount(label, method, secret) });
+});
+app.put("/system/claude-accounts/default", async (c) => {
+  const { id } = await body(c, z.object({ id: z.uuid().nullable() }));
+  await setDefault(id);
   return c.body(null, 204);
 });
+app.patch("/system/claude-accounts/:id", async (c) => {
+  const { label } = await body(c, z.object({ label: z.string().trim().min(1).max(60) }));
+  await renameAccount(c.req.param("id"), label);
+  return c.body(null, 204);
+});
+app.delete("/system/claude-accounts/:id", async (c) => (await removeAccount(c.req.param("id")), c.body(null, 204)));
+app.post("/system/claude-accounts/:id/test", async (c) => {
+  const a = await getAccount(c.req.param("id"));
+  return a ? c.json(await claudeAuthStatus(a)) : c.notFound();
+});
+app.post("/system/claude-accounts/login", async (c) => {
+  if (!claudePath) return c.json({ error: "Claude CLI not found" }, 400);
+  const { label } = await body(c, z.object({ label: z.string().trim().min(1).max(60) }));
+  return c.json({ id: startLogin(claudePath, label) });
+});
+app.get("/system/claude-accounts/login/:id", (c) => {
+  const s = loginState(c.req.param("id"));
+  return s ? c.json(s) : c.notFound();
+});
+app.post("/system/claude-accounts/login/:id/code", async (c) => {
+  const { code } = await body(c, z.object({ code: z.string().trim().min(1).max(2048) }));
+  return submitLoginCode(c.req.param("id"), code) ? c.body(null, 204) : c.json({ error: "not waiting for a code" }, 409);
+});
+app.delete("/system/claude-accounts/login/:id", (c) => (cancelLogin(c.req.param("id")), c.body(null, 204)));
 // https://zippy.localhost: local CA + cert, trusted in the login keychain, served on 443.
 app.get("/system/domain", async (c) => c.json(await domainStatus()));
 app.post("/system/domain/setup", async (c) => (await setupDomain(), c.json(await domainStatus())));
@@ -175,7 +210,8 @@ app.post("/system/hotkey", async (c) => {
   return c.body(null, 204);
 });
 app.post("/system/test-notification", (c) => (desktopNote("Zippy", "Notifications are working."), c.body(null, 204)));
-app.get("/system/usage", async (c) => c.json(await claudeUsage()));
+// Plan usage per connected OAuth account, keyed by account id. Machine login is not tracked.
+app.get("/system/usage", async (c) => c.json(await accountUsage(await db.select().from(claudeAccounts))));
 app.get("/system/acp", async (c) => c.json(await acpHealth().catch((e: Error) => ({ ok: false as const, error: e.message }))));
 
 // Orgs

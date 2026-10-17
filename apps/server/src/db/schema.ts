@@ -69,6 +69,7 @@ export const agents = pgTable(
     canWrite: boolean("can_write").notNull().default(false),
     color: text("color").notNull().default("#6366f1"),
     toggles: jsonb("toggles").$type<Record<string, boolean>>().notNull().default({}),
+    claudeAccountId: uuid("claude_account_id").references(() => claudeAccounts.id, { onDelete: "set null" }), // pin this Zipper to an account; null = default
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("agents_org_handle").on(t.orgId, t.handle)],
@@ -102,6 +103,7 @@ export const tickets = pgTable("tickets", {
   orgId: uuid("org_id").notNull().references(() => orgs.id, { onDelete: "cascade" }),
   assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id, { onDelete: "set null" }),
   assigneeHuman: boolean("assignee_human").notNull().default(false),
+  claudeAccountId: uuid("claude_account_id").references(() => claudeAccounts.id, { onDelete: "set null" }), // pin this ticket's agents to an account; beats the agent's pin
   identifier: text("identifier").notNull(),
   kind: text("kind").$type<"ticket" | "chat">().notNull().default("ticket"), // chat = free-form conversation with an agent, hidden from the board
   title: text("title").notNull(),
@@ -263,5 +265,16 @@ export const news = pgTable("news", {
   saved: boolean("saved").notNull().default(false),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   readMinutes: integer("read_minutes"), // null = not an article or page unreadable
+  createdAt: createdAt(),
+});
+
+// Claude credentials agents can run as. No default row = the machine's own `claude` login.
+// ponytail: plaintext secret, local single-user like mcp_servers.env; encrypt at rest before multi-user.
+export const claudeAccounts = pgTable("claude_accounts", {
+  id: id(),
+  label: text("label").notNull(),
+  method: text("method").$type<"oauth" | "api_key">().notNull(),
+  secret: text("secret").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
   createdAt: createdAt(),
 });

@@ -19,7 +19,7 @@ import { Activity } from "@/components/activity";
 import { Changes } from "@/components/changes";
 import { Terminal } from "@/components/terminal";
 import { OptionSelect } from "@/components/property-menu";
-import { AssigneePicker, FoldersPicker, LabelChips, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
+import { AccountPicker, AssigneePicker, FoldersPicker, LabelChips, LabelsPicker, PriorityPicker, StatusPicker } from "@/components/pickers";
 import { MdEditor } from "@/components/md-editor";
 import { AgentAvatar, SourceIcon, StatusIcon } from "@/components/status";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,7 @@ function useLinearSync(ticket: Ticket) {
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const tok = (n: number) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 
-type Menu = "status" | "priority" | "assignee" | "labels" | "folders" | null;
+type Menu = "status" | "priority" | "assignee" | "account" | "labels" | "folders" | null;
 const MENU_KEYS: Record<string, Menu> = { s: "status", p: "priority", a: "assignee", l: "labels", f: "folders" };
 
 type Tab = "activity" | "changes" | "terminal";
@@ -534,6 +534,7 @@ function Properties(props: {
         <StatusPicker {...ctl("status")} value={ticket.status} onChange={(status) => patch.mutate({ status })} />
         <PriorityPicker {...ctl("priority")} value={ticket.priority} onChange={(priority) => patch.mutate({ priority })} />
         <AssigneePicker {...ctl("assignee")} orgId={org.id} value={ticket.assigneeHuman ? HUMAN : ticket.assigneeAgentId} onChange={(v) => patch.mutate({ assigneeAgentId: v === HUMAN ? null : v, assigneeHuman: v === HUMAN })} />
+        <AccountPicker {...ctl("account")} value={ticket.claudeAccountId ?? null} onChange={(claudeAccountId) => patch.mutate({ claudeAccountId })} />
         <FoldersPicker {...ctl("folders")} orgId={org.id} value={ticket.folders.map((f) => f.workspaceId)} onChange={(workspaceIds) => patch.mutate({ workspaceIds })} />
       </PanelSection>
 

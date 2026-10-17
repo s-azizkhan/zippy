@@ -1,9 +1,9 @@
-import { Tag } from "lucide-react";
+import { KeyRound, Tag } from "lucide-react";
 import { FolderGit2Icon as FolderGit2 } from "@/components/ui/folder-git-2";
 import { HUMAN, PRIORITIES, TICKET_STATUSES, type Label, type Ticket, type TicketStatus } from "@zippy/shared";
 import { PropertyMenu } from "@/components/property-menu";
 import { AgentAvatar, LabelDot, UserAvatar, PRIORITY_LABEL, PriorityIcon, STATUS, StatusIcon } from "@/components/status";
-import { api, keys, queryClient, useAgents, useLabels, useOrgs, useWorkspaces } from "@/lib/api";
+import { api, keys, queryClient, useAgents, useClaudeAccounts, useLabels, useOrgs, useWorkspaces } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Priority = Ticket["priority"];
@@ -77,6 +77,31 @@ export function AssigneePicker({ orgId, value, onChange, ...ctl }: { orgId: stri
         <>
           {avatar(a, "size-4 text-[9px]")}
           <span className={cn("truncate", !a && muted)}>{a?.name ?? (ctl.chip ? "Assignee" : "No assignee")}</span>
+        </>
+      }
+    />
+  );
+}
+
+/** Claude account a ticket's or Zipper's agents run as; none = the default account. */
+export function AccountPicker({ value, onChange, ...ctl }: { value: string | null; onChange: (v: string | null) => void } & Ctl) {
+  const { data: accounts = [] } = useClaudeAccounts();
+  const a = accounts.find((x) => x.id === value);
+  const def = accounts.find((x) => x.isDefault);
+  const none = `Default${def ? ` (${def.label})` : ""}`;
+  return (
+    <PropertyMenu
+      {...ctl}
+      className={cn(ctl.chip && chipCls)}
+      triggerLabel={`Claude account: ${a?.label ?? none}`}
+      placeholder="Run as account…"
+      value={value ?? NONE}
+      onChange={(v) => onChange(v === NONE ? null : v)}
+      options={[{ value: NONE, label: none, icon: <KeyRound className="size-4" aria-hidden /> }, ...accounts.map((x) => ({ value: x.id, label: x.label, icon: <KeyRound className="size-4" aria-hidden /> }))]}
+      trigger={
+        <>
+          <KeyRound className="size-4" aria-hidden />
+          <span className={cn("truncate", !a && muted)}>{a?.label ?? none}</span>
         </>
       }
     />

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import * as pty from "node-pty";
+import { defaultAccountEnv } from "./claude-accounts.ts";
 
 // pnpm drops the exec bit on the prebuilt spawn-helper, which makes every spawn fail with "posix_spawnp failed".
 try {
@@ -68,7 +69,7 @@ export const listTerminals = (workspaceIds: string[]): TermInfo[] => [...session
 /** (Re)starts the shell behind a session; the id stays put so open panes and links survive a restart. */
 function start(s: Session, cols: number, rows: number) {
   const shell = process.env.SHELL || "/bin/zsh";
-  const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd: s.cwd, env: userEnv({ TERM: "xterm-256color" }) });
+  const proc = pty.spawn(shell, ["-l"], { name: "xterm-256color", cols, rows, cwd: s.cwd, env: userEnv({ ...defaultAccountEnv(), TERM: "xterm-256color" }) });
   Object.assign(s, { proc, pid: proc.pid, alive: true, exitCode: null, buf: "", lastDataAt: Date.now() });
   proc.onData((d) => {
     if (s.proc !== proc) return;
