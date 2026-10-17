@@ -916,7 +916,7 @@ function Connectors() {
     <Card title="AI connection" desc="Claude Code runs every Zipper. It must be logged in on the machine running Zippy.">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Status ok={!!ok} loading={isLoading}>
-          {isLoading ? "Checking…" : ok ? `Connected${system.auth.authMethod ? ` (${system.auth.authMethod})` : ""}` : system?.claudePath ? "Not logged in" : "Claude CLI not found"}
+          {isLoading ? "Checking…" : ok ? "Connected" : system?.claudePath ? (system.auth.error ? `Claude check failed: ${system.auth.error}` : "Not logged in") : "Claude CLI not found"}
         </Status>
         <div className="flex items-center gap-2">
           {system?.claudePath && <code className="bg-muted text-muted-foreground rounded-md px-1.5 py-1 text-xs">{system.claudePath}</code>}
@@ -1163,6 +1163,9 @@ function PhoneAccess() {
           <p className="text-muted-foreground max-w-xs text-xs">
             Anyone with this link can control Zippy on this Mac. Don't share it. {p.host ? "Use New link to sign every phone out." : "Turn this off to revoke it."}
           </p>
+          <Button variant="outline" size="sm" className="max-md:min-h-11" onClick={() => navigator.clipboard.writeText(p.url!).then(() => toast.success("Link copied: open it in any browser to sign in"))}>
+            Copy link
+          </Button>
         </div>
       )}
       {p?.host ? (

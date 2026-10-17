@@ -7,7 +7,7 @@ import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronUp, Columns2, Eraser, Fi
 import { AnimatePresence, motion, MotionConfig, Reorder, useDragControls } from "motion/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { TerminalTemplate, TerminalTemplateInput, Workspace } from "@zippy/shared";
@@ -268,6 +268,7 @@ const SHORTCUTS: [string, string][] = [
   [`${M}⌥←  ${M}⌥→`, "Move between panes"],
   [`${M}⇧↵`, "Zoom pane"],
   [`${M}F`, "Find in terminal"],
+  [`${M}⇧L`, "New Claude terminal"],
   [`${M}E`, "Files panel for this folder (tree, viewer, git)"],
   [`${M}⇧E`, "Hide / show terminals (files only)"],
   [`${M}P`, "Go to file (files panel open)"],
@@ -381,6 +382,8 @@ export function TerminalsPage() {
   const org = useOrg();
   const { id } = useParams();
   const navigate = useNavigate();
+  const homeState = (useLocation().state as { home?: boolean } | null)?.home;
+  const home = !id && !!homeState; // h1 click: show the start screen instead of jumping to a pane
   const qc = useQueryClient();
   const { data: workspaces = [] } = useWorkspaces(org.id);
   const key = keys.res(org.id, "terminals");
@@ -459,7 +462,7 @@ export function TerminalsPage() {
   // Arriving from elsewhere (palette, Ports page, back button) with an id that isn't on screen.
   useEffect(() => {
     if (id && isSuccess && terms.some((t) => t.id === id) && !live.includes(id)) show(id);
-    else if (!id && live.length && !phone) navigate(`/terminals/${live[0]}`, { replace: true });
+    else if (!id && !home && live.length && !phone) navigate(`/terminals/${live[0]}`, { replace: true });
   }, [id, isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addTerms = (opened: TermInfo[]) => qc.setQueryData<TermInfo[]>(key, (ts = []) => [...ts, ...opened.filter((t) => !ts.some((x) => x.id === t.id))]);
@@ -525,6 +528,7 @@ export function TerminalsPage() {
       const k = e.key.toLowerCase();
       let hit = true;
       if (k === "t" && !e.shiftKey && folder) void open(folder);
+      else if (k === "l" && e.shiftKey && folder) void open(folder, false, "claude");
       else if (k === "d" && !e.shiftKey && folder) void open(folder, live.length < MAX_PANES);
       else if (k === "e" && !e.altKey) (e.shiftKey ? toggleShells() : toggleFiles());
       else if (/^[1-9]$/.test(e.key) && !e.altKey && !e.shiftKey && ordered[+e.key - 1]) show(ordered[+e.key - 1]!.id);
@@ -560,7 +564,7 @@ export function TerminalsPage() {
 
   const needle = q.trim().toLowerCase();
   const hit = (t: TermInfo, w: { name: string }) => !needle || [t.title, w.name, t.process, t.command, ...t.tags, ...portsOf(t.id).map(String)].some((s) => s.toLowerCase().includes(needle));
-  const shown = (zoomed || phone) && current && live.includes(current.id) ? [current.id] : live;
+  const shown = home ? [] : (zoomed || phone) && current && live.includes(current.id) ? [current.id] : live;
   const n = shown.length;
   const filesWs = workspaces.find((w) => w.id === ((pickedWs && pickedWs.under === id ? pickedWs.ws : undefined) ?? current?.workspaceId ?? workspaces[0]?.id));
   const [dropping, setDropping] = useState<string | null>(null);
@@ -659,7 +663,7 @@ export function TerminalsPage() {
         <div className={cn("bg-background/70 sticky top-0 z-10 flex items-center pt-4 pb-3 backdrop-blur-md", hidden ? "justify-center px-1" : "justify-between px-4")}>
           {!hidden && (
             <div className="min-w-0">
-              <h1 className="text-[15px] font-semibold tracking-tight">Terminals</h1>
+              <h1 className="text-[15px] font-semibold tracking-tight"><button type="button" onClick={() => navigate("/terminals", { state: { home: true } })} title="Start screen">Terminals</button></h1>
               <p className="text-muted-foreground flex items-center gap-1 text-[11px] tabular-nums">
                 <motion.span key={running} initial={{ y: -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={spring}>{running}</motion.span> running
                 <AnimatePresence>
@@ -791,9 +795,14 @@ export function TerminalsPage() {
                       {mine.length > 0 && <span className="bg-foreground/[0.06] text-muted-foreground rounded px-1 font-mono text-[10px] font-medium tabular-nums">{mine.length}</span>}
                       {attention && <span className="unread-dot bg-primary ml-1 size-1.5 rounded-full" style={{ "--c": "var(--primary)" } as React.CSSProperties} aria-label="new output" />}
                     </button>
+                    <div className="flex">
                     <Button size="icon-xs" variant="ghost" aria-label={`New terminal in ${w.name}`} title={`New terminal in ${w.name} (${M}-click to split)`} onClick={(e) => open(w.id, e.metaKey || e.ctrlKey)} disabled={spawn.isPending} className="opacity-60 group-hover/s:opacity-100 hover:rotate-90">
                       <Plus aria-hidden />
                     </Button>
+                    <Button size="icon-xs" variant="ghost" aria-label={`New Claude terminal in ${w.name}`} title={`New Claude terminal in ${w.name} (${M}⇧L)`} onClick={(e) => open(w.id, e.metaKey || e.ctrlKey, "claude")} disabled={spawn.isPending} className="opacity-60 group-hover/s:opacity-100">
+                      <span className="text-[#d97757]" aria-hidden>✻</span>
+                    </Button>
+                    </div>
                   </div>
                   <AnimatePresence initial={false}>
                     {open_ && (
@@ -829,7 +838,7 @@ export function TerminalsPage() {
           if (tid) show(tid, true);
         }}
       >
-        {n ? (
+        {live.length > 0 && (
           live.map((pid, i) => {
             const t = terms.find((x) => x.id === pid);
             if (!t) return null;
@@ -924,9 +933,8 @@ export function TerminalsPage() {
               </section>
             );
           })
-        ) : (
-          <EmptyState workspaces={workspaces} templates={templates} onOpen={(wid) => open(wid)} onRun={runTemplate} hasTerms={terms.length > 0} />
         )}
+        {!n && <EmptyState workspaces={workspaces} templates={templates} terms={terms} onOpen={(wid, cmd) => open(wid, false, cmd)} onShow={(tid) => show(tid)} onRun={runTemplate} />}
       </div>
       </Panel>
       )}
@@ -972,16 +980,54 @@ function PaneBtn({ label, onClick, icon: Icon, danger, active }: { label: string
   );
 }
 
-function EmptyState({ workspaces, templates, onOpen, onRun, hasTerms }: { workspaces: Workspace[]; templates: TerminalTemplate[]; onOpen: (wid: string) => void; onRun: (tid: string) => void; hasTerms: boolean }) {
+const eyebrow = "text-muted-foreground font-mono text-[10px] font-medium tracking-[0.14em] uppercase";
+
+function EmptyState({ workspaces, templates, terms, onOpen, onShow, onRun }: { workspaces: Workspace[]; templates: TerminalTemplate[]; terms: TermInfo[]; onOpen: (wid: string, command?: string) => void; onShow: (tid: string) => void; onRun: (tid: string) => void }) {
+  const running = terms.filter((t) => t.alive);
+  const now = Date.now();
   return (
-    <div className="m-auto grid w-full max-w-xl gap-6 p-6">
+    <div className="m-auto grid w-full max-w-xl gap-7 p-6">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">{hasTerms ? "Pick a terminal" : "Open a terminal"}</h2>
-        <p className="text-muted-foreground mt-1 text-[13px]">{hasTerms ? `Click one on the left, ${M}-click or drag it here to split.` : "Shells run on this machine in your working folders and keep running while you're on other pages."}</p>
+        <h2 className="text-xl font-semibold tracking-tight">Open a terminal</h2>
+        <p className="text-muted-foreground mt-1 text-[13px]">Shells run on this machine in your working folders and keep running while you're on other pages.</p>
       </div>
+      {workspaces.length > 0 && (
+        <section className="grid gap-2">
+          <p className={eyebrow}>Start in</p>
+          <div className="border-foreground/[0.07] divide-foreground/[0.06] divide-y overflow-hidden rounded-xl border">
+            {workspaces.map((w) => (
+              <div key={w.id} className="flex items-center gap-3 px-3 py-2">
+                <Folder className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{w.name}</span>
+                <Button size="sm" onClick={() => onOpen(w.id, "claude")} title={`New Claude terminal in ${w.name} (${M}⇧L)`}>
+                  <span aria-hidden>✻</span> Claude
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onOpen(w.id)} title={`New shell in ${w.name} (${M}T)`}>
+                  <Plus aria-hidden /> Shell
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {running.length > 0 && (
+        <section className="grid gap-2">
+          <p className={eyebrow}>Running · {running.length}</p>
+          <div className="grid gap-0.5">
+            {running.map((t) => (
+              <button key={t.id} onClick={() => onShow(t.id)} className="hover:bg-foreground/[0.05] flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors">
+                <StatusDot t={t} unread={false} now={now} />
+                {t.process === "claude" ? <span className="text-[#d97757]" aria-hidden>✻</span> : <span className="text-muted-foreground font-mono" aria-hidden>$</span>}
+                <span className="truncate font-medium">{t.title}</span>
+                <span className="text-muted-foreground ml-auto max-w-[45%] truncate font-mono text-[10px]">{workspaces.find((w) => w.id === t.workspaceId)?.name}{t.command ? ` · ${t.command}` : ""}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       {templates.length > 0 && (
-        <div className="grid gap-2">
-          <p className="text-muted-foreground font-mono text-[10px] font-medium tracking-[0.14em] uppercase">Templates</p>
+        <section className="grid gap-2">
+          <p className={eyebrow}>Templates</p>
           <div className="flex flex-wrap gap-2">
             {templates.map((t) => (
               <Button key={t.id} variant="outline" size="sm" onClick={() => onRun(t.id)}>
@@ -990,23 +1036,12 @@ function EmptyState({ workspaces, templates, onOpen, onRun, hasTerms }: { worksp
               </Button>
             ))}
           </div>
-        </div>
+        </section>
       )}
-      {workspaces.length > 0 && (
-        <div className="grid gap-2">
-          <p className="text-muted-foreground font-mono text-[10px] font-medium tracking-[0.14em] uppercase">New shell in</p>
-          <div className="flex flex-wrap gap-2">
-            {workspaces.map((w) => (
-              <Button key={w.id} variant="outline" size="sm" onClick={() => onOpen(w.id)}>
-                <Plus aria-hidden /> {w.name}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="border-foreground/[0.07] rounded-xl border p-4">
-        <ShortcutList />
-      </div>
+      <details className="group border-foreground/[0.07] rounded-xl border">
+        <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs"><Keyboard className="size-3.5" aria-hidden /> Keyboard shortcuts</summary>
+        <div className="px-4 pb-4"><ShortcutList /></div>
+      </details>
     </div>
   );
 }
