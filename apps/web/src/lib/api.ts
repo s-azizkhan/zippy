@@ -54,7 +54,8 @@ export const useSystem = () =>
   useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; error?: string }; desktop: boolean }>("/system") });
 export type Tool = { path: string | null; version: string | null; signedIn: boolean | null; error?: string };
 export type ToolJob = { running: boolean; log: string; error: string | null; code?: string; url?: string };
-export type Tools = Record<"claude" | "git" | "gh", Tool> & { jobs: Partial<Record<"claude" | "git" | "gh" | "gh-login" | "clean", ToolJob>>; platform: string; installedByZippy: string[] };
+export type Tools = Record<"claude" | "git" | "gh", Tool> & { jobs: Partial<Record<"claude" | "git" | "gh" | "gh-login" | "clean", ToolJob>>; platform: string; installedByZippy: string[]; installLog: InstallEvent[] };
+export type InstallEvent = { item: "claude" | "git" | "gh" | "ghLogin"; event: "installed" | "removed" | "requested"; at: string; detail: string };
 // Polls while an install runs, and while Apple's git installer may still be open.
 export const useTools = () =>
   useQuery({

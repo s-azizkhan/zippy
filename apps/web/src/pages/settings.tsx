@@ -941,6 +941,7 @@ function Connectors() {
   );
 }
 
+const INSTALL_EVENT = { installed: "Installed", removed: "Removed", requested: "Started" } as const;
 const TOOL_ROWS = [
   { id: "claude", name: "Claude Code", why: "Runs every Zipper." },
   { id: "git", name: "Git", why: "Worktrees, commits and diffs." },
@@ -1014,6 +1015,19 @@ export function SetupTools({ signIn = false }: { signIn?: boolean }) {
         )}
       </div>
       {data?.jobs.clean?.error && <p role="alert" className="text-destructive text-xs">{data.jobs.clean.error}</p>}
+      {!!data?.installLog.length && (
+        <Disclosure title="Install history" meta={`${data.installLog.length} by Zippy`}>
+          <ul className="grid gap-1.5 text-xs">
+            {data.installLog.map((e) => (
+              <li key={`${e.at}-${e.item}-${e.event}`} className="flex flex-wrap gap-x-2">
+                <time dateTime={e.at} className="text-muted-foreground tabular-nums">{new Date(e.at).toLocaleString()}</time>
+                <span className="font-medium">{INSTALL_EVENT[e.event]}</span>
+                <span className="text-muted-foreground break-all">{e.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
       <ConfirmDialog
         open={confirmClean}
         onOpenChange={setConfirmClean}

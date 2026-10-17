@@ -12,21 +12,29 @@ const BIN = join(homedir(), ".zippy", "bin"); // gh installs here: no Homebrew, 
 const CLAUDE_HOME = join(homedir(), ".local", "share", "claude"); // where Claude's installer puts versions
 const CLAUDE_LINK = join(homedir(), ".local", "bin", "claude");
 
-// What Zippy itself installed, so Clean removes only that and never a tool the user installed.
+// What Zippy itself installed and when. `installed` drives Clean (only Zippy's own installs are removed);
+// `log` keeps every install and removal, also after Clean.
 const MANIFEST = join(homedir(), ".zippy", "installed.json");
-type Installed = { claude?: boolean; gh?: boolean; ghLogin?: boolean };
-const installed = (): Installed => {
+type Item = "claude" | "git" | "gh" | "ghLogin";
+type Entry = { at: string; detail: string };
+type Manifest = { installed: Partial<Record<Item, Entry>>; log: (Entry & { item: Item; event: "installed" | "removed" | "requested" })[] };
+const manifest = (): Manifest => {
   try {
-    return JSON.parse(readFileSync(MANIFEST, "utf8"));
+    const m = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    return { installed: m.installed ?? {}, log: m.log ?? [] };
   } catch {
-    return {};
+    return { installed: {}, log: [] };
   }
 };
-const mark = (patch: Installed) => {
+function record(item: Item, event: Manifest["log"][number]["event"], detail: string) {
+  const m = manifest();
+  const e = { at: new Date().toISOString(), detail };
+  if (event === "installed") m.installed[item] = e;
+  if (event === "removed") delete m.installed[item];
+  m.log.push({ item, event, ...e });
   mkdirSync(join(homedir(), ".zippy"), { recursive: true });
-  const next = Object.fromEntries(Object.entries({ ...installed(), ...patch }).filter(([, v]) => v));
-  writeFileSync(MANIFEST, JSON.stringify(next));
-};
+  writeFileSync(MANIFEST, JSON.stringify(m, null, 2));
+}
 
 /**
  * The desktop app reads the login-shell PATH once at launch. Read it again so tools installed since are found;
@@ -75,7 +83,7 @@ export const isJob = (id: string): id is JobId => (JOBS as readonly string[]).in
 export async function toolStatus() {
   await refreshPath();
   const [c, g, h] = await Promise.all([claude(), git(), gh()]);
-  return { claude: c, git: g, gh: h, jobs, platform: process.platform, installedByZippy: removable() };
+  return { claude: c, git: g, gh: h, jobs, platform: process.platform, installedByZippy: removable(), installLog: manifest().log.slice(-50).reverse() };
 }
 
 /** Runs a command into the job log; rejects with its last output line on a non-zero exit. */
@@ -91,7 +99,7 @@ function sh(j: Job, cmd: string, args: string[], onOutput?: () => void) {
 }
 
 /** Latest gh release for this Mac, checked against the release's checksums file, into ~/.zippy/bin. */
-async function installGh(j: Job) {
+async function installGh(j: Job): Promise<string> {
   if (process.platform !== "darwin") throw new Error("Install gh from https://cli.github.com, then Recheck.");
   const rel = (await (await fetch("https://api.github.com/repos/cli/cli/releases/latest")).json()) as { assets?: { name: string; browser_download_url: string }[] };
   const assets = rel.assets ?? [];
@@ -113,11 +121,12 @@ async function installGh(j: Job) {
     rmSync(dir, { recursive: true, force: true });
   }
   j.log += `Installed to ${join(BIN, "gh")}\n`;
+  return `gh ${/^gh_([^_]+)_/.exec(zip.name)?.[1] ?? ""} at ${join(BIN, "gh")}`;
 }
 
 /** Human labels for what Clean would remove right now. */
 function removable() {
-  const m = installed();
+  const m = manifest().installed;
   return [
     m.claude && `Claude Code (${CLAUDE_LINK}, ${CLAUDE_HOME}). Your ~/.claude settings and history stay.`,
     m.ghLogin && "GitHub CLI sign-in (gh auth logout)",
@@ -127,11 +136,11 @@ function removable() {
 
 /** Undo Zippy's installs. System tools (Homebrew, Apple's Command Line Tools, a claude you installed) are never touched. */
 async function clean(j: Job) {
-  const m = installed();
+  const m = manifest().installed;
   const ours = join(BIN, "gh");
   if (m.ghLogin) {
     await sh(j, existsSync(ours) ? ours : "gh", ["auth", "logout", "--hostname", "github.com"]).catch((e: Error) => (j.log += `${e.message}\n`)); // already signed out is fine
-    mark({ ghLogin: false });
+    record("ghLogin", "removed", "gh auth logout");
   }
   if (m.gh) {
     // setup-git wrote `helper =` (reset) plus `helper = !<our gh> auth git-credential`; drop both only where ours is set.
@@ -142,7 +151,7 @@ async function clean(j: Job) {
     try {
       rmdirSync(BIN); // only when empty
     } catch {}
-    mark({ gh: false });
+    record("gh", "removed", `${ours} and its git credential helper`);
     j.log += `Removed ${ours}\n`;
   }
   if (m.claude) {
@@ -150,17 +159,22 @@ async function clean(j: Job) {
     const link = existsSync(CLAUDE_LINK) && lstatSync(CLAUDE_LINK).isSymbolicLink() && readlinkSync(CLAUDE_LINK).startsWith(CLAUDE_HOME);
     if (link) rmSync(CLAUDE_LINK, { force: true });
     rmSync(CLAUDE_HOME, { recursive: true, force: true });
-    mark({ claude: false });
+    record("claude", "removed", `${CLAUDE_LINK}, ${CLAUDE_HOME}`);
     j.log += `Removed Claude Code\n`;
   }
 }
 
 const actions: Record<JobId, (j: Job) => Promise<void>> = {
-  claude: (j) => sh(j, "/bin/bash", ["-c", "curl -fsSL https://claude.ai/install.sh | bash"]).then(() => mark({ claude: true })),
+  claude: async (j) => {
+    await sh(j, "/bin/bash", ["-c", "curl -fsSL https://claude.ai/install.sh | bash"]);
+    record("claude", "installed", `${(await firstLine(CLAUDE_LINK, ["--version"])) ?? "Claude Code"} at ${CLAUDE_LINK}`);
+  },
   // Opens Apple's installer dialog and returns; the checklist rechecks until git shows up.
   git: (j) =>
-    process.platform === "darwin" ? sh(j, "xcode-select", ["--install"]) : Promise.reject(new Error("Install git with your package manager, then Recheck.")),
-  gh: (j) => installGh(j).then(() => mark({ gh: true })),
+    process.platform === "darwin"
+      ? sh(j, "xcode-select", ["--install"]).then(() => record("git", "requested", "Opened Apple's Command Line Tools installer (system component; Clean leaves it)"))
+      : Promise.reject(new Error("Install git with your package manager, then Recheck.")),
+  gh: async (j) => record("gh", "installed", await installGh(j)),
   clean,
   // Device flow: gh prints a one-time code and waits until it's entered on github.com. https protocol also sets gh as git's credential helper.
   "gh-login": async (j) => {
@@ -168,7 +182,7 @@ const actions: Record<JobId, (j: Job) => Promise<void>> = {
       j.code ??= /one-time code: (\S+)/.exec(j.log)?.[1];
       j.url ??= /(https:\/\/github\.com\/login\/device)/.exec(j.log)?.[1];
     });
-    mark({ ghLogin: true });
+    record("ghLogin", "installed", `Signed in to github.com as ${(await firstLine("gh", ["api", "user", "-q", ".login"])) ?? "unknown"}`);
     await sh(j, "gh", ["auth", "setup-git"]);
   },
 };
