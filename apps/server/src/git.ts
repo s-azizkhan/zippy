@@ -151,6 +151,9 @@ export async function openPr(ticket: Ticket, folder: Folder, ws: Workspace, titl
   if (!cwd || !folder.branch) throw new Error(`${ws.name} has no git worktree.`);
   if (await git(cwd, "status", "--porcelain")) throw new Error(`Uncommitted changes in ${ws.name}. Commit first, then call open_pr again.`);
 
+  await exec("gh", ["auth", "status"], { cwd }).catch(() => {
+    throw new Error("GitHub CLI (gh) is not installed or not signed in. Tell the user to set it up in Settings → Connectors → Tools; the commits stay on the branch.");
+  });
   await git(cwd, "push", "-u", "origin", folder.branch);
   const existing = await exec("gh", ["pr", "view", folder.branch, "--json", "url", "-q", ".url"], { cwd }).then((r) => r.stdout.trim(), () => "");
   if (existing) return existing;

@@ -8,6 +8,7 @@ import { ProfileFields } from "@/components/profile-fields";
 import { FolderGit2Icon } from "@/components/ui/folder-git-2";
 import { Button } from "@/components/ui/button";
 import { DbForm } from "@/components/db-form";
+import { SetupTools } from "@/pages/settings";
 import { Input } from "@/components/ui/input";
 import { api, createOrg, keys, queryClient, useDb } from "@/lib/api";
 import { useUI } from "@/lib/store";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 const DB_STEP = { id: "db", label: "Database", title: "Where should data live?", sub: "Zippy keeps everything in Postgres, on this machine by default." } as const;
 const STEPS = [
+  { id: "tools", label: "Tools", title: "Get the tools", sub: "Zippers run on Claude Code and Git on this machine. Install anything missing here; you can also do it later in Settings." },
   { id: "org", label: "Organization", title: "Name your team", sub: "The home for your tickets, Zippers and pipelines." },
   { id: "you", label: "You", title: "Who's the human?", sub: "Zippers sign their commits as you and learn how you like to work." },
   { id: "agents", label: "Zippers", title: "Meet your coworkers", sub: "Pick the pre-built Zippers to bring along. Tweak or add more anytime." },
@@ -46,8 +48,8 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
   const wsErrors = ws.success ? {} : Object.fromEntries(Object.entries(fieldErrors(ws.error.issues)).map(([k, v]) => [`ws${k[0]!.toUpperCase()}${k.slice(1)}`, v]));
   const orgErrors = org.success ? {} : fieldErrors(org.error.issues);
   const s = steps[step]!;
-  const stepOk = { db: !dbDirty, org: !orgErrors.name && !orgErrors.key, you: !orgErrors.profile, agents: true, folder: ws.success };
-  const stepErrors = { db: {}, org: orgErrors, you: {}, agents: {}, folder: wsErrors }[s.id];
+  const stepOk = { tools: true, db: !dbDirty, org: !orgErrors.name && !orgErrors.key, you: !orgErrors.profile, agents: true, folder: ws.success };
+  const stepErrors = { tools: {}, db: {}, org: orgErrors, you: {}, agents: {}, folder: wsErrors }[s.id];
 
   async function browse() {
     const { path } = await api.post<{ path: string | null }>("/system/pick-folder");
@@ -124,6 +126,8 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
               </div>
 
               {s.id === "db" && <DbForm onDirty={setDbDirty} />}
+
+              {s.id === "tools" && <SetupTools signIn />}
 
               {s.id === "org" && (
                 <div className="grid gap-5">

@@ -13,6 +13,7 @@ if (process.env.ZIPPY_CONFIG) {
   await ensureSchema().catch((e) => console.error("schema push failed:", e.message)); // keep serving so Settings can fix the DB URL
 }
 
+await (await import("./tools.ts")).refreshPath(); // before anything looks for claude, git or gh
 await (await import("./claude-accounts.ts")).refreshDefault().catch((e) => console.error("claude accounts:", e.message)); // terminals and agents run as the default account
 
 // Desktop shell: serve the built web app from the same origin as /api.

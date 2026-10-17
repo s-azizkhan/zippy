@@ -31,7 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, keys, useApiMutation, useAcp, useClaudeAccounts, useKnowledge, useMcpServers, useSystem, useUsage, useWorkspaces } from "@/lib/api";
+import { api, keys, useApiMutation, useAcp, useClaudeAccounts, useKnowledge, useMcpServers, useSystem, useTools, useUsage, useWorkspaces, type Tools } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -146,6 +146,9 @@ export function SettingsPage() {
             </Pane>
             <Pane value="connectors" active={tab}>
               <div className="stagger grid gap-5">
+                <Card title="Tools" desc="Command-line tools Zippers run on this machine.">
+                  <SetupTools />
+                </Card>
                 <Connectors />
                 <ClaudeHub />
                 <LocalDomain />
@@ -935,6 +938,74 @@ function Connectors() {
       )}
       <ClaudeAccounts />
     </Card>
+  );
+}
+
+const TOOL_ROWS = [
+  { id: "claude", name: "Claude Code", why: "Runs every Zipper." },
+  { id: "git", name: "Git", why: "Worktrees, commits and diffs." },
+  { id: "gh", name: "GitHub CLI", why: "Optional. Opens PRs, follows CI and reviews." },
+] as const;
+
+/** claude, git and gh: installed and signed in, with one-click installs. `signIn` shows Claude sign-in inline (onboarding has no AI connection card). */
+export function SetupTools({ signIn = false }: { signIn?: boolean }) {
+  const qc = useQueryClient();
+  const { data, isFetching, refetch } = useTools();
+  const run = useApiMutation((job: keyof Tools["jobs"]) => api.post(`/system/tools/${job}`, {}, true), [["system", "tools"]]);
+  const running = Object.values(data?.jobs ?? {}).some((j) => j?.running);
+  const was = useRef(running);
+  useEffect(() => {
+    if (was.current && !running) qc.invalidateQueries({ queryKey: ["system"] }); // banner + AI connection follow a finished install
+    was.current = running;
+  }, [running, qc]);
+  return (
+    <div className="grid gap-3">
+      <ul className="grid gap-3">
+        {TOOL_ROWS.map((r) => {
+          const t = data?.[r.id];
+          const job = data?.jobs[r.id];
+          const login = r.id === "gh" ? data?.jobs["gh-login"] : undefined;
+          const ok = !!t?.path && t.signedIn !== false;
+          return (
+            <li key={r.id} className="grid gap-2 rounded-lg border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="grid gap-0.5">
+                  <Status ok={ok} loading={!data}>
+                    {r.name}
+                    <span className="text-muted-foreground font-normal">
+                      {!t ? "Checking…" : !t.path ? "Not installed" : t.signedIn === false ? "Not signed in" : (t.version ?? "Installed")}
+                    </span>
+                  </Status>
+                  <p className="text-muted-foreground pl-5 text-xs">{r.why}</p>
+                </div>
+                {t && !t.path && (
+                  <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={job?.running || run.isPending} onClick={() => run.mutate(r.id, { onError: (e) => toast.error(e.message) })}>
+                    {job?.running ? "Installing…" : "Install"}
+                  </Button>
+                )}
+                {r.id === "gh" && t?.path && t.signedIn === false && (
+                  <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={login?.running || run.isPending} onClick={() => run.mutate("gh-login", { onError: (e) => toast.error(e.message) })}>
+                    {login?.running ? "Waiting for GitHub…" : "Sign in to GitHub"}
+                  </Button>
+                )}
+              </div>
+              {r.id === "git" && job && !t?.path && !job.error && <p className="text-xs">Finish Apple's Command Line Tools installer. This updates by itself when it's done.</p>}
+              {login?.running && login.code && (
+                <p className="text-xs">
+                  Enter <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-sm font-semibold select-all">{login.code}</code> at{" "}
+                  <a href={login.url ?? "https://github.com/login/device"} target="_blank" rel="noreferrer" className="text-primary underline">github.com/login/device</a>
+                </p>
+              )}
+              {[job, login].map((j, i) => j?.error && <p key={i} role="alert" className="text-destructive text-xs">{j.error}</p>)}
+              {r.id === "claude" && t?.path && t.signedIn === false && (signIn ? <AddAccount /> : <p className="text-muted-foreground text-xs">Sign in under AI connection below.</p>)}
+            </li>
+          );
+        })}
+      </ul>
+      <Button variant="outline" size="sm" className="justify-self-start max-md:min-h-11" disabled={isFetching} onClick={() => refetch()}>
+        <RefreshCw aria-hidden className={isFetching ? "animate-spin" : undefined} /> Recheck
+      </Button>
+    </div>
   );
 }
 

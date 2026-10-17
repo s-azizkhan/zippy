@@ -50,6 +50,7 @@ import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
 import { bodyLimit } from "hono/body-limit";
 import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll, folderDiff, isRepo, mergePr, popStash, prState, pullFf, pushHead, runTests, setIdentity, workingDiff } from "./git.ts";
 import { checkPrs } from "./github.ts";
+import { isJob, startJob, toolStatus } from "./tools.ts";
 import { authorizeUrl, completeOAuth, dropClient, fetchIssue, listMine, ownCommentIds, verifyWebhook } from "./linear.ts";
 import { handleMcp, resetHops } from "./mcp.ts";
 import { mountHub } from "./hub.ts";
@@ -60,7 +61,7 @@ import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
-import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
+import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudeBin, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
 app.use(reqlog);
@@ -92,6 +93,13 @@ const byIdentifier = async (c: Context) => {
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}", byIdentifier);
 app.all("/tickets/:id{[A-Z][A-Z0-9]+-[0-9]+}/*", byIdentifier);
 
+app.get("/system/tools", async (c) => c.json(await toolStatus()));
+app.post("/system/tools/:job", (c) => {
+  const job = c.req.param("job");
+  if (!isJob(job)) return c.notFound();
+  startJob(job);
+  return c.body(null, 202);
+});
 app.get("/system", async (c) => {
   const auth = await claudeAuthStatus(); // may detect claudePath, so read it after
   return c.json({ claudePath, auth, desktop: !!process.env.ZIPPY_CONFIG });
@@ -125,9 +133,10 @@ app.post("/system/claude-accounts/:id/test", async (c) => {
   return a ? c.json(await claudeAuthStatus(a)) : c.notFound();
 });
 app.post("/system/claude-accounts/login", async (c) => {
-  if (!claudePath) return c.json({ error: "Claude CLI not found" }, 400);
+  const bin = claudeBin();
+  if (!bin) return c.json({ error: "Claude CLI not found" }, 400);
   const { label } = await body(c, z.object({ label: z.string().trim().min(1).max(60) }));
-  return c.json({ id: startLogin(claudePath, label) });
+  return c.json({ id: startLogin(bin, label) });
 });
 app.get("/system/claude-accounts/login/:id", (c) => {
   const s = loginState(c.req.param("id"));

@@ -52,6 +52,16 @@ export const keys = {
 
 export const useSystem = () =>
   useQuery({ queryKey: keys.system, queryFn: () => api.get<{ claudePath: string | null; auth: { loggedIn: boolean; error?: string }; desktop: boolean }>("/system") });
+export type Tool = { path: string | null; version: string | null; signedIn: boolean | null; error?: string };
+export type ToolJob = { running: boolean; log: string; error: string | null; code?: string; url?: string };
+export type Tools = Record<"claude" | "git" | "gh", Tool> & { jobs: Partial<Record<"claude" | "git" | "gh" | "gh-login", ToolJob>>; platform: string };
+// Polls while an install runs, and while Apple's git installer may still be open.
+export const useTools = () =>
+  useQuery({
+    queryKey: ["system", "tools"],
+    queryFn: () => api.get<Tools>("/system/tools"),
+    refetchInterval: (q) => (Object.values(q.state.data?.jobs ?? {}).some((j) => j?.running) || (q.state.data?.jobs.git && !q.state.data.git.path) ? 2000 : false),
+  });
 export type ClaudeAccount = { id: string; label: string; method: "oauth" | "api_key"; hint: string; isDefault: boolean };
 export const useClaudeAccounts = () => useQuery({ queryKey: ["system", "claude-accounts"], queryFn: () => api.get<ClaudeAccount[]>("/system/claude-accounts") });
 export const useDb = () =>

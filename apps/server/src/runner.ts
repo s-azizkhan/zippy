@@ -33,6 +33,8 @@ function findClaude(): string | null {
   return null;
 }
 export let claudePath = findClaude();
+/** Path of `claude`, looked up again while missing: installed after start is picked up without a restart. */
+export const claudeBin = () => (claudePath ??= findClaude());
 
 /** Env for a `claude` we spawn as `account` (null = the machine's own login). */
 const claudeEnv = (account: ClaudeAccount | null): Record<string, string> => ({ ...(claudePath && { CLAUDE_CODE_EXECUTABLE: claudePath }), ...accountEnv(account) });
@@ -68,8 +70,7 @@ const probes = new Map<string, { at: number; data: Probe; pending?: Promise<Prob
 
 /** Real one-turn `claude -p` as `account` (default account when omitted; null = machine login): tests the exact path agents use, so keychain vs token vs API key all just work, and its rate_limit_event carries the plan usage. Cached: success 5 min, failure 5 s (Recheck stays live). */
 function probe(account: ClaudeAccount | null): Promise<Probe> {
-  claudePath ??= findClaude(); // installed after start: picked up on the next check, no restart
-  if (!claudePath) return Promise.resolve({ loggedIn: false });
+  if (!claudeBin()) return Promise.resolve({ loggedIn: false });
   const key = account?.id ?? "";
   const hit = probes.get(key);
   if (hit?.pending) return hit.pending;
@@ -548,6 +549,10 @@ export async function runAgent(ticketId: string, agentId: string, message: strin
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
   if (!ticket || !agent) throw new Error("ticket or agent not found");
 
+  if (!claudeBin()) {
+    await addComment(ticketId, null, "error", { text: "Claude Code is not installed. Install it in Settings → Connectors → Tools, then retry." });
+    return setStatus(ticketId, "blocked");
+  }
   const folders = await foldersOf(ticketId);
   if (!folders.length) return addComment(ticketId, null, "error", { text: "Add a working folder to this ticket before you run an agent." });
 
