@@ -37,5 +37,6 @@ serve({ fetch: main.fetch, port, hostname: "127.0.0.1" }, () => console.log(`zip
 const { startDomain } = await import("./domain.ts");
 startDomain(main.fetch).catch((e) => console.error("https://zippy.localhost:", e.message)); // no-op until set up in Settings
 (await import("./phone.ts")).initPhone(main.fetch);
+(await import("./runner.ts")).resumeOrphans().catch((e) => console.error("resume:", e.message));
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => (shutdown(), closeAllTerminals(), process.exit(0)));

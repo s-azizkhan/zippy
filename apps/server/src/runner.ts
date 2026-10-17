@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { RULES, type ApprovalPayload, type Profile, type TicketStatus, type ToolPayload } from "@zippy/shared";
 import { emit } from "./bus.ts";
 import { desktopMcps, isOn, scanCatalog } from "./catalog.ts";
@@ -686,8 +686,31 @@ export async function decideApproval(commentId: string, optionId: string | null)
     pendingApprovals.delete(commentId);
     resolve(optionId);
     await setStatus(c.ticketId, "in_progress");
+  } else if (c.agentId) {
+    // The turn that asked died with a server restart: tell the agent in a new turn instead of answering nobody.
+    const p = c.payload as ApprovalPayload;
+    const choice = p.options.find((o) => o.optionId === optionId);
+    const verdict = choice?.kind.startsWith("allow") ? "allowed it, so retry that action" : "denied it, so find another way or ask";
+    runAgent(c.ticketId, c.agentId, `Zippy restarted while your permission request "${p.title}" was pending. The user ${verdict}.`).catch(console.error);
   }
   return true;
+}
+
+/**
+ * Boot: no agent process survives a restart, so tickets left in_progress would show as working forever.
+ * Re-prompt each one's most recent agent; loadSession restores its history.
+ */
+export async function resumeOrphans() {
+  const stuck = await db.select({ id: tickets.id }).from(tickets).where(and(eq(tickets.status, "in_progress"), eq(tickets.kind, "ticket"), isNull(tickets.deletedAt)));
+  for (const t of stuck) {
+    const [s] = await db.select({ agentId: agentSessions.agentId }).from(agentSessions).where(eq(agentSessions.ticketId, t.id)).orderBy(desc(agentSessions.lastSeenAt)).limit(1);
+    if (!s) {
+      await setStatus(t.id, "todo");
+      continue;
+    }
+    await addComment(t.id, null, "error", { text: "Zippy restarted mid-turn. Resuming the agent." });
+    runAgent(t.id, s.agentId, "Zippy restarted while you were working, and your last turn was cut off. Check the worktree state, then continue where you left off.").catch(console.error);
+  }
 }
 
 export function shutdown() {
