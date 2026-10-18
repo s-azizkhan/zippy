@@ -49,3 +49,13 @@ test("tab round trip: open, act, snapshot over the bridge", async () => {
   assert.ok(sh.seen.filter((o) => o === "eval").length >= 8);
   assert.equal(b.getTab(t.id), undefined);
 });
+
+test("grants: scoped to ticket, agent, tab; a read grant never covers writes", () => {
+  b.grant("t1", "a1", "tab1", "read");
+  assert.equal(b.granted("t1", "a1", "tab1", "read"), true);
+  assert.equal(b.granted("t1", "a1", "tab1", "write"), false);
+  assert.equal(b.granted("t2", "a1", "tab1", "read"), false); // same agent, other ticket
+  assert.equal(b.granted("t1", "a2", "tab1", "read"), false);
+  b.grant("t1", "a1", "tab1", "write");
+  assert.equal(b.granted("t1", "a1", "tab1", "write"), true);
+});

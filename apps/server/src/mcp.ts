@@ -328,13 +328,16 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
     if (!t) return text("No such tab. Call browser_tabs.");
     if (!connected()) return text(DESKTOP_ONLY);
     const own = t.agentId === agentId && t.ticketId === ticketId;
-    if (own ? !write || canWrite : granted(agentId, tabId)) return text(await run().catch((e: Error) => `Failed: ${e.message}`));
+    const access = write ? "write" : "read";
+    if (own ? !write || canWrite : granted(ticketId, agentId, tabId, access)) return text(await run().catch((e: Error) => `Failed: ${e.message}`));
+    // The card shows exactly what will run; anything too long to review is refused, never cut.
+    if (title.length > 6000) return text("That is too long to show the user for approval. Split it into smaller steps.");
     const where = `${own ? "your tab" : t.agentId ? "another agent's tab" : "the user's tab"} "${t.title}" (${new URL(t.url).host})`;
     const options = [{ optionId: "allow", name: "Allow", kind: "allow_once" }];
     if (!own) options.push({ optionId: "always", name: "Always allow on this tab", kind: "allow_always" });
     options.push({ optionId: "deny", name: "Deny", kind: "reject_once" });
     const c = await addComment(ticketId, agentId, "approval", { title: `${title} in ${where}`, kind: "browser", options } satisfies ApprovalPayload);
-    pendingTerm.set(c.id, (optionId) => (optionId === "always" && grant(agentId, tabId), run()));
+    pendingTerm.set(c.id, (optionId) => (optionId === "always" && grant(ticketId, agentId, tabId, access), run()));
     await setStatus(ticketId, "needs_input");
     markAsked(ticketId, agentId);
     return text("That needs the user's approval. A card was posted. End your turn now; you will be messaged with the result.");
@@ -401,8 +404,7 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
     },
     async ({ tab, ref, text: t, clear, submit }) => {
       const label = getTab(tab) && connected() ? await describe(tab, ref) : "";
-      const shown = t.length > 300 ? `${t.slice(0, 300)}…` : t;
-      return browserGate(tab, `Type ${JSON.stringify(shown)} into ${label ? `"${label}"` : ref}${submit ? " and press Enter" : ""}`, true, () => act(tab, { type: ref, text: t, clear, submit }));
+      return browserGate(tab, `Type ${JSON.stringify(t)} into ${label ? `"${label}"` : ref}${submit ? " and press Enter" : ""}`, true, () => act(tab, { type: ref, text: t, clear, submit }));
     },
   );
   server.registerTool(
@@ -419,7 +421,10 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
       description: "Run JavaScript in a tab as a function body (use return; await works). Returns the JSON result. For anything the other browser tools can't do. Read-only agents and other people's tabs: the user approves first.",
       inputSchema: { tab: tabArg, code: z.string().max(20_000) },
     },
-    async ({ tab, code }) => browserGate(tab, `Run script:\n\`\`\`js\n${code.slice(0, 1500)}\n\`\`\``, true, () => evalScript(tab, code)),
+    async ({ tab, code }) => {
+      const fence = "`".repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)));
+      return browserGate(tab, `Run script:\n${fence}js\n${code}\n${fence}`, true, () => evalScript(tab, code));
+    },
   );
   server.registerTool(
     "browser_close",

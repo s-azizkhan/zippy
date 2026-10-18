@@ -51,14 +51,19 @@ const save = (now = false) => {
 };
 
 const view = { active: null as string | null, visible: false };
-// Agent → tab it may use like its own, granted by "Always allow" on an approval card. ponytail: in memory, a restart asks again.
+// "Always allow" on an approval card: this agent, on this ticket, may read (or also write to) this tab without asking.
+// A read grant never covers writes. ponytail: in memory, a restart asks again.
 const grants = new Set<string>();
+type Access = "read" | "write";
 
 export const listTabs = () => [...tabs.values()];
 export const getTab = (id: string) => tabs.get(id);
 export const browserState = () => ({ connected: connected(), active: view.active, tabs: listTabs() });
-export const grant = (agentId: string, tabId: string) => grants.add(`${agentId}:${tabId}`);
-export const granted = (agentId: string, tabId: string) => grants.has(`${agentId}:${tabId}`);
+export const grant = (ticketId: string, agentId: string, tabId: string, access: Access) => {
+  grants.add(`${ticketId}:${agentId}:${tabId}:read`);
+  if (access === "write") grants.add(`${ticketId}:${agentId}:${tabId}:write`);
+};
+export const granted = (ticketId: string, agentId: string, tabId: string, access: Access) => grants.has(`${ticketId}:${agentId}:${tabId}:${access}`);
 
 // ---- bridge ----
 
@@ -157,7 +162,7 @@ export async function openTab(url: string, owner?: { ticketId: string; agentId: 
 export async function closeTab(id: string) {
   tabs.delete(id);
   save(true);
-  for (const g of grants) if (g.endsWith(`:${id}`)) grants.delete(g);
+  for (const g of grants) if (g.includes(`:${id}:`)) grants.delete(g);
   if (view.active === id) view.active = null;
   await send({ op: "close", tab: id }).catch(() => {});
 }
