@@ -16,6 +16,7 @@ import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, spawnTerminal, writeTerminal } from "./term.ts";
+import { act, closeTab, connected, describe, DESKTOP_ONLY, evalScript, getTab, grant, granted, listTabs, openTab, readText, settled, snapshot } from "./browser.ts";
 
 // Bearer token -> the agent session it was issued to. Issued per spawned ACP process.
 const tokens = new Map<string, { ticketId: string; agentId: string }>();
@@ -34,14 +35,15 @@ export const resetHops = (ticketId: string) => hops.delete(ticketId);
 
 const MAX_KB_PER_TICKET = 8;
 
-// Terminal actions by read-only agents, waiting on an approval card. ponytail: in memory; a restart drops them and the agent asks again.
-const pendingTerm = new Map<string, () => Promise<string>>(); // key: approval comment id
-/** Runs (or drops) the terminal action behind an approval card; returns the message for the agent, or null when the card was not one. */
-export async function runPendingTerm(commentId: string, approved: boolean) {
+// Terminal and browser actions waiting on an approval card. ponytail: in memory; a restart drops them and the agent asks again.
+const pendingTerm = new Map<string, (optionId: string) => Promise<string>>(); // key: approval comment id
+export const approves = (optionId: string | null | undefined) => optionId === "allow" || optionId === "always";
+/** Runs (or drops) the action behind an approval card; returns the message for the agent, or null when the card was not one. */
+export async function runPendingTerm(commentId: string, optionId: string | null | undefined) {
   const run = pendingTerm.get(commentId);
   if (!run) return null;
   pendingTerm.delete(commentId);
-  return approved ? run().catch((e: Error) => `Failed: ${e.message}`) : "The user denied it. Explain what you wanted or ask_user for an alternative.";
+  return approves(optionId) ? run(optionId!).catch((e: Error) => `Failed: ${e.message}`) : "The user denied it. Explain what you wanted or ask_user for an alternative.";
 }
 
 /** The org's human when `handle` is theirs. */
@@ -314,6 +316,120 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
       if (!t || t.ticketId !== ticketId) return text("No such terminal on this ticket.");
       if (t.agentId !== agentId) return text("That terminal was not opened by you; ask the user to close it.");
       return gated(`Close terminal "${t.title}"`, async () => (closeTerminal(id) ? "Closed." : "Already gone."));
+    },
+  );
+
+  // Browser: tabs in the desktop app, sharing one signed-in session (the user's Gmail, Slack…).
+  // Own tabs: reads and navigation are free, clicks/typing need canWrite. Anyone else's tab: every action is an approval card,
+  // where "Always allow" lets this agent use that tab freely until it closes.
+  const tabLine = (t: NonNullable<ReturnType<typeof getTab>>) => `${t.id}  ${t.agentId === agentId && t.ticketId === ticketId ? "yours" : t.agentId ? "another agent's" : "the user's"}  "${t.title}"  ${t.url}`;
+  const browserGate = async (tabId: string, title: string, write: boolean, run: () => Promise<string>) => {
+    const t = getTab(tabId);
+    if (!t) return text("No such tab. Call browser_tabs.");
+    if (!connected()) return text(DESKTOP_ONLY);
+    const own = t.agentId === agentId && t.ticketId === ticketId;
+    if (own ? !write || canWrite : granted(agentId, tabId)) return text(await run().catch((e: Error) => `Failed: ${e.message}`));
+    const where = `${own ? "your tab" : t.agentId ? "another agent's tab" : "the user's tab"} "${t.title}" (${new URL(t.url).host})`;
+    const options = [{ optionId: "allow", name: "Allow", kind: "allow_once" }];
+    if (!own) options.push({ optionId: "always", name: "Always allow on this tab", kind: "allow_always" });
+    options.push({ optionId: "deny", name: "Deny", kind: "reject_once" });
+    const c = await addComment(ticketId, agentId, "approval", { title: `${title} in ${where}`, kind: "browser", options } satisfies ApprovalPayload);
+    pendingTerm.set(c.id, (optionId) => (optionId === "always" && grant(agentId, tabId), run()));
+    await setStatus(ticketId, "needs_input");
+    markAsked(ticketId, agentId);
+    return text("That needs the user's approval. A card was posted. End your turn now; you will be messaged with the result.");
+  };
+  const tabArg = z.string().describe("Tab id from browser_tabs or browser_open");
+  server.registerTool(
+    "browser_tabs",
+    { description: "List the browser tabs open in the Zippy desktop app: id, whose tab it is, title, URL. The user's tabs are signed in to their accounts.", inputSchema: {} },
+    async () => {
+      if (!connected()) return text(DESKTOP_ONLY);
+      const all = listTabs();
+      return text(all.length ? all.map(tabLine).join("\n") : "No tabs open. Open one with browser_open.");
+    },
+  );
+  server.registerTool(
+    "browser_open",
+    {
+      description: "Open a web page in a new browser tab of your own and get its snapshot. Tabs share the user's signed-in session (cookies), so you see sites as the user does. The user can watch it on the Browser page. Close it with browser_close when done.",
+      inputSchema: { url: httpUrl },
+    },
+    async ({ url }) => {
+      if (!connected()) return text(DESKTOP_ONLY);
+      if (listTabs().filter((t) => t.agentId === agentId && t.ticketId === ticketId).length >= 4) return text("You already have 4 tabs open. Close one with browser_close or reuse it with browser_navigate.");
+      try {
+        const t = await openTab(url, { ticketId, agentId });
+        await addComment(ticketId, agentId, "text", { text: `Opened browser tab [${new URL(url).host}](/browser?tab=${t.id}).` });
+        return text(await settled(t.id));
+      } catch (e) {
+        return text(`Failed: ${(e as Error).message}`);
+      }
+    },
+  );
+  server.registerTool(
+    "browser_snapshot",
+    { description: "List a tab's headings and interactive elements, each with a ref like [e12] for browser_click / browser_type. Refs change with every snapshot.", inputSchema: { tab: tabArg } },
+    async ({ tab }) => browserGate(tab, "Read the page", false, () => snapshot(tab)),
+  );
+  server.registerTool(
+    "browser_read",
+    {
+      description: "Read the visible text of a tab, or of one element by ref (e.g. an email body). Long pages come in chunks: pass offset to continue.",
+      inputSchema: { tab: tabArg, ref: z.string().optional(), offset: z.number().int().min(0).default(0), max: z.number().int().min(200).max(30_000).default(8000) },
+    },
+    async ({ tab, ref, offset, max }) => browserGate(tab, "Read the page text", false, () => readText(tab, ref, offset, max)),
+  );
+  server.registerTool(
+    "browser_navigate",
+    { description: "Load a URL in a tab, or go back / forward / reload. Returns the new snapshot.", inputSchema: { tab: tabArg, to: z.union([httpUrl, z.enum(["back", "forward", "reload"])]) } },
+    async ({ tab, to }) => browserGate(tab, /^http/.test(to) ? `Open ${to}` : `Go ${to}`, false, () => act(tab, { go: to })),
+  );
+  server.registerTool(
+    "browser_click",
+    { description: "Click an element by ref from the latest snapshot. Returns the new snapshot. Read-only agents and other people's tabs: the user approves first.", inputSchema: { tab: tabArg, ref: z.string() } },
+    async ({ tab, ref }) => {
+      const label = getTab(tab) && connected() ? await describe(tab, ref) : "";
+      return browserGate(tab, `Click ${label ? `"${label}"` : ref}`, true, () => act(tab, { click: ref }));
+    },
+  );
+  server.registerTool(
+    "browser_type",
+    {
+      description: "Type into a text field or editor by ref (replaces its text unless clear=false; for a <select>, pass the option's text). submit=true presses Enter after. Returns the new snapshot. Read-only agents and other people's tabs: the user approves first.",
+      inputSchema: { tab: tabArg, ref: z.string(), text: z.string().max(20_000), clear: z.boolean().default(true), submit: z.boolean().default(false) },
+    },
+    async ({ tab, ref, text: t, clear, submit }) => {
+      const label = getTab(tab) && connected() ? await describe(tab, ref) : "";
+      const shown = t.length > 300 ? `${t.slice(0, 300)}…` : t;
+      return browserGate(tab, `Type ${JSON.stringify(shown)} into ${label ? `"${label}"` : ref}${submit ? " and press Enter" : ""}`, true, () => act(tab, { type: ref, text: t, clear, submit }));
+    },
+  );
+  server.registerTool(
+    "browser_press",
+    {
+      description: 'Press a key, optionally on an element by ref (default: the focused one). Examples: "Enter", "Escape", "Tab", "PageDown", "Meta+Enter". Returns the new snapshot. Read-only agents and other people\'s tabs: the user approves first.',
+      inputSchema: { tab: tabArg, key: z.string().max(40), ref: z.string().optional() },
+    },
+    async ({ tab, key, ref }) => browserGate(tab, `Press ${key}`, true, () => act(tab, { press: key, ref })),
+  );
+  server.registerTool(
+    "browser_eval",
+    {
+      description: "Run JavaScript in a tab as a function body (use return; await works). Returns the JSON result. For anything the other browser tools can't do. Read-only agents and other people's tabs: the user approves first.",
+      inputSchema: { tab: tabArg, code: z.string().max(20_000) },
+    },
+    async ({ tab, code }) => browserGate(tab, `Run script:\n\`\`\`js\n${code.slice(0, 1500)}\n\`\`\``, true, () => evalScript(tab, code)),
+  );
+  server.registerTool(
+    "browser_close",
+    { description: "Close a tab you opened.", inputSchema: { tab: tabArg } },
+    async ({ tab }) => {
+      const t = getTab(tab);
+      if (!t) return text("No such tab.");
+      if (t.agentId !== agentId || t.ticketId !== ticketId) return text("That tab is not yours; ask the user to close it.");
+      await closeTab(tab);
+      return text("Closed.");
     },
   );
 

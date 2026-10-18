@@ -11,7 +11,7 @@ import { desktopMcps, isOn, scanCatalog } from "./catalog.ts";
 import { forAgent } from "./files.ts";
 import { ensureWorktree } from "./git.ts";
 import { agentToken, LINEAR_MCP_URL, postComment, syncStatus } from "./linear.ts";
-import { issueToken, revokeToken, runPendingTerm } from "./mcp.ts";
+import { approves, issueToken, revokeToken, runPendingTerm } from "./mcp.ts";
 import { kbPrompt } from "./kb.ts";
 import { notify } from "./notify.ts";
 import { userEnv } from "./term.ts";
@@ -680,11 +680,11 @@ export async function decideApproval(commentId: string, optionId: string | null)
   const [c] = await db.select().from(comments).where(eq(comments.id, commentId));
   if (!c) return false;
   await patchComment(c.ticketId, c.id, { ...(c.payload as ApprovalPayload), decision: optionId ?? "cancelled" });
-  // Read-only agent's terminal action: run it now and tell the agent in a fresh turn.
-  const term = await runPendingTerm(c.id, optionId === "allow");
+  // Gated terminal / browser action: run it now and tell the agent in a fresh turn.
+  const term = await runPendingTerm(c.id, optionId);
   if (term !== null) {
     await setStatus(c.ticketId, "in_progress");
-    if (c.agentId) runAgent(c.ticketId, c.agentId, `Your terminal request was ${optionId === "allow" ? "approved" : "denied"}. ${term}`).catch(console.error);
+    if (c.agentId) runAgent(c.ticketId, c.agentId, `Your request "${(c.payload as ApprovalPayload).title}" was ${approves(optionId) ? "approved" : "denied"}. ${term}`).catch(console.error);
     return true;
   }
   if (resolve) {
