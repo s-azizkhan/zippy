@@ -9,6 +9,7 @@ import {
   approvalDecision,
   commentInput,
   folderHandle,
+  httpUrl,
   labelInput,
   TICKET_ID_RE,
   linearImport,
@@ -60,6 +61,7 @@ import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
+import { bridgeEvent, bridgeOk, bridgePoll, bridgeResult, browserState, closeTab, go, openTab, setView } from "./browser.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudeBin, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
@@ -163,6 +165,34 @@ app.post("/system/phone/host", async (c) => {
   await connectHost(host);
   return c.json(await phoneStatus());
 });
+// Browser tabs (desktop app). The page and agents go through here; the desktop shell long-polls /browser/bridge with its secret.
+const bounds = z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() });
+app.get("/browser", (c) => c.json(browserState()));
+app.post("/browser/tabs", async (c) => {
+  const { url } = await body(c, z.object({ url: httpUrl }));
+  const t = await openTab(url);
+  await setView({ active: t.id });
+  return c.json(t, 201);
+});
+app.delete("/browser/tabs/:id", async (c) => (await closeTab(c.req.param("id")), c.body(null, 204)));
+app.post("/browser/tabs/:id/go", async (c) => {
+  const { to } = await body(c, z.object({ to: z.union([httpUrl, z.enum(["back", "forward", "reload"])]) }));
+  await go(c.req.param("id"), to);
+  return c.body(null, 204);
+});
+app.post("/browser/view", async (c) => {
+  await setView(await body(c, z.object({ active: z.string().nullable().optional(), visible: z.boolean().optional(), bounds: bounds.optional() })));
+  return c.json(browserState());
+});
+app.use("/browser/bridge/*", async (c, next) => (bridgeOk(c.req.header("x-zippy-bridge")) ? next() : c.json({ error: "forbidden" }, 403)));
+app.use("/browser/bridge", async (c, next) => (bridgeOk(c.req.header("x-zippy-bridge")) ? next() : c.json({ error: "forbidden" }, 403)));
+app.get("/browser/bridge", async (c) => c.json(await bridgePoll()));
+app.post("/browser/bridge", async (c) => (bridgeResult(await body(c, z.object({ id: z.string(), ok: z.boolean(), value: z.unknown().optional(), error: z.string().optional() }))), c.body(null, 204)));
+app.post("/browser/bridge/event", async (c) => {
+  bridgeEvent(await body(c, z.object({ tab: z.string(), url: z.string().optional(), title: z.string().optional(), loading: z.boolean().optional(), newTab: z.string().optional() })));
+  return c.body(null, 204);
+});
+
 // Port manager: what is listening, which command opened it, and a way to stop it.
 app.get("/system/ports", async (c) => c.json(await listPorts()));
 app.get("/system/ports/:port", async (c) => {

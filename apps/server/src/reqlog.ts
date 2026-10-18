@@ -36,6 +36,8 @@ const body = (s: string) => {
 };
 
 export const reqlog: MiddlewareHandler = async (c, next) => {
+  // The browser bridge carries page contents (mail, chats) and polls nonstop: never write it to disk.
+  if (c.req.path.startsWith("/api/browser/bridge")) return next();
   const t = Date.now();
   const id = c.req.header("x-request-id") ?? crypto.randomUUID().slice(0, 8);
   c.header("x-request-id", id);
