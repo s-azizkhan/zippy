@@ -30,9 +30,11 @@ const downloads = new Map<string, Pending>();
 
 const MAX_TABS = 20; // ponytail: each tab is a renderer process (~100–300 MB); raise if people need more
 const DATA = process.env.ZIPPY_CONFIG ? dirname(process.env.ZIPPY_CONFIG) : join(homedir(), ".zippy");
-const PROFILE = join(DATA, "browser-profile");
+// One profile per browser build: Chromium builds can't safely share one (an older one may refuse or damage a newer
+// profile). Switching browsers means signing in again.
+const profileFor = (exe: string) => join(DATA, "browser-profile", basename(exe).replace(/\.exe$/i, "").replace(/[^\w.-]+/g, "-").toLowerCase());
 const FILE = join(DATA, "browser-tabs.json");
-const CHROME_DIR = join(DATA, "chrome"); // Chrome for Testing, downloaded when no Chromium browser is installed
+export const CHROME_DIR = join(DATA, "chrome"); // Chrome for Testing, downloaded on request or when nothing is installed
 
 // ---- tab list (persisted, so tabs come back after a restart) ----
 
@@ -73,6 +75,7 @@ type Status = { state: "off" | "starting" | "downloading" | "ready" | "error"; m
 let status: Status = { state: "off", message: "" };
 let ctx: BrowserContext | null = null;
 let starting: Promise<BrowserContext> | null = null;
+let running: string | null = null; // the browser binary in use
 let closing = false; // the whole browser is going away (quit, crash): its pages' close events must not forget the tabs
 const view = { active: null as string | null, w: 1280, h: 800, dpr: 1 };
 
@@ -84,8 +87,8 @@ export const browserState = () => ({
   downloads: [...downloads.values()].map(({ id, tab, name, url }) => ({ id, tab, name, url: url.slice(0, 300) })),
 });
 
-/** First Chromium-family browser on this machine, else a Chrome for Testing we downloaded before. */
-function findChrome(): string | null {
+/** ZIPPY_CHROME, else a Chrome for Testing Zippy downloaded (the user asked for it), else an installed Chromium-family browser. */
+export function findChrome(): string | null {
   const home = homedir();
   const candidates =
     process.platform === "darwin"
@@ -93,8 +96,8 @@ function findChrome(): string | null {
       : process.platform === "win32"
         ? [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean).flatMap((d) => [`${d}\\Google\\Chrome\\Application\\chrome.exe`, `${d}\\Microsoft\\Edge\\Application\\msedge.exe`, `${d}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`])
         : ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge", "/usr/bin/brave-browser", "/snap/bin/chromium"];
-  for (const p of [process.env.ZIPPY_CHROME, ...candidates]) if (p && existsSync(p)) return p;
-  return downloadedChrome();
+  for (const p of [process.env.ZIPPY_CHROME, downloadedChrome(), ...candidates]) if (p && existsSync(p)) return p;
+  return null;
 }
 
 const CFT_PLATFORM = { darwin: process.arch === "arm64" ? "mac-arm64" : "mac-x64", win32: "win64", linux: "linux64" }[process.platform as "darwin" | "win32" | "linux"];
@@ -111,10 +114,10 @@ function downloadedChrome() {
   }
 }
 
-/** Google's Chrome for Testing build (~150 MB), unpacked under the data dir. Only when nothing is installed. */
-async function downloadChrome() {
+/** Google's Chrome for Testing build (~150 MB), unpacked under the data dir. `say` gets progress lines. */
+export async function downloadChrome(say: (msg: string) => void = (m) => (status = { state: "downloading", message: m })) {
   if (!CFT_PLATFORM) throw new Error(`No Chrome build for ${process.platform}. Install Chrome or Chromium.`);
-  status = { state: "downloading", message: "Downloading Chrome for Testing (about 150 MB, first run only)…" };
+  say("Downloading Chrome for Testing (about 150 MB, first run only)…");
   const meta = (await (await fetch("https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json")).json()) as {
     channels: { Stable: { version: string; downloads: { chrome: { platform: string; url: string }[] } } };
   };
@@ -125,12 +128,25 @@ async function downloadChrome() {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const zip = join(dir, "chrome.zip");
-  writeFileSync(zip, Buffer.from(await (await fetch(url)).arrayBuffer()));
-  status.message = "Unpacking Chrome…";
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`Chrome download failed: HTTP ${res.status}`);
+  const total = Number(res.headers.get("content-length")) || 0;
+  const parts: Uint8Array[] = [];
+  let got = 0, shown = -1;
+  for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+    parts.push(chunk);
+    got += chunk.length;
+    const pct = total ? Math.floor((got / total) * 100) : -1;
+    if (pct !== shown && pct % 5 === 0) (shown = pct), say(`Downloading Chrome for Testing ${version}: ${pct}% of ${Math.round(total / 1e6)} MB`);
+  }
+  writeFileSync(zip, Buffer.concat(parts));
+  say("Unpacking Chrome…");
   // unzip keeps the .app's symlinks and exec bits; Windows 10+ ships tar that reads zips.
   await promisify(execFile)(process.platform === "win32" ? "tar" : "unzip", process.platform === "win32" ? ["-xf", zip, "-C", dir] : ["-q", zip, "-d", dir]);
   rmSync(zip);
-  return cftExe(dir);
+  // Older downloads go; only the newest is ever used.
+  for (const v of readdirSync(CHROME_DIR)) if (v !== version) rmSync(join(CHROME_DIR, v), { recursive: true, force: true });
+  return { exe: cftExe(dir), version };
 }
 
 // Headless Chromium says "HeadlessChrome" in its user agent, which Google and others treat as a bot.
@@ -172,9 +188,10 @@ export function ensureBrowser(): Promise<BrowserContext> {
   if (ctx) return Promise.resolve(ctx);
   starting ??= (async () => {
     status = { state: "starting", message: "Starting the browser…" };
-    const exe = findChrome() ?? (await downloadChrome());
+    const exe = findChrome() ?? (await downloadChrome()).exe;
     status = { state: "starting", message: "Starting the browser…" };
-    const c = await chromium.launchPersistentContext(PROFILE, {
+    running = exe;
+    const c = await chromium.launchPersistentContext(profileFor(exe), {
       executablePath: exe,
       headless: true,
       viewport: null, // sized per tab over CDP, to the viewer's screen
@@ -227,6 +244,15 @@ export function ensureBrowser(): Promise<BrowserContext> {
 
 /** Launch at server start when tabs were open last time, so Slack and Gmail notify without visiting the page. */
 export const resumeBrowser = () => (saved.length ? ensureBrowser().catch((e: Error) => console.error("[browser]", e.message)) : undefined);
+/** The binary the browser runs on now (null when stopped). */
+export const runningChrome = () => (ctx ? running : null);
+/** Switches a running browser to whatever findChrome() picks now; tabs come back. */
+export async function restartBrowser() {
+  if (!ctx) return;
+  await closeBrowser();
+  await ensureBrowser();
+}
+
 /** Graceful close, so Chromium flushes cookies to the profile. */
 export const closeBrowser = () => ((closing = true), ctx?.close().catch(() => {}));
 

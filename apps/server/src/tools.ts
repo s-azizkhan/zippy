@@ -4,6 +4,7 @@ import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync,
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { CHROME_DIR, downloadChrome, findChrome, restartBrowser, runningChrome } from "./browser.ts";
 import { claudeAuthStatus, claudeBin } from "./runner.ts";
 import { userEnv } from "./term.ts";
 
@@ -15,7 +16,7 @@ const CLAUDE_LINK = join(homedir(), ".local", "bin", "claude");
 // What Zippy itself installed and when. `installed` drives Clean (only Zippy's own installs are removed);
 // `log` keeps every install and removal, also after Clean.
 const MANIFEST = join(homedir(), ".zippy", "installed.json");
-type Item = "claude" | "git" | "gh" | "ghLogin";
+type Item = "claude" | "git" | "gh" | "ghLogin" | "browser";
 type Entry = { at: string; detail: string };
 type Manifest = { installed: Partial<Record<Item, Entry>>; log: (Entry & { item: Item; event: "installed" | "removed" | "requested" })[] };
 const manifest = (): Manifest => {
@@ -73,8 +74,19 @@ async function gh(): Promise<Tool> {
   return { path, version, signedIn };
 }
 
+// The browser engine: whichever Chromium findChrome() picks (an installed Chrome/Edge/Brave/Chromium, or a Chrome for
+// Testing Zippy downloaded). `running` = the browser is up on it right now.
+async function browser(): Promise<Tool & { running: boolean; downloaded: boolean }> {
+  const path = findChrome();
+  const downloaded = !!path?.startsWith(CHROME_DIR);
+  if (!path) return { ...missing, running: false, downloaded };
+  // `--version` prints and exits on macOS and Linux; on Windows it would open a window, so the folder name stands in.
+  const version = process.platform === "win32" ? null : await firstLine(path, ["--version"]);
+  return { path, version: version ?? path.split(/[\\/]/).pop()!, signedIn: null, running: runningChrome() === path, downloaded };
+}
+
 // One background job per action; the web polls /system/tools for progress.
-const JOBS = ["claude", "git", "gh", "gh-login", "clean"] as const;
+const JOBS = ["claude", "git", "gh", "gh-login", "browser", "clean"] as const;
 type JobId = (typeof JOBS)[number];
 type Job = { running: boolean; log: string; error: string | null; code?: string; url?: string };
 const jobs: Partial<Record<JobId, Job>> = {};
@@ -82,8 +94,8 @@ export const isJob = (id: string): id is JobId => (JOBS as readonly string[]).in
 
 export async function toolStatus() {
   await refreshPath();
-  const [c, g, h] = await Promise.all([claude(), git(), gh()]);
-  return { claude: c, git: g, gh: h, jobs, platform: process.platform, installedByZippy: removable(), installLog: manifest().log.slice(-50).reverse() };
+  const [c, g, h, b] = await Promise.all([claude(), git(), gh(), browser()]);
+  return { claude: c, git: g, gh: h, browser: b, jobs, platform: process.platform, installedByZippy: removable(), installLog: manifest().log.slice(-50).reverse() };
 }
 
 /** Runs a command into the job log; rejects with its last output line on a non-zero exit. */
@@ -131,6 +143,7 @@ function removable() {
     m.claude && `Claude Code (${CLAUDE_LINK}, ${CLAUDE_HOME}). Your ~/.claude settings and history stay.`,
     m.ghLogin && "GitHub CLI sign-in (gh auth logout)",
     m.gh && `GitHub CLI (${join(BIN, "gh")}) and its git credential helper`,
+    m.browser && `Chrome for Testing (${CHROME_DIR}). Its sign-ins go with it; Zippy then uses an installed browser, if any.`,
   ].filter(Boolean) as string[];
 }
 
@@ -154,6 +167,13 @@ async function clean(j: Job) {
     record("gh", "removed", `${ours} and its git credential helper`);
     j.log += `Removed ${ours}\n`;
   }
+  if (m.browser) {
+    const wasRunning = runningChrome()?.startsWith(CHROME_DIR);
+    rmSync(CHROME_DIR, { recursive: true, force: true });
+    record("browser", "removed", CHROME_DIR);
+    j.log += `Removed ${CHROME_DIR}\n`;
+    if (wasRunning) await restartBrowser().catch((e: Error) => (j.log += `Browser restart: ${e.message}\n`));
+  }
   if (m.claude) {
     // The link must point into the installer's folder; anything else at that path is the user's.
     const link = existsSync(CLAUDE_LINK) && lstatSync(CLAUDE_LINK).isSymbolicLink() && readlinkSync(CLAUDE_LINK).startsWith(CLAUDE_HOME);
@@ -175,6 +195,13 @@ const actions: Record<JobId, (j: Job) => Promise<void>> = {
       ? sh(j, "xcode-select", ["--install"]).then(() => record("git", "requested", "Opened Apple's Command Line Tools installer (system component; Clean leaves it)"))
       : Promise.reject(new Error("Install git with your package manager, then Recheck.")),
   gh: async (j) => record("gh", "installed", await installGh(j)),
+  // Chrome for Testing into the data dir; a running browser moves onto it (its tabs come back).
+  browser: async (j) => {
+    const { exe, version } = await downloadChrome((m) => (j.log = `${m}\n`));
+    record("browser", "installed", `Chrome for Testing ${version} at ${exe}`);
+    if (runningChrome()) (j.log += "Restarting the browser on it…\n"), await restartBrowser();
+    j.log += "Done.\n";
+  },
   clean,
   // Device flow: gh prints a one-time code and waits until it's entered on github.com. https protocol also sets gh as git's credential helper.
   "gh-login": async (j) => {

@@ -946,6 +946,7 @@ const TOOL_ROWS = [
   { id: "claude", name: "Claude Code", why: "Runs every Zipper." },
   { id: "git", name: "Git", why: "Worktrees, commits and diffs." },
   { id: "gh", name: "GitHub CLI", why: "Optional. Opens PRs, follows CI and reviews." },
+  { id: "browser", name: "Browser", why: "The Chromium Zippy's tabs run in. Uses Chrome, Edge, Brave or Chromium if installed; or downloads Chrome for Testing." },
 ] as const;
 
 /** claude, git and gh: installed and signed in, with one-click installs. `signIn` shows Claude sign-in inline (onboarding has no AI connection card). */
@@ -982,7 +983,12 @@ export function SetupTools({ signIn = false }: { signIn?: boolean }) {
                 </div>
                 {t && !t.path && (
                   <Button size="sm" variant="outline" className="max-md:min-h-11" disabled={job?.running || run.isPending} onClick={() => run.mutate(r.id, { onError: (e) => toast.error(e.message) })}>
-                    {job?.running ? "Installing…" : "Install"}
+                    {job?.running ? "Installing…" : r.id === "browser" ? "Download Chrome for Testing" : "Install"}
+                  </Button>
+                )}
+                {r.id === "browser" && t?.path && !data?.browser.downloaded && (
+                  <Button size="sm" variant="ghost" className="max-md:min-h-11" disabled={job?.running || run.isPending} onClick={() => run.mutate("browser", { onError: (e) => toast.error(e.message) })}>
+                    {job?.running ? "Downloading…" : "Use Chrome for Testing instead"}
                   </Button>
                 )}
                 {r.id === "gh" && t?.path && t.signedIn === false && (
@@ -992,6 +998,13 @@ export function SetupTools({ signIn = false }: { signIn?: boolean }) {
                 )}
               </div>
               {r.id === "git" && job && !t?.path && !job.error && <p className="text-xs">Finish Apple's Command Line Tools installer. This updates by itself when it's done.</p>}
+              {r.id === "browser" && t?.path && (
+                <p className="text-muted-foreground pl-5 text-xs break-all">
+                  {data?.browser.running ? "Running: " : ""}
+                  {t.path}. Switching browsers starts a fresh profile: sign in to sites again.
+                </p>
+              )}
+              {r.id === "browser" && job?.running && <p className="pl-5 text-xs tabular-nums">{job.log.trim().split("\n").pop()}</p>}
               {login?.running && login.code && (
                 <p className="text-xs">
                   Enter <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-sm font-semibold select-all">{login.code}</code> at{" "}
