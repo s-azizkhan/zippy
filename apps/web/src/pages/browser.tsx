@@ -1,14 +1,23 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Bot, Globe, Loader2, Plus, RotateCw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { Button } from "@/components/ui/button";
 import { api, useAgents, useChats } from "@/lib/api";
 import { useOrg } from "@/lib/org";
-import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type Tab = { id: string; url: string; title: string; loading: boolean; ticketId: string | null; agentId: string | null };
-type State = { connected: boolean; active: string | null; tabs: Tab[] };
+type State = { state: "off" | "starting" | "downloading" | "ready" | "error"; message: string; active: string | null; tabs: Tab[]; dialog: { type: string; message: string; default: string } | null };
+type Mod = "Alt" | "Control" | "Meta" | "Shift";
+type Input =
+  | { t: "move" | "down" | "up"; x: number; y: number; button?: "left" | "middle" | "right"; clicks?: number; mods?: Mod[] }
+  | { t: "wheel"; x: number; y: number; dx: number; dy: number; mods?: Mod[] }
+  | { t: "key"; down: boolean; key: string; mods?: Mod[] }
+  | { t: "text"; text: string };
+/** Modifier state of a DOM event, sent with every key and mouse event so the page sees ⌘-click, ⇧-select, ⌘A. */
+const mods = (e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): Mod[] =>
+  (["Alt", "Control", "Meta", "Shift"] as const).filter((m) => e[`${m === "Control" ? "ctrl" : m.toLowerCase()}Key` as "altKey"]);
 
 const QUICK = [
   { name: "Gmail", url: "https://mail.google.com/" },
@@ -17,6 +26,7 @@ const QUICK = [
   { name: "Linear", url: "https://linear.app/" },
   { name: "GitHub", url: "https://github.com/" },
 ];
+const BUTTONS = ["left", "middle", "right"] as const;
 
 /** "gmail.com" → https://gmail.com, anything that isn't a host or URL → a search. */
 const toUrl = (s: string) => {
@@ -26,59 +36,26 @@ const toUrl = (s: string) => {
   return `https://www.google.com/search?q=${encodeURIComponent(v)}`;
 };
 
-// Tabs are native webviews drawn by the desktop app on top of this page, inside the placeholder below.
-// This page only tells the app where that placeholder is and which tab to show; HTML can't draw over a tab.
+// The tab is a Chromium page on the server: frames stream in over SSE (the screencast), and this page sends the
+// mouse and keyboard back. Works the same in the desktop app, a browser, or on the phone.
 export function BrowserPage() {
   const org = useOrg();
   const qc = useQueryClient();
   const { data: agents = [] } = useAgents(org.id);
   const { data: chats = [] } = useChats(org.id);
-  const { data } = useQuery({ queryKey: ["browser"], queryFn: () => api.get<State>("/browser"), refetchInterval: 1500 });
+  const { data } = useQuery({ queryKey: ["browser"], queryFn: () => api.get<State>("/browser"), refetchInterval: 2000 });
   const [params, setParams] = useSearchParams();
-  const overlay = useUI((s) => s.paletteOpen || s.newTicketOpen);
-  const slot = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLInputElement>(null);
   const [addr, setAddr] = useState<string | null>(null); // null = show the active tab's URL
   const tabs = data?.tabs ?? [];
   const active = tabs.find((t) => t.id === data?.active) ?? null;
+  const ready = data?.state === "ready";
 
-  const view = (v: { active?: string | null; visible?: boolean; bounds?: { x: number; y: number; w: number; h: number } }) =>
-    api.post<State>("/browser/view", v, true).then((s) => qc.setQueryData(["browser"], s), () => {});
-
-  // ?tab=… (links in agent comments) picks the tab once.
-  const want = params.get("tab");
-  useEffect(() => {
-    if (want && data?.connected && tabs.some((t) => t.id === want)) {
-      void view({ active: want });
-      setParams({}, { replace: true });
-    }
-  }, [want, data?.connected, tabs.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Follow the placeholder's position and size; hide every tab when leaving the page or while an overlay is open.
-  const connected = !!data?.connected;
-  const shown = connected && !overlay && !!active;
-  useLayoutEffect(() => {
-    const el = slot.current;
-    if (!connected || !el) return;
-    let frame = 0;
-    const send = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) void view({ visible: shown, bounds: { x: r.left, y: r.top, w: r.width, h: r.height } });
-      });
-    };
-    send();
-    const ro = new ResizeObserver(send);
-    ro.observe(el);
-    window.addEventListener("resize", send);
-    return () => (cancelAnimationFrame(frame), ro.disconnect(), window.removeEventListener("resize", send));
-  }, [connected, shown]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => void view({ visible: false }), []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const open = (url: string) => api.post<Tab>("/browser/tabs", { url }, true).then(() => qc.invalidateQueries({ queryKey: ["browser"] }));
-  const close = (id: string) => api.del(`/browser/tabs/${id}`).then(() => qc.invalidateQueries({ queryKey: ["browser"] }));
-  const go = (to: string) => active && api.post(`/browser/tabs/${active.id}/go`, { to }, true);
+  const refresh = () => qc.invalidateQueries({ queryKey: ["browser"] });
+  const view = (v: { active?: string | null; w?: number; h?: number; dpr?: number }) => api.post<State>("/browser/view", v, true).then((s) => qc.setQueryData(["browser"], s), () => {});
+  const open = (url: string) => api.post<Tab>("/browser/tabs", { url }, true).then(refresh);
+  const close = (id: string) => api.del(`/browser/tabs/${id}`).then(refresh);
+  const go = (to: string) => active && api.post(`/browser/tabs/${active.id}/go`, { to }, true).catch(() => {});
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!addr?.trim()) return;
@@ -87,14 +64,18 @@ export function BrowserPage() {
     setAddr(null);
   };
 
-  if (data && !connected)
-    return (
-      <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-[13px]">
-        <Globe className="size-8 opacity-50" aria-hidden />
-        <p className="text-foreground font-medium">The browser runs in the Zippy desktop app.</p>
-        <p>Open Zippy on your Mac to browse with your accounts signed in, and to let Zippers use the web.</p>
-      </div>
-    );
+  // ?tab=… (links in agent comments) picks the tab once.
+  const want = params.get("tab");
+  useEffect(() => {
+    if (want && ready && tabs.some((t) => t.id === want)) {
+      void view({ active: want });
+      setParams({}, { replace: true });
+    }
+  }, [want, ready, tabs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Nothing picked yet: show the most recent tab.
+  useEffect(() => {
+    if (ready && !data?.active && tabs.length && !want) void view({ active: tabs[tabs.length - 1]!.id });
+  }, [ready, data?.active, tabs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const agentOf = (t: Tab) => (t.agentId ? agents.find((a) => a.id === t.agentId) : undefined);
   const owner = active && agentOf(active);
@@ -158,20 +139,215 @@ export function BrowserPage() {
         </p>
       )}
 
-      <div ref={slot} className="relative min-h-0 flex-1">
-        {!active && (
-          <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-            <p className="text-muted-foreground text-[13px]">Sign in once: tabs stay signed in after you quit Zippy.</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {QUICK.map((q) => (
-                <button key={q.url} onClick={() => void open(q.url)} className="bg-card hover:border-primary/40 rounded-xl border px-4 py-2 text-[13px] font-medium">
-                  {q.name}
-                </button>
-              ))}
-            </div>
+      <div className="relative min-h-0 flex-1">
+        {active && ready ? (
+          <Screen key={active.id} tab={active.id} onState={refresh} onAddressBar={() => bar.current?.focus()} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+            {data && !ready ? (
+              <Status state={data} />
+            ) : (
+              <>
+                <p className="text-muted-foreground text-[13px]">Sign in once: tabs stay signed in after you quit Zippy.</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {QUICK.map((q) => (
+                    <button key={q.url} onClick={() => void open(q.url)} className="bg-card hover:border-primary/40 rounded-xl border px-4 py-2 text-[13px] font-medium">
+                      {q.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
+        {active && data?.dialog && <PageDialog tab={active.id} dialog={data.dialog} onDone={refresh} />}
       </div>
+    </div>
+  );
+}
+
+function Status({ state }: { state: State }) {
+  const qc = useQueryClient();
+  // Opening this page starts the browser (first run may download Chrome for Testing).
+  useEffect(() => {
+    if (state.state === "off") void api.post<State>("/browser/start", {}, true).then((s) => qc.setQueryData(["browser"], s), () => {});
+  }, [state.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (state.state === "error")
+    return (
+      <>
+        <p className="text-foreground text-[13px] font-medium">The browser could not start.</p>
+        <p className="text-muted-foreground max-w-md text-[12px]">{state.message}</p>
+        <Button size="sm" variant="outline" onClick={() => void api.post<State>("/browser/start", {}, true).then((s) => qc.setQueryData(["browser"], s))}>
+          Try again
+        </Button>
+      </>
+    );
+  return (
+    <p className="text-muted-foreground flex items-center gap-2 text-[13px]">
+      <Loader2 className="size-4 animate-spin" aria-hidden /> {state.message || "Starting the browser…"}
+    </p>
+  );
+}
+
+/** One tab on screen: frames in, mouse and keyboard out. */
+function Screen({ tab, onState, onAddressBar }: { tab: string; onState: () => void; onAddressBar: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const img = useRef<HTMLImageElement>(null);
+  const kb = useRef<HTMLTextAreaElement>(null);
+  const [waiting, setWaiting] = useState(true);
+
+  // Frames for this tab only (the parent remounts per tab); "state" means tabs or a dialog changed.
+  useEffect(() => {
+    const es = new EventSource("/api/browser/stream");
+    es.addEventListener("frame", (e) => {
+      const f = JSON.parse((e as MessageEvent).data) as { tab: string; data: string };
+      if (f.tab !== tab || !img.current) return;
+      img.current.src = `data:image/jpeg;base64,${f.data}`;
+      setWaiting(false);
+    });
+    es.addEventListener("state", onState);
+    es.addEventListener("cursor", (e) => box.current && (box.current.style.cursor = (JSON.parse((e as MessageEvent).data) as { cursor: string }).cursor));
+    return () => es.close();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The page's viewport is this box: CSS pixels, at this screen's pixel ratio.
+  useEffect(() => {
+    const el = box.current!;
+    let t: ReturnType<typeof setTimeout>;
+    const send = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const r = el.getBoundingClientRect();
+        if (r.width > 200 && r.height > 150) void api.post("/browser/view", { active: tab, w: r.width, h: r.height, dpr: window.devicePixelRatio }, true).catch(() => {});
+      }, 120);
+    };
+    send();
+    const ro = new ResizeObserver(send);
+    ro.observe(el);
+    return () => (clearTimeout(t), ro.disconnect());
+  }, [tab]);
+
+  // Input queue: flushed once per frame, in order; mouse moves and wheel deltas coalesce.
+  const q = useRef<{ events: Input[]; sending: boolean; raf: number }>({ events: [], sending: false, raf: 0 });
+  const flush = () => {
+    const s = q.current;
+    s.raf = 0;
+    if (s.sending || !s.events.length) return;
+    const events = s.events.splice(0);
+    s.sending = true;
+    void api
+      .post(`/browser/tabs/${tab}/input`, { events }, true)
+      .catch(() => {})
+      .finally(() => {
+        s.sending = false;
+        if (s.events.length) s.raf ||= requestAnimationFrame(flush);
+      });
+  };
+  const send = (e: Input) => {
+    const ev = q.current.events;
+    const last = ev[ev.length - 1];
+    if (e.t === "move" && last?.t === "move") ev[ev.length - 1] = e;
+    else if (e.t === "wheel" && last?.t === "wheel") Object.assign(last, { dx: last.dx + e.dx, dy: last.dy + e.dy, x: e.x, y: e.y });
+    else ev.push(e);
+    q.current.raf ||= requestAnimationFrame(flush);
+  };
+  const at = (e: { clientX: number; clientY: number }) => {
+    const r = box.current!.getBoundingClientRect();
+    return { x: Math.round(e.clientX - r.left), y: Math.round(e.clientY - r.top) };
+  };
+
+  // Wheel needs a non-passive listener to stop the Zippy page itself from scrolling.
+  useEffect(() => {
+    const el = box.current!;
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientHeight : 1;
+      send({ t: "wheel", ...at(e), dx: e.deltaX * k, dy: e.deltaY * k, mods: mods(e) });
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keys reach a hidden textarea: shortcuts and plain keys are replayed as key presses; IME and dead-key text
+  // arrives as composed text; paste and copy bridge the system clipboard (the headless page has none).
+  const onKey = (down: boolean) => (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.key === "Process" || e.key === "Dead" || e.key === "Unidentified") return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === "k") return; // command palette
+    e.stopPropagation(); // Zippy's own shortcuts stay out of the page
+    if (down && mod && e.key.toLowerCase() === "l") return e.preventDefault(), onAddressBar();
+    if (mod && e.key.toLowerCase() === "v") return; // the paste event below sends the text
+    e.preventDefault();
+    send({ t: "key", down, key: e.key, mods: mods(e) });
+    if (down && mod && /^[cx]$/i.test(e.key))
+      void api.post<{ text: string }>(`/browser/tabs/${tab}/copy`, {}, true).then(({ text }) => void (text && navigator.clipboard.writeText(text)), () => {});
+  };
+
+  return (
+    <div
+      ref={box}
+      className="absolute inset-0 overflow-hidden bg-white outline-none select-none"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        kb.current?.focus({ preventScroll: true });
+        e.currentTarget.setPointerCapture(e.pointerId);
+        send({ t: "down", ...at(e), button: BUTTONS[e.button] ?? "left", clicks: Math.min(3, Math.max(1, e.detail)), mods: mods(e) });
+      }}
+      onPointerMove={(e) => send({ t: "move", ...at(e), mods: mods(e) })}
+      onPointerUp={(e) => send({ t: "up", ...at(e), button: BUTTONS[e.button] ?? "left", clicks: Math.min(3, Math.max(1, e.detail)), mods: mods(e) })}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <img ref={img} alt="" draggable={false} className="pointer-events-none size-full object-fill" />
+      {waiting && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="text-muted-foreground size-5 animate-spin" aria-label="Loading page" />
+        </div>
+      )}
+      <textarea
+        ref={kb}
+        aria-label="Page keyboard input"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        className="absolute top-0 left-0 size-px resize-none opacity-0"
+        onKeyDown={onKey(true)}
+        onKeyUp={onKey(false)}
+        onCompositionEnd={(e) => (e.data && send({ t: "text", text: e.data }), (e.currentTarget.value = ""))}
+        onInput={(e) => {
+          const n = e.nativeEvent as InputEvent;
+          if (!n.isComposing && n.data && n.inputType === "insertText") send({ t: "text", text: n.data });
+          if (!n.isComposing) e.currentTarget.value = "";
+        }}
+        onPaste={(e) => {
+          e.preventDefault();
+          const text = e.clipboardData.getData("text");
+          if (text) send({ t: "text", text });
+        }}
+      />
+    </div>
+  );
+}
+
+/** The page's alert / confirm / prompt (the page is paused until it's answered). */
+function PageDialog({ tab, dialog, onDone }: { tab: string; dialog: NonNullable<State["dialog"]>; onDone: () => void }) {
+  const [text, setText] = useState(dialog.default);
+  const answer = (accept: boolean) => void api.post(`/browser/tabs/${tab}/dialog`, { accept, text: dialog.type === "prompt" ? text : undefined }, true).finally(onDone);
+  return (
+    <div className="absolute inset-0 flex items-start justify-center bg-black/30 pt-16">
+      <form className="bg-card w-full max-w-sm rounded-xl border p-4 shadow-xl" onSubmit={(e) => (e.preventDefault(), answer(true))}>
+        <p className="text-[13px] whitespace-pre-wrap">{dialog.message}</p>
+        {dialog.type === "prompt" && <input autoFocus value={text} onChange={(e) => setText(e.target.value)} aria-label="Answer" className="bg-muted/50 mt-3 h-8 w-full rounded-lg px-3 text-[13px] outline-none" />}
+        <div className="mt-4 flex justify-end gap-2">
+          {dialog.type !== "alert" && (
+            <Button type="button" size="sm" variant="outline" onClick={() => answer(false)}>
+              Cancel
+            </Button>
+          )}
+          <Button type="submit" size="sm" autoFocus={dialog.type !== "prompt"}>
+            OK
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
