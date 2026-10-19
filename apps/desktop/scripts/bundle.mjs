@@ -21,10 +21,13 @@ const esm = {
   // CJS deps inside an ESM bundle still call require()
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 };
-// node-pty is a native addon: stays external, shipped as a real node_modules folder next to the bundle.
-await build({ ...esm, entryPoints: [`${server}src/index.ts`], outfile: `${out}server.mjs`, external: ["node-pty"] });
-const ptyDir = dirname(createRequire(`${server}package.json`).resolve("node-pty/package.json"));
-cpSync(ptyDir, `${out}node_modules/node-pty`, { recursive: true, dereference: true });
+// node-pty is a native addon and playwright-core loads its own files at runtime: both stay external, shipped as
+// real node_modules folders next to the bundle.
+await build({ ...esm, entryPoints: [`${server}src/index.ts`], outfile: `${out}server.mjs`, external: ["node-pty", "playwright-core"] });
+for (const pkg of ["node-pty", "playwright-core"]) {
+  const dir = dirname(createRequire(`${server}package.json`).resolve(`${pkg}/package.json`));
+  cpSync(dir, `${out}node_modules/${pkg}`, { recursive: true, dereference: true });
+}
 chmodSync(`${out}node_modules/node-pty/prebuilds/${process.platform}-${process.arch}/spawn-helper`, 0o755);
 // The SDK's per-platform claude binary (~200MB) is skipped: the app uses the user's own `claude`.
 await build({

@@ -18,8 +18,6 @@ use tauri::{
 };
 use tokio::{net::TcpStream, process::Command, sync::Mutex, time::sleep};
 
-mod browser;
-
 // Debug builds get their own ports + data dir so they run beside the installed app.
 const DEV: bool = cfg!(debug_assertions);
 const PORT: u16 = if DEV { 3312 } else { 3311 }; // off the web dev server's 3301
@@ -33,9 +31,6 @@ struct Shared {
     status: std::sync::Mutex<String>,
     fails: AtomicU32,
     reset: AtomicBool,
-    /// Shared with the server so only this process can drive browser tabs.
-    secret: String,
-    browser: browser::Browser,
 }
 
 impl Shared {
@@ -174,7 +169,6 @@ async fn supervise(app: AppHandle, st: Arc<Shared>) {
             .env("DATABASE_URL", url)
             .env("ZIPPY_DB_MODE", mode)
             .env("ZIPPY_CONFIG", &cfg)
-            .env("ZIPPY_BRIDGE", &st.secret)
             .stdin(Stdio::null())
             .kill_on_drop(true)
             .spawn();
@@ -195,7 +189,7 @@ async fn supervise(app: AppHandle, st: Arc<Shared>) {
         }
         if !shown && wait_port().await {
             st.say("Opening Zippy…");
-            if let Some(w) = app.get_webview("main") {
+            if let Some(w) = app.get_webview_window("main") {
                 let _ = w.navigate(format!("http://127.0.0.1:{PORT}").parse().unwrap());
                 shown = true;
             }
@@ -259,15 +253,14 @@ fn tray_menu(app: &AppHandle, t: &Tray) -> tauri::Result<Menu<Wry>> {
 }
 
 /// Show the window; `path` routes the SPA in place (react-router listens to popstate).
-/// "main" is a window plus its own webview, not a WebviewWindow: browser tabs are extra webviews in it.
 fn show(app: &AppHandle, path: Option<&str>) {
-    if let Some(w) = app.get_window("main") {
+    if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
-    }
-    if let (Some(v), Some(p)) = (app.get_webview("main"), path) {
-        let _ = v.eval(format!("history.pushState(null, '', {p:?}); dispatchEvent(new PopStateEvent('popstate'))"));
+        if let Some(p) = path {
+            let _ = w.eval(format!("history.pushState(null, '', {p:?}); dispatchEvent(new PopStateEvent('popstate'))"));
+        }
     }
 }
 
@@ -284,7 +277,7 @@ fn stays_in_app(url: &tauri::Url) -> bool {
 fn open_deep_link(app: &AppHandle, url: &tauri::Url) {
     let Some(rest) = url.as_str().strip_prefix("zippy://") else { return };
     show(app, None);
-    if let (Some(w), Ok(to)) = (app.get_webview("main"), format!("http://127.0.0.1:{PORT}/{rest}").parse()) {
+    if let (Some(w), Ok(to)) = (app.get_webview_window("main"), format!("http://127.0.0.1:{PORT}/{rest}").parse()) {
         let _ = w.navigate(to);
     }
 }
@@ -446,15 +439,8 @@ fn exit_on_signal(app: AppHandle) {
     });
 }
 
-fn random_hex() -> String {
-    use std::io::Read;
-    let mut b = [0u8; 16];
-    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).expect("urandom");
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
 pub fn run() {
-    let st = Arc::new(Shared { secret: random_hex(), ..Default::default() });
+    let st = Arc::new(Shared::default());
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -468,12 +454,11 @@ pub fn run() {
                 let cfg = app.config().app.windows[0].clone();
                 let handle = app.handle().clone();
                 tauri::WebviewWindowBuilder::from_config(app, &cfg)?
-                    .auto_resize() // follows the window once browser tabs are added beside it
                     .on_navigation(stays_in_app)
                     .on_new_window(move |url, _| {
                         // No second windows: Zippy links open in place, the rest in the browser.
                         if stays_in_app(&url) {
-                            if let Some(w) = handle.get_webview("main") {
+                            if let Some(w) = handle.get_webview_window("main") {
                                 let _ = w.navigate(url);
                             }
                         }
@@ -498,7 +483,7 @@ pub fn run() {
                 app.set_menu(menu)?;
                 app.on_menu_event(|app, e| {
                     if e.id() == "close" {
-                        if let Some(w) = app.windows().into_values().find(|w| w.is_focused().unwrap_or(false)) {
+                        if let Some(w) = app.webview_windows().into_values().find(|w| w.is_focused().unwrap_or(false)) {
                             if w.label() == "main" {
                                 let _ = w.emit("zippy:close", ());
                             } else {
@@ -528,16 +513,13 @@ pub fn run() {
                     .build(app)?;
                 tauri::async_runtime::spawn(poll_tray(app.handle().clone()));
                 exit_on_signal(app.handle().clone());
-                tauri::async_runtime::spawn(browser::bridge(app.handle().clone(), st.clone()));
-                tauri::async_runtime::spawn(browser::drain_notes(app.handle().clone()));
                 tauri::async_runtime::spawn(supervise(app.handle().clone(), st));
                 Ok(())
             }
         })
         // Closing the window keeps Zippy (and running Zippers) alive in the menubar.
         .on_window_event(|w, e| match e {
-            // Sign-in popups from browser tabs really close.
-            WindowEvent::CloseRequested { api, .. } if !w.label().starts_with("popup-") => {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = w.hide();
             }
