@@ -61,7 +61,7 @@ import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { bridgeEvent, bridgeOk, bridgePoll, bridgeResult, browserState, closeTab, go, openTab, setView } from "./browser.ts";
+import { answerDialog, browserState, closeTab, ensureBrowser, go, input, openTab, refreshTitles, selection, setView, watch } from "./browser.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudeBin, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
@@ -165,9 +165,10 @@ app.post("/system/phone/host", async (c) => {
   await connectHost(host);
   return c.json(await phoneStatus());
 });
-// Browser tabs (desktop app). The page and agents go through here; the desktop shell long-polls /browser/bridge with its secret.
-const bounds = z.object({ x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() });
-app.get("/browser", (c) => c.json(browserState()));
+// Browser: a headless Chromium the server drives (browser.ts). The page watches the active tab as a screencast
+// over SSE and sends mouse/keyboard back; works from the desktop app, a browser or the phone alike.
+app.get("/browser", async (c) => (await refreshTitles(), c.json(browserState())));
+app.post("/browser/start", async (c) => (await ensureBrowser().catch(() => {}), c.json(browserState())));
 app.post("/browser/tabs", async (c) => {
   const { url } = await body(c, z.object({ url: httpUrl }));
   const t = await openTab(url);
@@ -181,16 +182,34 @@ app.post("/browser/tabs/:id/go", async (c) => {
   return c.body(null, 204);
 });
 app.post("/browser/view", async (c) => {
-  await setView(await body(c, z.object({ active: z.string().nullable().optional(), visible: z.boolean().optional(), bounds: bounds.optional() })));
+  await setView(await body(c, z.object({ active: z.string().nullable().optional(), w: z.number().min(200).max(4000).optional(), h: z.number().min(150).max(4000).optional(), dpr: z.number().min(0.5).max(4).optional() })));
   return c.json(browserState());
 });
-app.use("/browser/bridge/*", async (c, next) => (bridgeOk(c.req.header("x-zippy-bridge")) ? next() : c.json({ error: "forbidden" }, 403)));
-app.use("/browser/bridge", async (c, next) => (bridgeOk(c.req.header("x-zippy-bridge")) ? next() : c.json({ error: "forbidden" }, 403)));
-app.get("/browser/bridge", async (c) => c.json(await bridgePoll()));
-app.post("/browser/bridge", async (c) => (bridgeResult(await body(c, z.object({ id: z.string(), ok: z.boolean(), value: z.unknown().optional(), error: z.string().optional() }))), c.body(null, 204)));
-app.post("/browser/bridge/event", async (c) => {
-  bridgeEvent(await body(c, z.object({ tab: z.string(), url: z.string().optional(), title: z.string().optional(), loading: z.boolean().optional(), newTab: z.string().optional() })));
+app.get("/browser/stream", (c) =>
+  streamSSE(c, async (stream) => {
+    const stop = watch((e) => void stream.writeSSE({ event: e.type, data: JSON.stringify(e) }));
+    const ping = setInterval(() => void stream.writeSSE({ event: "ping", data: "" }), 20_000);
+    await new Promise<void>((resolve) => stream.onAbort(resolve));
+    clearInterval(ping);
+    stop();
+  }),
+);
+const pt = z.object({ x: z.number(), y: z.number(), mods: z.array(z.enum(["Alt", "Control", "Meta", "Shift"])).max(4).optional() });
+const inputEvent = z.union([
+  pt.extend({ t: z.enum(["move", "down", "up"]), button: z.enum(["left", "middle", "right"]).optional(), clicks: z.number().int().min(1).max(3).optional() }),
+  pt.extend({ t: z.literal("wheel"), dx: z.number(), dy: z.number() }),
+  z.object({ t: z.literal("key"), down: z.boolean(), key: z.string().min(1).max(40), mods: z.array(z.enum(["Alt", "Control", "Meta", "Shift"])).max(4).optional() }),
+  z.object({ t: z.literal("text"), text: z.string().max(100_000) }),
+]);
+app.post("/browser/tabs/:id/input", async (c) => {
+  const { events } = await body(c, z.object({ events: z.array(inputEvent).max(500) }));
+  await input(c.req.param("id"), events);
   return c.body(null, 204);
+});
+app.post("/browser/tabs/:id/copy", async (c) => c.json({ text: await selection(c.req.param("id")) }));
+app.post("/browser/tabs/:id/dialog", async (c) => {
+  const { accept, text } = await body(c, z.object({ accept: z.boolean(), text: z.string().max(10_000).optional() }));
+  return c.json({ message: await answerDialog(c.req.param("id"), accept, text) });
 });
 
 // Port manager: what is listening, which command opened it, and a way to stop it.

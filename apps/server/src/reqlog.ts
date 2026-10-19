@@ -36,8 +36,9 @@ const body = (s: string) => {
 };
 
 export const reqlog: MiddlewareHandler = async (c, next) => {
-  // The browser bridge carries page contents (mail, chats) and polls nonstop: never write it to disk.
-  if (c.req.path.startsWith("/api/browser/bridge")) return next();
+  // Browser input carries keystrokes typed into pages (passwords too), copy carries clipboard text, the stream
+  // carries screen frames: never write them to disk.
+  if (/^\/api\/browser\/(stream|tabs\/[^/]+\/(input|copy))$/.test(c.req.path)) return next();
   const t = Date.now();
   const id = c.req.header("x-request-id") ?? crypto.randomUUID().slice(0, 8);
   c.header("x-request-id", id);

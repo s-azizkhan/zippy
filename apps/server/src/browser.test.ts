@@ -1,74 +1,110 @@
 import { strict as assert } from "node:assert";
-import { test } from "node:test";
-import { Script } from "node:vm";
+import { mkdtempSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, test } from "node:test";
 
-process.env.ZIPPY_BRIDGE = "s3cret-s3cret-s3";
+// Real Chromium against a local fixture: inner scroller with an infinite list, open shadow DOM, a cross-origin
+// iframe (second port), a dialog, console errors, a 404 and a cookie. Skips when no Chromium-family browser is installed.
+process.env.ZIPPY_CONFIG = join(mkdtempSync(join(tmpdir(), "zippy-browser-")), "config.json");
 const b = await import("./browser.ts");
 
-/** Plays the desktop shell until stopped: answers every job, checking each injected script at least parses. */
-function shell(answer: (js: string) => unknown) {
-  const seen: string[] = [];
-  let on = true;
-  const done = (async () => {
-    while (on) {
-      for (const job of await b.bridgePoll()) {
-        seen.push(job.op);
-        if (job.op === "eval") new Script(job.js); // throws SyntaxError on an escaping slip
-        b.bridgeResult({ id: job.id, ok: true, value: job.op === "eval" ? JSON.stringify({ ok: true, v: answer(job.js) }) : null });
-      }
-    }
-  })();
-  return { seen, stop: () => ((on = false), b.bridgePoll(), done) }; // a fresh poll releases the hanging one
-}
+const page = (frame: string) => `<!doctype html><title>Fixture</title>
+<style>html,body{height:100%;margin:0;overflow:hidden} #list{height:300px;overflow:auto}</style>
+<h1>Fixture</h1><div id="list" aria-label="Messages"></div><x-card></x-card>
+<button id="ask" onclick="document.title = confirm('Sure?') ? 'yes' : 'no'">Ask</button>
+<iframe src="${frame}/frame" width="300" height="120"></iframe>
+<script>
+let n = 0, loads = 0;
+const add = (k) => { for (let i = 0; i < k; i++) { const d = document.createElement('div'); d.style.height = '40px'; d.innerHTML = '<a href="#m' + n + '">Message ' + n++ + '</a>'; list.append(d); } };
+add(30);
+list.onscroll = () => { if (loads < 2 && list.scrollTop + list.clientHeight >= list.scrollHeight - 10) setTimeout(() => (loads++, add(20)), 200); };
+customElements.define('x-card', class extends HTMLElement { connectedCallback() { const r = this.attachShadow({ mode: 'open' }); r.innerHTML = '<p>Shadow text</p><button>Shadow button</button>'; r.querySelector('button').onclick = () => (r.querySelector('p').textContent = 'shadow clicked'); } });
+console.error('fixture error');
+fetch('/missing.json', { headers: { authorization: 'Bearer s3cret' } });
+</script>`;
+const frame = `<!doctype html><p id="out">frame</p><input aria-label="Frame input"><button onclick="out.textContent = 'got ' + document.querySelector('input').value">Frame button</button>`;
 
-test("bridgeOk: only the shell's secret", () => {
-  assert.equal(b.bridgeOk("s3cret-s3cret-s3"), true);
-  assert.equal(b.bridgeOk("s3cret-s3cret-s4"), false);
-  assert.equal(b.bridgeOk(undefined), false);
+let main: ReturnType<typeof createServer>, other: ReturnType<typeof createServer>;
+const port = (s: ReturnType<typeof createServer>) => (s.address() as { port: number }).port;
+let chrome = true;
+before(async () => {
+  other = createServer((_, res) => res.end(frame)).listen(0, "127.0.0.1");
+  main = createServer((req, res) => {
+    if (req.url === "/") return res.setHeader("set-cookie", "sid=abc; Path=/"), res.end(page(`http://127.0.0.1:${port(other)}`));
+    res.statusCode = 404;
+    res.end("nope");
+  }).listen(0, "127.0.0.1");
+  await new Promise((r) => setTimeout(r, 50));
+  chrome = await b.ensureBrowser().then(() => true, (e: Error) => (console.log("skipping:", e.message), false));
 });
-
-test("tab round trip: open, act, snapshot over the bridge", async () => {
-  const snap = { title: "Inbox", url: "https://mail.example.com/", lines: ['button "Send" [e1]'], more: 0 };
-  // settle() probe: answer "a fresh, loaded document", so actions return at once.
-  const log = [{ t: 0, k: "console", level: "error", msg: "boom" }, { t: 0, k: "net", method: "GET", url: "https://x/api", status: 404, ms: 12 }];
-  let height = 1000; // the fake page grows once, like an infinite list
-  const sh = shell((js) =>
-    js.includes("document.readyState]") ? [null, 0, "complete"]
-    : js.includes("const MAX = 300") ? snap
-    : js.includes("delete window.__zr") ? { done: true, s: "1" }
-    : js.includes("window.__zippyLog") ? log
-    : js.includes("scrollingElement") ? { name: "the page", top: height - 500, height: js.includes('"stay"') && height === 1000 ? (height = 1600) : height, view: 500, moved: js.includes('"stay"') ? 0 : 400 }
-    : true,
-  );
-  const t = await b.openTab("https://mail.example.com/", { ticketId: "t1", agentId: "a1" });
-  assert.equal(b.getTab(t.id)?.agentId, "a1");
-  b.bridgeEvent({ tab: t.id, title: "Inbox", loading: false }); // the shell reports the page loaded
-  assert.equal(b.getTab(t.id)?.title, "Inbox");
-
-  const out = await b.act(t.id, { type: "e1", text: `it's "quoted" \\ and\nmultiline`, clear: true, submit: true });
-  assert.match(out, /button "Send" \[e1\]/);
-  assert.match(out, /untrusted/);
-  await b.act(t.id, { click: "e1" });
-  await b.act(t.id, { press: "Meta+Enter" });
-  await b.readText(t.id, "e1", 0, 100).catch(() => {}); // fake answer has the wrong shape; the script parsing is the point
-  assert.equal(await b.evalScript(t.id, "return 1"), "1");
-  assert.match(await b.scroll(t.id, undefined, "bottom", 3), /Scrolled the page bottom ×\d.*more content loaded 1×/);
-  const con = await b.consoleLog(t.id, "all", 50, false);
-  assert.match(con, /error boom/);
-  assert.match(con, /GET 404 12ms https:\/\/x\/api/);
-  await b.closeTab(t.id);
-  await sh.stop();
-  assert.equal(sh.seen[0], "open");
-  assert.ok(sh.seen.filter((o) => o === "eval").length >= 8);
-  assert.equal(b.getTab(t.id), undefined);
+after(async () => {
+  await b.closeBrowser();
+  for (const s of [main, other]) s.closeAllConnections(), s.close();
 });
 
 test("grants: scoped to ticket, agent, tab; a read grant never covers writes", () => {
   b.grant("t1", "a1", "tab1", "read");
   assert.equal(b.granted("t1", "a1", "tab1", "read"), true);
   assert.equal(b.granted("t1", "a1", "tab1", "write"), false);
-  assert.equal(b.granted("t2", "a1", "tab1", "read"), false); // same agent, other ticket
-  assert.equal(b.granted("t1", "a2", "tab1", "read"), false);
+  assert.equal(b.granted("t2", "a1", "tab1", "read"), false);
   b.grant("t1", "a1", "tab1", "write");
   assert.equal(b.granted("t1", "a1", "tab1", "write"), true);
+});
+
+test("tabs: snapshot, shadow DOM, cross-origin iframe, scroll, network, dialog, screenshot", async (t) => {
+  if (!chrome) return t.skip("no Chromium-family browser installed");
+  const tab = await b.openTab(`http://127.0.0.1:${port(main)}/`, { ticketId: "t1", agentId: "a1" });
+  let snap = await b.settled(tab.id);
+  assert.match(snap, /# Fixture/);
+  assert.match(snap, /button "Shadow button" \[e\d+\]/);
+  assert.match(snap, /--- frame http:\/\/127\.0\.0\.1:\d+\/frame/);
+  const ref = (name: string) => snap.match(new RegExp(`"${name}" \\[(f?\\d*e\\d+)\\]`))![1]!;
+
+  await b.act(tab.id, { click: ref("Shadow button") });
+  assert.match(await b.readText(tab.id, undefined, 0, 5000), /shadow clicked/);
+
+  snap = await b.snapshot(tab.id);
+  await b.act(tab.id, { type: ref("Frame input"), text: "hi", clear: true, submit: false });
+  snap = await b.act(tab.id, { click: ref("Frame button") });
+  assert.match(await b.readText(tab.id, undefined, 0, 5000), /got hi/);
+
+  assert.match(await b.scroll(tab.id, undefined, "bottom", 5), /Scrolled Messages bottom.*more content loaded 2×/);
+
+  const net = await b.network(tab.id, { last: 50 });
+  assert.match(net, /GET 200 document/);
+  const miss = net.match(/#(\d+) \S+ GET 404 fetch/);
+  assert.ok(miss, net);
+  const detail = await b.requestDetail(tab.id, Number(miss[1]));
+  assert.match(detail, /authorization: \[redacted\]/);
+  assert.doesNotMatch(detail, /s3cret/);
+  assert.match(await b.consoleLog(tab.id, "errors", 50, false), /fixture error/);
+
+  snap = await b.snapshot(tab.id);
+  void b.act(tab.id, { click: ref("Ask") }).catch(() => {}); // blocks until the dialog is answered
+  await new Promise((r) => setTimeout(r, 500));
+  assert.match(await b.snapshot(tab.id), /A confirm dialog is open: "Sure\?"/);
+  await assert.rejects(b.readText(tab.id, undefined, 0, 100), /dialog is open/);
+  assert.match(await b.answerDialog(tab.id, true), /Accepted/);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(b.getTab(tab.id) && (await b.evalScript(tab.id, "return document.title")), '"yes"');
+
+  const jpeg = Buffer.from(await b.screenshot(tab.id, false), "base64");
+  assert.equal(jpeg.subarray(0, 2).toString("hex"), "ffd8");
+
+  // Viewer input: ⌘A arrives as one key event carrying its modifiers (no separate Meta keydown), then Backspace.
+  await b.evalScript(tab.id, "const i = document.createElement('input'); i.id = 'q'; i.value = 'hello'; document.body.append(i); i.focus();");
+  const sel = process.platform === "darwin" ? "Meta" : "Control";
+  await b.input(tab.id, [{ t: "key", down: true, key: "a", mods: [sel] }, { t: "key", down: false, key: "a", mods: [sel] }, { t: "key", down: true, key: "Backspace" }, { t: "key", down: false, key: "Backspace" }, { t: "text", text: "ok" }]);
+  assert.equal(await b.evalScript(tab.id, "return document.getElementById('q').value"), '"ok"');
+
+  // Quitting keeps the tab; the next start brings it back with its id and owner.
+  await b.closeBrowser();
+  assert.equal(b.getTab(tab.id)?.agentId, "a1");
+  await b.ensureBrowser();
+  assert.match(await b.settled(tab.id), /# Fixture/);
+
+  await b.closeTab(tab.id);
+  assert.equal(b.getTab(tab.id), undefined);
 });

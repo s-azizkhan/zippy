@@ -16,7 +16,7 @@ import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, spawnTerminal, writeTerminal } from "./term.ts";
-import { act, closeTab, connected, consoleLog, describe, DESKTOP_ONLY, evalScript, getTab, grant, granted, listTabs, openTab, readText, scroll, settled, snapshot } from "./browser.ts";
+import { act, answerDialog, closeTab, consoleLog, describe, evalScript, getTab, grant, granted, listTabs, network, openTab, readText, requestDetail, screenshot, scroll, settled, snapshot } from "./browser.ts";
 
 // Bearer token -> the agent session it was issued to. Issued per spawned ACP process.
 const tokens = new Map<string, { ticketId: string; agentId: string }>();
@@ -34,6 +34,9 @@ const hops = new Map<string, number>();
 export const resetHops = (ticketId: string) => hops.delete(ticketId);
 
 const MAX_KB_PER_TICKET = 8;
+
+// Approved screenshots: the re-prompt can't carry an image, so approval lets the agent's next call through once.
+const shotOk = new Set<string>();
 
 // Terminal and browser actions waiting on an approval card. ponytail: in memory; a restart drops them and the agent asks again.
 const pendingTerm = new Map<string, (optionId: string) => Promise<string>>(); // key: approval comment id
@@ -319,17 +322,21 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
     },
   );
 
-  // Browser: tabs in the desktop app, sharing one signed-in session (the user's Gmail, Slack…).
+  // Browser: Zippy's Chromium tabs, sharing one signed-in session (the user's Gmail, Slack…).
   // Own tabs: reads and navigation are free, clicks/typing need canWrite. Anyone else's tab: every action is an approval card,
   // where "Always allow" lets this agent use that tab freely until it closes.
   const tabLine = (t: NonNullable<ReturnType<typeof getTab>>) => `${t.id}  ${t.agentId === agentId && t.ticketId === ticketId ? "yours" : t.agentId ? "another agent's" : "the user's"}  "${t.title}"  ${t.url}`;
+  const allowed = (tabId: string, write: boolean) => {
+    const t = getTab(tabId);
+    const own = t?.agentId === agentId && t?.ticketId === ticketId;
+    return !!t && (own ? !write || canWrite : granted(ticketId, agentId, tabId, write ? "write" : "read"));
+  };
   const browserGate = async (tabId: string, title: string, write: boolean, run: () => Promise<string>) => {
     const t = getTab(tabId);
     if (!t) return text("No such tab. Call browser_tabs.");
-    if (!connected()) return text(DESKTOP_ONLY);
     const own = t.agentId === agentId && t.ticketId === ticketId;
     const access = write ? "write" : "read";
-    if (own ? !write || canWrite : granted(ticketId, agentId, tabId, access)) return text(await run().catch((e: Error) => `Failed: ${e.message}`));
+    if (allowed(tabId, write)) return text(await run().catch((e: Error) => `Failed: ${e.message}`));
     // The card shows exactly what will run; anything too long to review is refused, never cut.
     if (title.length > 6000) return text("That is too long to show the user for approval. Split it into smaller steps.");
     const where = `${own ? "your tab" : t.agentId ? "another agent's tab" : "the user's tab"} "${t.title}" (${new URL(t.url).host})`;
@@ -345,9 +352,8 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
   const tabArg = z.string().describe("Tab id from browser_tabs or browser_open");
   server.registerTool(
     "browser_tabs",
-    { description: "List the browser tabs open in the Zippy desktop app: id, whose tab it is, title, URL. The user's tabs are signed in to their accounts.", inputSchema: {} },
+    { description: "List the tabs open in Zippy's browser: id, whose tab it is, title, URL. The user's tabs are signed in to their accounts.", inputSchema: {} },
     async () => {
-      if (!connected()) return text(DESKTOP_ONLY);
       const all = listTabs();
       return text(all.length ? all.map(tabLine).join("\n") : "No tabs open. Open one with browser_open.");
     },
@@ -359,7 +365,6 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
       inputSchema: { url: httpUrl },
     },
     async ({ url }) => {
-      if (!connected()) return text(DESKTOP_ONLY);
       if (listTabs().filter((t) => t.agentId === agentId && t.ticketId === ticketId).length >= 4) return text("You already have 4 tabs open. Close one with browser_close or reuse it with browser_navigate.");
       try {
         const t = await openTab(url, { ticketId, agentId });
@@ -395,9 +400,45 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
     async ({ tab, to, ref, times }) => browserGate(tab, `Scroll ${to}${times > 1 ? ` ×${times}` : ""}`, false, () => scroll(tab, ref, to, times)),
   );
   server.registerTool(
+    "browser_network",
+    {
+      description: "A tab's network log since it opened: every request (document, script, stylesheet, image, font, fetch, xhr, websocket…) with #id, status, type, time and size, newest last. Filter by type, URL text, or failed only. Details: browser_request.",
+      inputSchema: { tab: tabArg, type: z.string().optional().describe("document, script, stylesheet, image, font, fetch, xhr, websocket, media…"), match: z.string().optional(), failed: z.boolean().default(false), last: z.number().int().min(1).max(500).default(80) },
+    },
+    async ({ tab, ...f }) => browserGate(tab, "Read the network log", false, () => network(tab, f)),
+  );
+  server.registerTool(
+    "browser_request",
+    {
+      description: "One request from browser_network in full: request and response headers (cookies and auth redacted), request body, response body (text, first 20 KB). WebSockets: last frames.",
+      inputSchema: { tab: tabArg, id: z.number().int().min(1) },
+    },
+    async ({ tab, id }) => browserGate(tab, `Read request #${id} (headers and body)`, false, () => requestDetail(tab, id)),
+  );
+  server.registerTool(
+    "browser_screenshot",
+    { description: "Screenshot a tab (the visible part, or the whole page with full=true).", inputSchema: { tab: tabArg, full: z.boolean().default(false) } },
+    async ({ tab, full }) => {
+      const key = `${ticketId}:${agentId}:${tab}`;
+      if (shotOk.delete(key) || allowed(tab, false)) {
+        try {
+          return { content: [{ type: "image" as const, data: await screenshot(tab, full), mimeType: "image/jpeg" }] };
+        } catch (e) {
+          return text(`Failed: ${(e as Error).message}`);
+        }
+      }
+      return browserGate(tab, "Take a screenshot", false, async () => (shotOk.add(key), "Call browser_screenshot again now to get the image."));
+    },
+  );
+  server.registerTool(
+    "browser_dialog",
+    { description: "Answer the alert / confirm / prompt dialog open on a tab (snapshots say when one is). text: the answer for a prompt.", inputSchema: { tab: tabArg, accept: z.boolean(), text: z.string().max(2000).optional() } },
+    async ({ tab, accept, text: t }) => browserGate(tab, `${accept ? "Accept" : "Dismiss"} the page's dialog${t ? ` with ${JSON.stringify(t)}` : ""}`, true, () => answerDialog(tab, accept, t)),
+  );
+  server.registerTool(
     "browser_console",
     {
-      description: "A tab's console messages, uncaught errors and network requests (fetch/XHR, failed loads) since the page loaded, newest last. only: errors = console errors + failed or 4xx/5xx requests.",
+      description: "A tab's console messages and uncaught errors since it opened, newest last. only: errors = console errors + failed or 4xx/5xx requests; net = the network log (see browser_network).",
       inputSchema: { tab: tabArg, only: z.enum(["all", "errors", "console", "net"]).default("all"), last: z.number().int().min(1).max(300).default(50), clear: z.boolean().default(false) },
     },
     async ({ tab, only, last, clear }) => browserGate(tab, `Read the ${only === "net" ? "network log" : "console"}`, false, () => consoleLog(tab, only, last, clear)),
@@ -411,7 +452,7 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
     "browser_click",
     { description: "Click an element by ref from the latest snapshot. Returns the new snapshot. Read-only agents and other people's tabs: the user approves first.", inputSchema: { tab: tabArg, ref: z.string() } },
     async ({ tab, ref }) => {
-      const label = getTab(tab) && connected() ? await describe(tab, ref) : "";
+      const label = getTab(tab) ? await describe(tab, ref) : "";
       return browserGate(tab, `Click ${label ? `"${label}"` : ref}`, true, () => act(tab, { click: ref }));
     },
   );
@@ -422,7 +463,7 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
       inputSchema: { tab: tabArg, ref: z.string(), text: z.string().max(20_000), clear: z.boolean().default(true), submit: z.boolean().default(false) },
     },
     async ({ tab, ref, text: t, clear, submit }) => {
-      const label = getTab(tab) && connected() ? await describe(tab, ref) : "";
+      const label = getTab(tab) ? await describe(tab, ref) : "";
       return browserGate(tab, `Type ${JSON.stringify(t)} into ${label ? `"${label}"` : ref}${submit ? " and press Enter" : ""}`, true, () => act(tab, { type: ref, text: t, clear, submit }));
     },
   );

@@ -17,7 +17,7 @@ import { termLine } from "./mcp.ts";
 import { DOMAIN, domainActive } from "./domain.ts";
 import { claudePath, foldersOf } from "./runner.ts";
 import { allTerminals, listTerminals, userEnv } from "./term.ts";
-import { act, closeTab, connected, consoleLog, DESKTOP_ONLY, evalScript, getTab, listTabs, openTab, readText, scroll, settled, snapshot } from "./browser.ts";
+import { act, answerDialog, closeTab, consoleLog, evalScript, getTab, listTabs, network, openTab, readText, requestDetail, screenshot, scroll, settled, snapshot } from "./browser.ts";
 
 // Zippy Hub: the human's whole Zippy (tickets, agents, terminals, knowledge) as one MCP server, registered in Claude Code at user scope
 // so any Claude session outside Zippy can drive it. Unlike /mcp (one agent on one ticket), this acts as the human, like the web UI does.
@@ -80,12 +80,16 @@ export const HUB_TOOLS: Record<string, ToolInfo> = {
   close_terminal: T("Terminals", "write", "Close a terminal", "Close a terminal and kill its process. Use when the user is done with it or to stop a server you started."),
   run_terminal_template: T("Terminals", "write", "Run a saved terminal setup", "Run a saved terminal template: opens one shell per step in its folder with its command (e.g. backend and frontend dev servers together). Use when the user wants their usual environment up. Names come from zippy_overview."),
   list_ports: T("System", "read", "Listening ports and their processes", "TCP ports listening on this machine with pid and command. Use to find what occupies a port or whether a dev server is up."),
-  browser_tabs: T("Browser", "read", "List tabs in the Zippy browser", "List the browser tabs open in the Zippy desktop app: id, whose tab (the user's or an agent's), title, URL. Tabs share the user's signed-in session (Gmail, Slack, dashboards…). Use when the user refers to a page open in Zippy."),
+  browser_tabs: T("Browser", "read", "List tabs in the Zippy browser", "List the tabs open in Zippy's browser: id, whose tab (the user's or an agent's), title, URL. Tabs share the user's signed-in session (Gmail, Slack, dashboards…). Use when the user refers to a page open in Zippy."),
   browser_open: T("Browser", "write", "Open a page in a new tab", "Open a URL in a new tab of the Zippy browser and get its snapshot. Tabs share the user's signed-in session, so you see sites as the user does, and the user watches it on the Browser page. Use for pages behind the user's logins; for public pages your own fetch tools are fine."),
   browser_snapshot: T("Browser", "read", "Headings and clickable elements of a tab", "List a tab's headings and interactive elements, each with a ref like [e12] for browser_click / browser_type. Includes open shadow DOM and same-origin iframes; past 300 elements, the ones on screen win (scroll, then snapshot again). Refs change with every snapshot."),
   browser_read: T("Browser", "read", "Read a tab's text", "Read the visible text of a tab (plus its shadow DOM and same-origin iframes), or of one element by ref (e.g. an email body). Long pages come in chunks: pass offset to continue."),
   browser_scroll: T("Browser", "read", "Scroll a tab", "Scroll a tab: the scroller holding ref, else the page, else its biggest inner panel (Gmail, Slack). times>1 repeats; scrolling down at the end waits for infinite lists to load more. Returns where it ended and a fresh snapshot."),
-  browser_console: T("Browser", "read", "A tab's console and network log", "A tab's console messages, uncaught errors and network requests (fetch/XHR, failed loads) since the page loaded, newest last. only: errors = console errors + failed or 4xx/5xx requests."),
+  browser_console: T("Browser", "read", "A tab's console log", "A tab's console messages and uncaught errors since it opened, newest last. only: errors = console errors + failed or 4xx/5xx requests; net = the network log (see browser_network)."),
+  browser_network: T("Browser", "read", "A tab's network log", "A tab's network log since it opened: every request (document, script, stylesheet, image, font, fetch, xhr, websocket…) with #id, status, type, time and size, newest last. Filter by type, URL text, or failed only. Details: browser_request."),
+  browser_request: T("Browser", "read", "One request in full", "One request from browser_network in full: request and response headers (cookies and auth redacted), request body, response body (text, first 20 KB). WebSockets: last frames."),
+  browser_screenshot: T("Browser", "read", "Screenshot a tab", "Screenshot a tab (the visible part, or the whole page with full=true)."),
+  browser_dialog: T("Browser", "write", "Answer a page dialog", "Answer the alert / confirm / prompt dialog open on a tab (snapshots say when one is). text: the answer for a prompt."),
   browser_navigate: T("Browser", "write", "Load a URL, back, forward, reload", "Load a URL in a tab, or go back / forward / reload. Returns the new snapshot."),
   browser_click: T("Browser", "write", "Click in a tab", "Click an element by ref from the latest snapshot. Returns the new snapshot. Acts as the user in their signed-in accounts: only do what the user asked."),
   browser_type: T("Browser", "write", "Type into a tab", "Type into a text field or editor by ref (replaces its text unless clear=false; for a <select>, pass the option's text). submit=true presses Enter after. Returns the new snapshot. Acts as the user: only send what the user asked."),
@@ -168,7 +172,7 @@ function buildServer(app: Hono) {
         "Start with zippy_overview: it lists the folder, agent, label, pipeline and template names the other tools take.",
         "Agents run in the background: creating a ticket with an agent assignee, run_agent, or an @mention in a comment starts one; follow up with get_ticket. Questions and approvals agents raise land in zippy_inbox.",
         "You act as the user. Answer agent questions, approve permissions, advance pipelines or merge only on the user's explicit decision.",
-        "Browser tools drive tabs in the Zippy desktop app, signed in as the user: use them for pages behind the user's logins, and act there only as the user asked.",
+        "Browser tools drive tabs in Zippy's browser, signed in as the user: use them for pages behind the user's logins, and act there only as the user asked.",
         "Use open_terminal for long-running processes the user should see (dev servers, watchers); use your own shell for one-off commands.",
         "Some tools may be switched off by the user in Zippy Settings; do not try to work around a missing tool.",
       ].join("\n"),
@@ -690,18 +694,15 @@ function buildServer(app: Hono) {
   // Browser: the desktop app's tabs. The hub acts as the user, so no approval cards (those live on an agent's ticket):
   // the calling Claude asks the user before tools, and browser_eval is off until switched on.
   const inTab = async (tab: string, run: () => Promise<string>) => {
-    if (!connected()) return text(DESKTOP_ONLY);
     if (!getTab(tab)) return text("No such tab. Call browser_tabs.");
     return text(await run().catch((e: Error) => `Failed: ${e.message}`));
   };
   const tabArg = z.string().describe("Tab id from browser_tabs or browser_open");
   tool("browser_tabs", { inputSchema: {} }, async () => {
-    if (!connected()) return text(DESKTOP_ONLY);
     const all = listTabs();
     return text(all.map((t) => `${t.id}  ${t.agentId ? "an agent's" : "the user's"}  "${t.title}"  ${t.url}`).join("\n") || "No tabs open. Open one with browser_open.");
   });
   tool("browser_open", { inputSchema: { url: httpUrl } }, async ({ url }) => {
-    if (!connected()) return text(DESKTOP_ONLY);
     const t = await openTab(url);
     return text(`Tab ${t.id}\n${await settled(t.id)}`);
   });
@@ -721,6 +722,21 @@ function buildServer(app: Hono) {
     { inputSchema: { tab: tabArg, only: z.enum(["all", "errors", "console", "net"]).default("all"), last: z.number().int().min(1).max(300).default(50), clear: z.boolean().default(false) } },
     async ({ tab, only, last, clear }) => inTab(tab, () => consoleLog(tab, only, last, clear)),
   );
+  tool(
+    "browser_network",
+    { inputSchema: { tab: tabArg, type: z.string().optional(), match: z.string().optional(), failed: z.boolean().default(false), last: z.number().int().min(1).max(500).default(80) } },
+    async ({ tab, ...f }) => inTab(tab, () => network(tab, f)),
+  );
+  tool("browser_request", { inputSchema: { tab: tabArg, id: z.number().int().min(1) } }, async ({ tab, id }) => inTab(tab, () => requestDetail(tab, id)));
+  tool("browser_screenshot", { inputSchema: { tab: tabArg, full: z.boolean().default(false) } }, async ({ tab, full }) => {
+    if (!getTab(tab)) return text("No such tab. Call browser_tabs.");
+    try {
+      return { content: [{ type: "image" as const, data: await screenshot(tab, full), mimeType: "image/jpeg" }] };
+    } catch (e) {
+      return text(`Failed: ${(e as Error).message}`);
+    }
+  });
+  tool("browser_dialog", { inputSchema: { tab: tabArg, accept: z.boolean(), text: z.string().max(2000).optional() } }, async ({ tab, accept, text: t }) => inTab(tab, () => answerDialog(tab, accept, t)));
   tool("browser_navigate", { inputSchema: { tab: tabArg, to: z.union([httpUrl, z.enum(["back", "forward", "reload"])]) } }, async ({ tab, to }) => inTab(tab, () => act(tab, { go: to })));
   tool("browser_click", { inputSchema: { tab: tabArg, ref: z.string() } }, async ({ tab, ref }) => inTab(tab, () => act(tab, { click: ref })));
   tool(
