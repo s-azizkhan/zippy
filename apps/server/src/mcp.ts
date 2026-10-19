@@ -16,7 +16,7 @@ import { createTicket } from "./tickets.ts";
 import { handoff, markAsked } from "./pipeline.ts";
 import { addComment, foldersOf, runAgent, setStatus } from "./runner.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, spawnTerminal, writeTerminal } from "./term.ts";
-import { act, closeTab, connected, describe, DESKTOP_ONLY, evalScript, getTab, grant, granted, listTabs, openTab, readText, settled, snapshot } from "./browser.ts";
+import { act, closeTab, connected, consoleLog, describe, DESKTOP_ONLY, evalScript, getTab, grant, granted, listTabs, openTab, readText, scroll, settled, snapshot } from "./browser.ts";
 
 // Bearer token -> the agent session it was issued to. Issued per spawned ACP process.
 const tokens = new Map<string, { ticketId: string; agentId: string }>();
@@ -372,16 +372,35 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
   );
   server.registerTool(
     "browser_snapshot",
-    { description: "List a tab's headings and interactive elements, each with a ref like [e12] for browser_click / browser_type. Refs change with every snapshot.", inputSchema: { tab: tabArg } },
+    {
+      description: "List a tab's headings and interactive elements, each with a ref like [e12] for browser_click / browser_type. Includes open shadow DOM and same-origin iframes; past 300 elements, the ones on screen win (scroll, then snapshot again). Refs change with every snapshot.",
+      inputSchema: { tab: tabArg },
+    },
     async ({ tab }) => browserGate(tab, "Read the page", false, () => snapshot(tab)),
   );
   server.registerTool(
     "browser_read",
     {
-      description: "Read the visible text of a tab, or of one element by ref (e.g. an email body). Long pages come in chunks: pass offset to continue.",
+      description: "Read the visible text of a tab (plus its same-origin iframes), or of one element by ref (e.g. an email body). Long pages come in chunks: pass offset to continue.",
       inputSchema: { tab: tabArg, ref: z.string().optional(), offset: z.number().int().min(0).default(0), max: z.number().int().min(200).max(30_000).default(8000) },
     },
     async ({ tab, ref, offset, max }) => browserGate(tab, "Read the page text", false, () => readText(tab, ref, offset, max)),
+  );
+  server.registerTool(
+    "browser_scroll",
+    {
+      description: "Scroll a tab: the scroller holding ref, else the page, else its biggest inner panel (Gmail, Slack). times>1 repeats; scrolling down at the end waits for infinite lists to load more. Returns where it ended and a fresh snapshot.",
+      inputSchema: { tab: tabArg, to: z.enum(["down", "up", "top", "bottom"]).default("down"), ref: z.string().optional(), times: z.number().int().min(1).max(20).default(1) },
+    },
+    async ({ tab, to, ref, times }) => browserGate(tab, `Scroll ${to}${times > 1 ? ` ×${times}` : ""}`, false, () => scroll(tab, ref, to, times)),
+  );
+  server.registerTool(
+    "browser_console",
+    {
+      description: "A tab's console messages, uncaught errors and network requests (fetch/XHR, failed loads) since the page loaded, newest last. only: errors = console errors + failed or 4xx/5xx requests.",
+      inputSchema: { tab: tabArg, only: z.enum(["all", "errors", "console", "net"]).default("all"), last: z.number().int().min(1).max(300).default(50), clear: z.boolean().default(false) },
+    },
+    async ({ tab, only, last, clear }) => browserGate(tab, `Read the ${only === "net" ? "network log" : "console"}`, false, () => consoleLog(tab, only, last, clear)),
   );
   server.registerTool(
     "browser_navigate",

@@ -30,7 +30,16 @@ test("bridgeOk: only the shell's secret", () => {
 test("tab round trip: open, act, snapshot over the bridge", async () => {
   const snap = { title: "Inbox", url: "https://mail.example.com/", lines: ['button "Send" [e1]'], more: 0 };
   // settle() probe: answer "a fresh, loaded document", so actions return at once.
-  const sh = shell((js) => (js.includes("document.readyState]") ? [null, 0, "complete"] : js.includes("lines.push") ? snap : js.includes("delete window.__zr") ? { done: true, s: "1" } : true));
+  const log = [{ t: 0, k: "console", level: "error", msg: "boom" }, { t: 0, k: "net", method: "GET", url: "https://x/api", status: 404, ms: 12 }];
+  let height = 1000; // the fake page grows once, like an infinite list
+  const sh = shell((js) =>
+    js.includes("document.readyState]") ? [null, 0, "complete"]
+    : js.includes("const MAX = 300") ? snap
+    : js.includes("delete window.__zr") ? { done: true, s: "1" }
+    : js.includes("window.__zippyLog") ? log
+    : js.includes("scrollingElement") ? { name: "the page", top: height - 500, height: js.includes('"stay"') && height === 1000 ? (height = 1600) : height, view: 500, moved: js.includes('"stay"') ? 0 : 400 }
+    : true,
+  );
   const t = await b.openTab("https://mail.example.com/", { ticketId: "t1", agentId: "a1" });
   assert.equal(b.getTab(t.id)?.agentId, "a1");
   b.bridgeEvent({ tab: t.id, title: "Inbox", loading: false }); // the shell reports the page loaded
@@ -43,6 +52,10 @@ test("tab round trip: open, act, snapshot over the bridge", async () => {
   await b.act(t.id, { press: "Meta+Enter" });
   await b.readText(t.id, "e1", 0, 100).catch(() => {}); // fake answer has the wrong shape; the script parsing is the point
   assert.equal(await b.evalScript(t.id, "return 1"), "1");
+  assert.match(await b.scroll(t.id, undefined, "bottom", 3), /Scrolled the page bottom ×\d.*more content loaded 1×/);
+  const con = await b.consoleLog(t.id, "all", 50, false);
+  assert.match(con, /error boom/);
+  assert.match(con, /GET 404 12ms https:\/\/x\/api/);
   await b.closeTab(t.id);
   await sh.stop();
   assert.equal(sh.seen[0], "open");

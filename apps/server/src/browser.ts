@@ -195,57 +195,74 @@ async function run(tab: string, expr: string): Promise<any> {
   return r.v;
 }
 
-const FIND = `((ref) => { const el = document.querySelector('[data-zref="' + ref + '"]'); if (!el) throw new Error("No element " + ref + " on the page. Refs change with every snapshot: take a new one."); return el; })`;
+// Pages hide UI in open shadow roots and same-origin iframes (Gmail, web components). Every script walks those too.
+// Cross-origin iframes and closed shadow roots stay out of reach: the browser won't let page JS in.
+const DEEP = `const kids = (root) => { const out = []; for (const e of root.querySelectorAll('*')) { if (e.shadowRoot) out.push(e.shadowRoot); if (e.tagName === 'IFRAME' || e.tagName === 'FRAME') { try { if (e.contentDocument && e.contentDocument.body) out.push(e.contentDocument); } catch (x) {} } } return out; };
+  const deepAll = (root, sel) => { const out = [...root.querySelectorAll(sel)]; for (const k of kids(root)) out.push(...deepAll(k, sel)); return out; };
+  const winOf = (el) => el.ownerDocument.defaultView || window;
+  const find = (ref) => { const el = deepAll(document, '[data-zref="' + ref + '"]')[0]; if (!el) throw new Error("No element " + ref + " on the page. Refs change with every snapshot: take a new one."); return el; };`;
 
-// Interactive elements and headings in document order, each tagged data-zref="eN" so later calls can find it.
+const el = (ref: string | undefined, fallback: string) => (ref ? `find(${JSON.stringify(ref)})` : fallback);
+
+// Interactive elements and headings, each tagged data-zref="eN" so later calls can find it.
+// Over the cap, what is on screen wins, so scrolling and snapshotting again walks a long page.
 const SNAPSHOT = `(() => {
+  ${DEEP}
   const SEL = 'h1,h2,h3,a[href],button,input:not([type=hidden]),textarea,select,summary,[contenteditable=""],[contenteditable=true],[onclick],' +
     ['button','link','tab','menuitem','option','checkbox','radio','switch','textbox','searchbox','combobox','treeitem','row'].map((r) => '[role=' + r + ']').join(',');
   const clean = (s) => (s || '').replace(/\\s+/g, ' ').trim();
-  document.querySelectorAll('[data-zref]').forEach((e) => e.removeAttribute('data-zref'));
-  const lines = []; let n = 0, more = 0;
-  for (const el of document.querySelectorAll(SEL)) {
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height || getComputedStyle(el).visibility === 'hidden') continue;
-    if (lines.length >= 300) { more++; continue; }
+  deepAll(document, '[data-zref]').forEach((e) => e.removeAttribute('data-zref'));
+  const all = []; let n = 0;
+  for (const el of deepAll(document, SEL)) {
+    const r = el.getBoundingClientRect(), w = winOf(el);
+    if (!r.width || !r.height || w.getComputedStyle(el).visibility === 'hidden') continue;
+    const on = r.bottom >= 0 && r.top <= w.innerHeight;
     const tag = el.tagName.toLowerCase();
-    if (/^h[1-3]$/.test(tag)) { const t = clean(el.innerText).slice(0, 120); if (t) lines.push('#'.repeat(+tag[1]) + ' ' + t); continue; }
+    if (/^h[1-3]$/.test(tag)) { const t = clean(el.innerText).slice(0, 120); if (t) all.push({ on, el: null, line: '#'.repeat(+tag[1]) + ' ' + t }); continue; }
     const type = (el.getAttribute('type') || '').toLowerCase();
     const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'select' ? 'combobox' : tag === 'textarea' || el.isContentEditable ? 'textbox'
       : tag === 'input' ? (type === 'checkbox' || type === 'radio' ? type : ['submit', 'button', 'reset', 'image'].includes(type) ? 'button' : 'textbox') : 'button');
     const field = role === 'textbox' || role === 'searchbox' || role === 'combobox';
     const name = clean(el.getAttribute('aria-label') || (el.labels && el.labels[0] && el.labels[0].innerText) || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('alt') || (field ? '' : el.innerText) || '').slice(0, 100);
-    const ref = 'e' + ++n;
-    el.setAttribute('data-zref', ref);
     let extra = '';
     if (field) { const v = clean(el.isContentEditable ? el.innerText : el.value).slice(0, 80); if (v) extra += ' value=' + JSON.stringify(v); }
     if (el.checked || el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-selected') === 'true') extra += ' selected';
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') extra += ' disabled';
     const href = tag === 'a' && el.getAttribute('href');
     if (href && !/^javascript:/i.test(href)) extra += ' -> ' + href.slice(0, 120);
-    if (r.bottom < 0 || r.top > innerHeight) extra += ' (offscreen)';
-    lines.push(role + ' ' + JSON.stringify(name) + ' [' + ref + ']' + extra);
+    if (el.ownerDocument !== document) extra += ' (in frame)';
+    if (!on) extra += ' (offscreen)';
+    all.push({ on, el, line: role + ' ' + JSON.stringify(name) + ' [REF]' + extra });
   }
-  return { title: document.title, url: location.href, lines, more };
+  const MAX = 300;
+  let keep = all;
+  if (all.length > MAX) { const pick = new Set(all.filter((x) => x.on).slice(0, MAX)); for (const x of all) { if (pick.size >= MAX) break; pick.add(x); } keep = all.filter((x) => pick.has(x)); }
+  const lines = keep.map((x) => { if (!x.el) return x.line; const ref = 'e' + ++n; x.el.setAttribute('data-zref', ref); return x.line.replace('[REF]', '[' + ref + ']'); });
+  return { title: document.title, url: location.href, lines, more: all.length - keep.length };
 })()`;
 
 // Synthetic events (isTrusted=false). Most sites accept them; some rich editors and captchas don't.
-const CLICK = (ref: string) => `((el) => {
+// Events are built from the element's own window, so clicks inside same-origin iframes land too.
+const CLICK = (ref: string) => `(() => {
+  ${DEEP}
+  const el = find(${JSON.stringify(ref)}), w = winOf(el);
   el.scrollIntoView({ block: 'center', inline: 'center' });
   const r = el.getBoundingClientRect();
-  const o = { bubbles: true, cancelable: true, composed: true, view: window, button: 0, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-  el.dispatchEvent(new PointerEvent('pointerdown', o)); el.dispatchEvent(new MouseEvent('mousedown', o));
+  const o = { bubbles: true, cancelable: true, composed: true, view: w, button: 0, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+  el.dispatchEvent(new w.PointerEvent('pointerdown', o)); el.dispatchEvent(new w.MouseEvent('mousedown', o));
   if (el.focus) el.focus();
-  el.dispatchEvent(new PointerEvent('pointerup', o)); el.dispatchEvent(new MouseEvent('mouseup', o));
+  el.dispatchEvent(new w.PointerEvent('pointerup', o)); el.dispatchEvent(new w.MouseEvent('mouseup', o));
   // A plain link or a form submit loads a new page; anything else is probably in-page.
   const a = el.closest('a[href]');
   const nav = (a && !a.target && !a.hasAttribute('download') && !/^(#|javascript:)/i.test(a.getAttribute('href'))) || (!!el.form && (el.type === 'submit' || el.type === 'image'));
-  if (el.click) el.click(); else el.dispatchEvent(new MouseEvent('click', o));
+  if (el.click) el.click(); else el.dispatchEvent(new w.MouseEvent('click', o));
   return nav;
-})(${FIND}(${JSON.stringify(ref)}))`;
+})()`;
 
 // insertText goes through the editor's own input pipeline (works for React inputs and contenteditable: Slack, Gmail compose).
-const TYPE = (ref: string, text: string, clear: boolean) => `((el, text, clear) => {
+const TYPE = (ref: string, text: string, clear: boolean) => `((text, clear) => {
+  ${DEEP}
+  const el = find(${JSON.stringify(ref)}), d = el.ownerDocument;
   el.scrollIntoView({ block: 'center' });
   el.focus();
   if (el.tagName === 'SELECT') {
@@ -255,41 +272,87 @@ const TYPE = (ref: string, text: string, clear: boolean) => `((el, text, clear) 
     return true;
   }
   const field = 'value' in el && typeof el.select === 'function';
-  if (clear) { if (field) el.select(); else document.execCommand('selectAll'); }
-  else if (!field) { const s = getSelection(); s.selectAllChildren(el); s.collapseToEnd(); }
-  if (!document.execCommand('insertText', false, text)) {
+  if (clear) { if (field) el.select(); else d.execCommand('selectAll'); }
+  else if (!field) { const s = winOf(el).getSelection(); s.selectAllChildren(el); s.collapseToEnd(); }
+  if (!d.execCommand('insertText', false, text)) {
     if (!field) throw new Error('This element does not take text.');
-    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, clear ? text : el.value + text);
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, clear ? text : el.value + text);
     el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
   }
   return true;
-})(${FIND}(${JSON.stringify(ref)}), ${JSON.stringify(text)}, ${clear})`;
+})(${JSON.stringify(text)}, ${clear})`;
 
-// "Enter", "Escape", "Meta+Enter", "PageDown"… Old apps read keyCode/which, which KeyboardEvent's constructor ignores.
-const PRESS = (ref: string | undefined, combo: string) => `((el, combo) => {
+// The focused element, through iframes and shadow roots.
+const ACTIVE = `(() => { let a = document.activeElement; for (;;) { const inner = (a && a.shadowRoot && a.shadowRoot.activeElement) || (() => { try { return a && a.contentDocument && a.contentDocument.activeElement; } catch (x) { return null; } })(); if (!inner || inner === a) return a || document.body; a = inner; } })()`;
+
+// "Enter", "Escape", "Meta+Enter"… Old apps read keyCode/which, which KeyboardEvent's constructor ignores.
+const PRESS = (ref: string | undefined, combo: string) => `((combo) => {
+  ${DEEP}
+  const el = ${el(ref, ACTIVE)}, w = winOf(el);
   const m = combo.match(/^((?:\\w+\\+)*)(.+)$/);
   const mods = m[1].split('+').filter(Boolean).map((p) => p.toLowerCase()), key = m[2];
   const codes = { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Delete: 46, ' ': 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, PageUp: 33, PageDown: 34, Home: 36, End: 35 };
   const kc = codes[key] || key.toUpperCase().charCodeAt(0);
   const o = { key, code: key.length === 1 ? 'Key' + key.toUpperCase() : key, bubbles: true, cancelable: true, composed: true,
     metaKey: mods.includes('meta') || mods.includes('cmd'), ctrlKey: mods.includes('control') || mods.includes('ctrl'), shiftKey: mods.includes('shift'), altKey: mods.includes('alt') };
-  const fire = (type) => { const e = new KeyboardEvent(type, o); Object.defineProperty(e, 'keyCode', { get: () => kc }); Object.defineProperty(e, 'which', { get: () => kc }); return el.dispatchEvent(e); };
+  const fire = (type) => { const e = new w.KeyboardEvent(type, o); Object.defineProperty(e, 'keyCode', { get: () => kc }); Object.defineProperty(e, 'which', { get: () => kc }); return el.dispatchEvent(e); };
   const go = fire('keydown');
   if (key.length === 1 || key === 'Enter') fire('keypress');
   fire('keyup');
   const submit = go && key === 'Enter' && !mods.length && !!el.form && el.tagName === 'INPUT';
   if (submit) el.form.requestSubmit();
-  if (go && (key === 'PageDown' || key === 'PageUp')) scrollBy(0, (key === 'PageDown' ? 1 : -1) * innerHeight * 0.8);
   return submit;
-})(${ref ? `${FIND}(${JSON.stringify(ref)})` : "document.activeElement || document.body"}, ${JSON.stringify(combo)})`;
+})(${JSON.stringify(combo)})`;
 
-const READ = (ref: string | undefined, offset: number, max: number) => `((el) => {
-  const t = (el.innerText || el.textContent || '').replace(/\\n{3,}/g, '\\n\\n').trim();
+// Page text, then each shadow root's and same-origin frame's (innerText skips both). A ref reads just that element.
+const READ = (ref: string | undefined, offset: number, max: number) => `(() => {
+  ${DEEP}
+  const tidy = (s) => (s || '').replace(/\\n{3,}/g, '\\n\\n').trim();
+  let t;
+  if (${JSON.stringify(ref ?? null)}) { const e = find(${JSON.stringify(ref ?? "")}); t = tidy(e.innerText || e.textContent); }
+  else {
+    const parts = [tidy(document.body.innerText)];
+    const walk = (root) => { for (const k of kids(root)) {
+      if (k.nodeType === 9) parts.push('\\n[frame ' + k.location.href.slice(0, 120) + ']\\n' + tidy(k.body.innerText));
+      else { const s = tidy([...k.children].filter((c) => !/^(STYLE|SCRIPT|TEMPLATE|LINK)$/.test(c.tagName)).map((c) => c.innerText || '').join('\\n')); if (s) parts.push('[' + k.host.tagName.toLowerCase() + ']\\n' + s); }
+      walk(k);
+    } };
+    walk(document);
+    t = parts.join('\\n');
+  }
   return { title: document.title, url: location.href, total: t.length, text: t.slice(${offset}, ${offset + max}) };
-})(${ref ? `${FIND}(${JSON.stringify(ref)})` : "document.body"})`;
+})()`;
 
-const DESCRIBE = (ref: string) => `((el) => (el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('placeholder') || '').replace(/\\s+/g, ' ').trim().slice(0, 80))(${FIND}(${JSON.stringify(ref)}))`;
+// Scrolls the scroller that holds `ref`; without one, the page, or else the biggest inner scroller (Gmail and
+// Slack scroll a panel, not the window). to=stay only measures.
+const SCROLL = (ref: string | undefined, to: "up" | "down" | "top" | "bottom" | "stay") => `(() => {
+  ${DEEP}
+  const can = (e) => { const s = winOf(e).getComputedStyle(e); return /(auto|scroll|overlay)/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 2; };
+  const se = document.scrollingElement || document.documentElement;
+  let t = null;
+  for (let e = ${ref ? `find(${JSON.stringify(ref)})` : "null"}; e && !t; e = e.parentElement || (e.getRootNode() && e.getRootNode().host) || null) if (can(e) || (e === se && se.scrollHeight > se.clientHeight + 2)) t = e;
+  if (!t && se.scrollHeight > se.clientHeight + 2) t = se;
+  if (!t) { let best = 0; for (const e of deepAll(document, '*')) { if (!can(e)) continue; const r = e.getBoundingClientRect(), a = r.width * r.height; if (a > best) (best = a), (t = e); } }
+  if (!t) return null;
+  const to = ${JSON.stringify(to)}, before = t.scrollTop, page = t.clientHeight * 0.85;
+  if (to === 'down') t.scrollTop += page; else if (to === 'up') t.scrollTop -= page; else if (to === 'top') t.scrollTop = 0; else if (to === 'bottom') t.scrollTop = t.scrollHeight;
+  const name = t === se ? 'the page' : String(t.getAttribute('aria-label') || (t.id && '#' + t.id) || t.tagName.toLowerCase()).slice(0, 60);
+  return { name, top: Math.round(t.scrollTop), height: t.scrollHeight, view: t.clientHeight, moved: Math.round(t.scrollTop - before) };
+})()`;
+
+// Reads the log the desktop app's page shim records (console, uncaught errors, fetch/XHR, failed loads).
+const CONSOLE = (only: string, last: number, clear: boolean) => `(() => {
+  const l = window.__zippyLog;
+  if (!Array.isArray(l)) return null;
+  const only = ${JSON.stringify(only)};
+  const bad = (e) => (e.k === 'console' ? e.level === 'error' : !e.status || e.status >= 400);
+  const out = l.filter((e) => only === 'all' || (only === 'errors' ? bad(e) : e.k === only)).slice(-${last});
+  if (${clear}) l.length = 0;
+  return out;
+})()`;
+
+const DESCRIBE = (ref: string) => `(() => { ${DEEP}
+  const el = find(${JSON.stringify(ref)}); return (el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('placeholder') || '').replace(/\\s+/g, ' ').trim().slice(0, 80); })()`;
 
 // Set before an action. A new document has no __zmark; beforeunload sets __zgo while the old one unloads.
 const MARK = `(window.__zgo = 0, window.__zmark || ((window.__zmark = 1), addEventListener('beforeunload', () => { window.__zgo = 1; })), true)`;
@@ -360,4 +423,45 @@ export async function evalScript(tab: string, code: string) {
     await sleep(200);
   }
   return "The script is still running after 10s; its result was dropped.";
+}
+
+type Scrolled = { name: string; top: number; height: number; view: number; moved: number } | null;
+
+/** Scrolls `times` steps. Near the end it waits for infinite lists to load more, and stops once nothing moves or loads. */
+export async function scroll(tab: string, ref: string | undefined, to: "up" | "down" | "top" | "bottom", times: number) {
+  let r = (await run(tab, SCROLL(ref, to))) as Scrolled;
+  if (!r) return `Nothing on this page scrolls.\n\n${await snapshot(tab)}`;
+  let steps = 1, grew = 0;
+  for (;;) {
+    let loaded = false;
+    if ((to === "down" || to === "bottom") && r.top + r.view >= r.height - 50) {
+      const h = r.height;
+      for (let i = 0; i < 8 && !loaded; i++) {
+        await sleep(250);
+        const m = (await run(tab, SCROLL(ref, "stay")).catch(() => null)) as Scrolled;
+        if (m) (r = m), (loaded = m.height > h);
+      }
+      if (loaded) grew++;
+    }
+    if (steps >= times || (!r.moved && !loaded)) break;
+    const next = (await run(tab, SCROLL(ref, to))) as Scrolled;
+    if (!next) break;
+    (r = next), steps++;
+  }
+  const end = r.top + r.view >= r.height - 2;
+  return `Scrolled ${r.name} ${to}${steps > 1 ? ` ×${steps}` : ""}: ${r.top + r.view} of ${r.height}px${end ? " (at the end)" : ""}${grew ? `; more content loaded ${grew}×` : ""}.\n\n${await snapshot(tab)}`;
+}
+
+type LogEntry = { t: number; k: "console" | "net"; level?: string; msg?: string; method?: string; url?: string; status?: number; ms?: number; error?: string };
+
+/** Console messages, uncaught errors and requests recorded by the page shim since the page loaded. */
+export async function consoleLog(tab: string, only: "all" | "errors" | "console" | "net", last: number, clear: boolean) {
+  const l = (await run(tab, CONSOLE(only, last, clear))) as LogEntry[] | null;
+  if (!l) return "This page has no log (it replaced Zippy's recorder). Reload the tab to start recording.";
+  const time = (t: number) => new Date(t).toISOString().slice(11, 19);
+  const line = (e: LogEntry) =>
+    e.k === "console"
+      ? `${time(e.t)} ${(e.level ?? "log").padEnd(5)} ${e.msg}`
+      : `${time(e.t)} ${e.method} ${e.status || "FAILED"}${e.ms !== undefined ? ` ${e.ms}ms` : ""} ${e.url}${e.error ? ` (${e.error})` : ""}`;
+  return `${UNTRUSTED}\n\n${l.length ? l.map(line).join("\n") : "Nothing recorded yet (recording starts when the page loads)."}`;
 }
