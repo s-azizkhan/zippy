@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Bot, Globe, Loader2, Plus, RotateCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, Globe, Loader2, Plus, RotateCw, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -130,6 +130,9 @@ export function BrowserPage() {
           aria-label="Address"
           className="bg-muted/50 focus:bg-background focus:ring-ring/50 h-8 min-w-0 flex-1 rounded-lg px-3 text-[13px] outline-none focus:ring-2"
         />
+        <button type="button" aria-label="Inspect (DevTools)" title="Inspect (DevTools)" disabled={!active} onClick={() => active && void api.post(`/browser/tabs/${active.id}/devtools`, {}, true).then(refresh, (e: Error) => toast.error(e.message))} className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] flex size-7 items-center justify-center rounded-lg disabled:opacity-40">
+          <SquareTerminal className="size-4" aria-hidden />
+        </button>
       </form>
 
       {owner && active && (
@@ -218,6 +221,8 @@ function Screen({ tab, onState, onAddressBar }: { tab: string; onState: () => vo
   const img = useRef<HTMLImageElement>(null);
   const kb = useRef<HTMLTextAreaElement>(null);
   const [waiting, setWaiting] = useState(true);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // Zippy's right-click menu, when the page has none
+  const rightAt = useRef({ x: 0, y: 0 });
 
   // Frames for this tab only (the parent remounts per tab); "state" means tabs or a dialog changed.
   useEffect(() => {
@@ -259,8 +264,8 @@ function Screen({ tab, onState, onAddressBar }: { tab: string; onState: () => vo
     const events = s.events.splice(0);
     s.sending = true;
     void api
-      .post(`/browser/tabs/${tab}/input`, { events }, true)
-      .catch(() => {})
+      .post<{ menu: boolean }>(`/browser/tabs/${tab}/input`, { events }, true)
+      .then((r) => r.menu && setMenu(rightAt.current), () => {})
       .finally(() => {
         s.sending = false;
         if (s.events.length) s.raf ||= requestAnimationFrame(flush);
@@ -312,14 +317,29 @@ function Screen({ tab, onState, onAddressBar }: { tab: string; onState: () => vo
       className="absolute inset-0 overflow-hidden bg-white outline-none select-none"
       onPointerDown={(e) => {
         e.preventDefault();
+        setMenu(null);
         kb.current?.focus({ preventScroll: true });
         e.currentTarget.setPointerCapture(e.pointerId);
         send({ t: "down", ...at(e), button: BUTTONS[e.button] ?? "left", clicks: Math.min(3, Math.max(1, e.detail)), mods: mods(e) });
       }}
       onPointerMove={(e) => send({ t: "move", ...at(e), mods: mods(e) })}
-      onPointerUp={(e) => send({ t: "up", ...at(e), button: BUTTONS[e.button] ?? "left", clicks: Math.min(3, Math.max(1, e.detail)), mods: mods(e) })}
+      onPointerUp={(e) => (e.button === 2 && (rightAt.current = at(e)), send({ t: "up", ...at(e), button: BUTTONS[e.button] ?? "left", clicks: Math.min(3, Math.max(1, e.detail)), mods: mods(e) }))}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {menu && (
+        <div role="menu" className="bg-popover text-popover-foreground absolute z-10 min-w-36 rounded-lg border p-1 text-[13px] shadow-md" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            role="menuitem"
+            autoFocus
+            onKeyDown={(e) => e.key === "Escape" && setMenu(null)}
+            onBlur={() => setMenu(null)}
+            onClick={() => (setMenu(null), void api.post(`/browser/tabs/${tab}/devtools`, menu, true).then(onState, (e: Error) => toast.error(e.message)))}
+            className="hover:bg-accent focus:bg-accent w-full rounded-md px-2 py-1 text-left outline-none"
+          >
+            Inspect
+          </button>
+        </div>
+      )}
       <img ref={img} alt="" draggable={false} className="pointer-events-none size-full object-fill" />
       {waiting && (
         <div className="absolute inset-0 flex items-center justify-center">

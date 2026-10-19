@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -76,6 +77,7 @@ let status: Status = { state: "off", message: "" };
 let ctx: BrowserContext | null = null;
 let starting: Promise<BrowserContext> | null = null;
 let running: string | null = null; // the browser binary in use
+let dtPort = 0; // Chromium's DevTools server (devtools())
 let closing = false; // the whole browser is going away (quit, crash): its pages' close events must not forget the tabs
 const view = { active: null as string | null, w: 1280, h: 800, dpr: 1 };
 
@@ -191,6 +193,12 @@ export function ensureBrowser(): Promise<BrowserContext> {
     const exe = findChrome() ?? (await downloadChrome()).exe;
     status = { state: "starting", message: "Starting the browser…" };
     running = exe;
+    dtPort = await new Promise<number>((ok) => {
+      const s = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = s.address() as { port: number };
+        s.close(() => ok(port));
+      });
+    });
     const c = await chromium.launchPersistentContext(profileFor(exe), {
       executablePath: exe,
       headless: true,
@@ -198,7 +206,11 @@ export function ensureBrowser(): Promise<BrowserContext> {
       userAgent: await userAgent(exe),
       acceptDownloads: true,
       ignoreDefaultArgs: ["--enable-automation"],
-      args: ["--disable-blink-features=AutomationControlled"],
+      // Headless screencast frames ignore the emulated deviceScaleFactor and arrive at CSS size (blurry on retina);
+      // this renders at 2× (setView's max dpr) and startScreencast's maxWidth scales down for 1× viewers.
+      // The debugging port serves Chromium's own DevTools frontend (devtools() below), on 127.0.0.1 only. Its socket refuses
+      // every web origin but that frontend's (a known port, so it can be allowed by name).
+      args: ["--disable-blink-features=AutomationControlled", "--force-device-scale-factor=2", `--remote-debugging-port=${dtPort}`, `--remote-allow-origins=http://127.0.0.1:${dtPort}`],
     });
     await c.exposeBinding("__zippyNotify", ({ page }, title: string, body: string) => {
       const host = (() => {
@@ -211,6 +223,20 @@ export function ensureBrowser(): Promise<BrowserContext> {
       desktopNote(title, body ? `${body} · ${host}` : host);
     });
     await c.addInitScript(NOTIFY_SHIM);
+    await c.addInitScript((port) => {
+      const w = window as unknown as { __zippyMenu?: boolean; __zippyDevtools?: WebSocket };
+      // Did the page handle the right-click itself (its own menu)? input() asks, to decide on Zippy's menu.
+      addEventListener("contextmenu", (e) => void setTimeout(() => (w.__zippyMenu = !e.defaultPrevented)), true);
+      // A DevTools tab: keep its socket, so devtools(…, at) can hand the frontend a node to reveal.
+      if (location.host !== `127.0.0.1:${port}` || !location.pathname.startsWith("/devtools/")) return;
+      const WS = WebSocket;
+      window.WebSocket = class extends WS {
+        constructor(...a: ConstructorParameters<typeof WebSocket>) {
+          super(...a);
+          w.__zippyDevtools = this;
+        }
+      };
+    }, dtPort);
     c.on("page", (p) => void attach(p));
     c.on("close", () => {
       closing = true;
@@ -225,7 +251,7 @@ export function ensureBrowser(): Promise<BrowserContext> {
     closing = false;
     // Chromium opens one blank page on launch: reuse it for the first remembered tab, else close it.
     const blank = c.pages()[0];
-    for (const t of saved) {
+    for (const t of saved.filter((t) => !DEVTOOLS.test(t.url))) { // its port and target died with the last browser
       const p = blank && !live.size ? blank : await c.newPage();
       const l = await attach(p);
       rekey(l, t);
@@ -405,6 +431,40 @@ export async function openTab(url: string, owner?: { ticketId: string; agentId: 
   return l.tab;
 }
 
+const DEVTOOLS = /^http:\/\/127\.0\.0\.1:\d+\/devtools\//;
+const inspectors = new Map<string, string>(); // tab → its DevTools tab
+/**
+ * Opens (or reuses) Chromium's DevTools for a tab, as another tab: the frontend needs Chromium, the desktop webview
+ * may not be one. With `at` (CSS px), reveals the element there in Elements, the way Chrome's "Inspect" does: the
+ * frontend gets the Overlay.inspectNodeRequested event it would get from its own element picker.
+ */
+export async function devtools(id: string, at?: { x: number; y: number }) {
+  const { page } = liveTab(id);
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    let dt = live.get(inspectors.get(id) ?? "");
+    if (!dt || !DEVTOOLS.test(dt.page.url())) {
+      const { targetInfo } = await cdp.send("Target.getTargetInfo");
+      const t = await openTab(`http://127.0.0.1:${dtPort}/devtools/inspector.html?ws=127.0.0.1:${dtPort}/devtools/page/${targetInfo.targetId}`);
+      inspectors.set(id, t.id);
+      dt = live.get(t.id)!;
+    }
+    if (at) {
+      await cdp.send("DOM.getDocument", { depth: 0 });
+      const { backendNodeId } = await cdp.send("DOM.getNodeForLocation", { x: Math.round(at.x), y: Math.round(at.y) });
+      type W = { __zippyDevtools?: WebSocket };
+      await dt.page.waitForFunction(() => (window as unknown as W).__zippyDevtools?.readyState === 1, undefined, { timeout: 15_000 });
+      await dt.page.evaluate((id) => {
+        const data = JSON.stringify({ method: "Overlay.inspectNodeRequested", params: { backendNodeId: id } });
+        (window as unknown as W).__zippyDevtools!.dispatchEvent(new MessageEvent("message", { data }));
+      }, backendNodeId);
+    }
+    return dt.tab;
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
 export async function closeTab(id: string) {
   for (const g of grants) if (g.includes(`:${id}:`)) grants.delete(g);
   const l = live.get(id);
@@ -532,6 +592,18 @@ export async function input(id: string, events: Input[]) {
     else if (e.t === "key") await (e.down ? page.keyboard.down(e.key) : page.keyboard.up(e.key)).catch(() => {}); // unknown key names: skip
     else if (e.t === "text") await page.keyboard.insertText(e.text);
   }
+  // A right-click the page didn't take for its own menu gets Zippy's (Inspect). Iframes don't report: menu.
+  const right = events.some((e) => e.t === "up" && e.button === "right");
+  const menu =
+    right && !live.get(id)?.dialog
+      ? await page
+          .evaluate(() => new Promise<boolean>((ok) => setTimeout(() => {
+            const w = window as unknown as { __zippyMenu?: boolean };
+            ok(w.__zippyMenu !== false);
+            delete w.__zippyMenu;
+          })))
+          .catch(() => false)
+      : false;
   // The screencast has no cursor: tell the viewer what the page would show under the mouse (at most ~6×/s).
   const m = [...events].reverse().find((e) => e.t === "move");
   if (m && m.t === "move" && Date.now() - lastCursor > 150 && !live.get(id)?.dialog) {
@@ -543,6 +615,7 @@ export async function input(id: string, events: Input[]) {
       }, [m.x, m.y])
       .then((cursor) => broadcast({ type: "cursor", cursor }), () => {});
   }
+  return { menu };
 }
 
 /** Selected text in the tab, for the viewer's ⌘C / ⌘X (a headless page can't reach the system clipboard). */
@@ -765,7 +838,7 @@ export async function evalScript(id: string, code: string) {
 export async function screenshot(id: string, full: boolean) {
   await ensureBrowser();
   const { page } = usable(id);
-  return (await page.screenshot({ type: "jpeg", quality: 70, fullPage: full, timeout: 15_000 })).toString("base64");
+  return (await page.screenshot({ type: "jpeg", quality: 70, fullPage: full, scale: "css", timeout: 15_000 })).toString("base64");
 }
 
 const time = (t: number) => new Date(t).toISOString().slice(11, 19);

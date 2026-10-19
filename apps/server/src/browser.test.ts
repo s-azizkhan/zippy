@@ -123,11 +123,25 @@ test("tabs: snapshot, shadow DOM, cross-origin iframe, scroll, network, dialog, 
   await b.input(tab.id, [{ t: "key", down: true, key: "a", mods: [sel] }, { t: "key", down: false, key: "a", mods: [sel] }, { t: "key", down: true, key: "Backspace" }, { t: "key", down: false, key: "Backspace" }, { t: "text", text: "ok" }]);
   assert.equal(await b.evalScript(tab.id, "return document.getElementById('q').value"), '"ok"');
 
+  // Right-click: Zippy's menu unless the page shows its own. Inspect reveals that element in a connected DevTools tab
+  // (which isn't brought back after a restart: its port dies with the browser).
+  const [x, y] = JSON.parse(await b.evalScript(tab.id, "const h = document.querySelector('h1'); h.scrollIntoView(); const r = h.getBoundingClientRect(); return [r.x + 5, r.y + 5]")) as number[];
+  const right = [{ t: "down", x, y, button: "right" }, { t: "up", x, y, button: "right" }] as const;
+  assert.deepEqual(await b.input(tab.id, [...right]), { menu: true });
+  await b.evalScript(tab.id, "document.oncontextmenu = (e) => e.preventDefault()");
+  assert.deepEqual(await b.input(tab.id, [...right]), { menu: false });
+  const dt = await b.devtools(tab.id, { x: x!, y: y! });
+  const picked = `return new Promise((ok) => { const find = (root) => { for (const el of root.querySelectorAll("*")) { if (el.getAttribute("role") === "treeitem" && el.classList.contains("selected")) return el.textContent; const r = el.shadowRoot && find(el.shadowRoot); if (r) return r; } };
+    const t = setInterval(() => { const s = find(document); if (s && s.includes("<h1")) clearInterval(t), ok(s); }, 100); setTimeout(() => (clearInterval(t), ok(find(document) ?? null)), 10000); })`;
+  assert.match(await b.evalScript(dt.id, picked), /<h1>.*Fixture/);
+  assert.equal((await b.devtools(tab.id)).id, dt.id); // reused
+
   // Quitting keeps the tab; the next start brings it back with its id and owner.
   await b.closeBrowser();
   assert.equal(b.getTab(tab.id)?.agentId, "a1");
   await b.ensureBrowser();
   assert.match(await b.settled(tab.id), /# Fixture/);
+  assert.ok(!b.listTabs().some((t) => t.url.includes("/devtools/")));
 
   await b.closeTab(tab.id);
   assert.equal(b.getTab(tab.id), undefined);

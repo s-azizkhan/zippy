@@ -61,7 +61,7 @@ import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { answerDialog, browserState, closeTab, decideDownload, ensureBrowser, go, input, openTab, refreshTitles, selection, setView, watch } from "./browser.ts";
+import { answerDialog, browserState, closeTab, decideDownload, devtools, ensureBrowser, go, input, openTab, refreshTitles, selection, setView, watch } from "./browser.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudeBin, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
@@ -175,6 +175,12 @@ app.post("/browser/tabs", async (c) => {
   await setView({ active: t.id });
   return c.json(t, 201);
 });
+app.post("/browser/tabs/:id/devtools", async (c) => {
+  const { x, y } = await body(c, z.object({ x: z.number().min(0).max(4000).optional(), y: z.number().min(0).max(4000).optional() }));
+  const t = await devtools(c.req.param("id"), x !== undefined && y !== undefined ? { x, y } : undefined);
+  await setView({ active: t.id });
+  return c.json(t, 201);
+});
 app.delete("/browser/tabs/:id", async (c) => (await closeTab(c.req.param("id")), c.body(null, 204)));
 app.post("/browser/tabs/:id/go", async (c) => {
   const { to } = await body(c, z.object({ to: z.union([httpUrl, z.enum(["back", "forward", "reload"])]) }));
@@ -203,8 +209,7 @@ const inputEvent = z.union([
 ]);
 app.post("/browser/tabs/:id/input", async (c) => {
   const { events } = await body(c, z.object({ events: z.array(inputEvent).max(500) }));
-  await input(c.req.param("id"), events);
-  return c.body(null, 204);
+  return c.json(await input(c.req.param("id"), events));
 });
 app.post("/browser/tabs/:id/copy", async (c) => c.json({ text: await selection(c.req.param("id")) }));
 app.post("/browser/downloads/:id", async (c) => {
