@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -77,7 +76,6 @@ let status: Status = { state: "off", message: "" };
 let ctx: BrowserContext | null = null;
 let starting: Promise<BrowserContext> | null = null;
 let running: string | null = null; // the browser binary in use
-let dtPort = 0; // Chromium's DevTools server (devtools())
 let closing = false; // the whole browser is going away (quit, crash): its pages' close events must not forget the tabs
 const view = { active: null as string | null, w: 1280, h: 800, dpr: 1 };
 
@@ -185,6 +183,36 @@ const NOTIFY_SHIM = `(() => {
   window.Notification = Notification;
 })();`;
 
+// A string, like NOTIFY_SHIM: a function would be sent as tsx's compiled source, with helpers the page doesn't have.
+const PAGE_SHIM = `(() => {
+  // Did the page handle the right-click itself (its own menu)? input() asks, to decide on Zippy's menu.
+  addEventListener("contextmenu", (e) => void setTimeout(() => (window.__zippyMenu = !e.defaultPrevented)), true);
+  // A DevTools tab (the frontend bundled in Chromium): its "WebSocket" is relay() over the __zippyCdp binding.
+  if (location.protocol !== "devtools:") return;
+  const cdp = window.__zippyCdp;
+  window.WebSocket = class extends EventTarget {
+    constructor() {
+      super();
+      this.readyState = 0;
+      window.__zippyDeliver = (msgs) => msgs.forEach((data) => this.fire(new MessageEvent("message", { data })));
+      cdp("open").then(
+        () => ((this.readyState = 1), this.fire(new Event("open"))),
+        () => ((this.readyState = 3), this.fire(new Event("error")), this.fire(new CloseEvent("close"))),
+      );
+    }
+    fire(e) {
+      this.dispatchEvent(e);
+      this["on" + e.type]?.(e);
+    }
+    send(m) {
+      cdp(m).catch(() => {});
+    }
+    close() {
+      this.readyState = 3;
+    }
+  };
+})();`;
+
 /** Starts Chromium once (finding or downloading it), reopens remembered tabs. Agents and the page call this lazily. */
 export function ensureBrowser(): Promise<BrowserContext> {
   if (ctx) return Promise.resolve(ctx);
@@ -193,12 +221,6 @@ export function ensureBrowser(): Promise<BrowserContext> {
     const exe = findChrome() ?? (await downloadChrome()).exe;
     status = { state: "starting", message: "Starting the browser…" };
     running = exe;
-    dtPort = await new Promise<number>((ok) => {
-      const s = createServer().listen(0, "127.0.0.1", () => {
-        const { port } = s.address() as { port: number };
-        s.close(() => ok(port));
-      });
-    });
     const c = await chromium.launchPersistentContext(profileFor(exe), {
       executablePath: exe,
       headless: true,
@@ -208,9 +230,7 @@ export function ensureBrowser(): Promise<BrowserContext> {
       ignoreDefaultArgs: ["--enable-automation"],
       // Headless screencast frames ignore the emulated deviceScaleFactor and arrive at CSS size (blurry on retina);
       // this renders at 2× (setView's max dpr) and startScreencast's maxWidth scales down for 1× viewers.
-      // The debugging port serves Chromium's own DevTools frontend (devtools() below), on 127.0.0.1 only. Its socket refuses
-      // every web origin but that frontend's (a known port, so it can be allowed by name).
-      args: ["--disable-blink-features=AutomationControlled", "--force-device-scale-factor=2", `--remote-debugging-port=${dtPort}`, `--remote-allow-origins=http://127.0.0.1:${dtPort}`],
+      args: ["--disable-blink-features=AutomationControlled", "--force-device-scale-factor=2"],
     });
     await c.exposeBinding("__zippyNotify", ({ page }, title: string, body: string) => {
       const host = (() => {
@@ -223,20 +243,13 @@ export function ensureBrowser(): Promise<BrowserContext> {
       desktopNote(title, body ? `${body} · ${host}` : host);
     });
     await c.addInitScript(NOTIFY_SHIM);
-    await c.addInitScript((port) => {
-      const w = window as unknown as { __zippyMenu?: boolean; __zippyDevtools?: WebSocket };
-      // Did the page handle the right-click itself (its own menu)? input() asks, to decide on Zippy's menu.
-      addEventListener("contextmenu", (e) => void setTimeout(() => (w.__zippyMenu = !e.defaultPrevented)), true);
-      // A DevTools tab: keep its socket, so devtools(…, at) can hand the frontend a node to reveal.
-      if (location.host !== `127.0.0.1:${port}` || !location.pathname.startsWith("/devtools/")) return;
-      const WS = WebSocket;
-      window.WebSocket = class extends WS {
-        constructor(...a: ConstructorParameters<typeof WebSocket>) {
-          super(...a);
-          w.__zippyDevtools = this;
-        }
-      };
-    }, dtPort);
+    await c.exposeBinding("__zippyCdp", ({ page, frame }, msg: string) => {
+      // Every page sees the binding: only the DevTools frontend itself, in a tab devtools() opened, may use it (not a
+      // site that tab was later navigated to, nor an iframe).
+      if (frame !== page.mainFrame() || !DEVTOOLS.test(frame.url())) throw new Error("Not a DevTools tab.");
+      return relay(page, msg);
+    });
+    await c.addInitScript(PAGE_SHIM);
     c.on("page", (p) => void attach(p));
     c.on("close", () => {
       closing = true;
@@ -431,38 +444,83 @@ export async function openTab(url: string, owner?: { ticketId: string; agentId: 
   return l.tab;
 }
 
-const DEVTOOLS = /^http:\/\/127\.0\.0\.1:\d+\/devtools\//;
+const DEVTOOLS = /^devtools:/;
 const inspectors = new Map<string, string>(); // tab → its DevTools tab
 /**
  * Opens (or reuses) Chromium's DevTools for a tab, as another tab: the frontend needs Chromium, the desktop webview
- * may not be one. With `at` (CSS px), reveals the element there in Elements, the way Chrome's "Inspect" does: the
- * frontend gets the Overlay.inspectNodeRequested event it would get from its own element picker.
+ * may not be one. No debugging port: the frontend bundled in Chromium talks to the page through relay(). With `at`
+ * (CSS px), reveals the element there in Elements, the way Chrome's "Inspect" does: the frontend gets the
+ * Overlay.inspectNodeRequested event it would get from its own element picker.
  */
 export async function devtools(id: string, at?: { x: number; y: number }) {
   const { page } = liveTab(id);
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    let dt = live.get(inspectors.get(id) ?? "");
-    if (!dt || !DEVTOOLS.test(dt.page.url())) {
-      const { targetInfo } = await cdp.send("Target.getTargetInfo");
-      const t = await openTab(`http://127.0.0.1:${dtPort}/devtools/inspector.html?ws=127.0.0.1:${dtPort}/devtools/page/${targetInfo.targetId}`);
-      inspectors.set(id, t.id);
-      dt = live.get(t.id)!;
-    }
-    if (at) {
+  let dt = live.get(inspectors.get(id) ?? "");
+  if (!dt || !DEVTOOLS.test(dt.page.url())) {
+    const t = await openTab("devtools://devtools/bundled/inspector.html?ws=zippy");
+    inspectors.set(id, t.id);
+    page.once("close", () => void (closing || closeTab(t.id).catch(() => {})));
+    dt = live.get(t.id)!;
+  }
+  if (at) {
+    const cdp = await page.context().newCDPSession(page); // not the frontend's: getDocument would reset its node ids
+    try {
       await cdp.send("DOM.getDocument", { depth: 0 });
       const { backendNodeId } = await cdp.send("DOM.getNodeForLocation", { x: Math.round(at.x), y: Math.round(at.y) });
-      type W = { __zippyDevtools?: WebSocket };
-      await dt.page.waitForFunction(() => (window as unknown as W).__zippyDevtools?.readyState === 1, undefined, { timeout: 15_000 });
-      await dt.page.evaluate((id) => {
-        const data = JSON.stringify({ method: "Overlay.inspectNodeRequested", params: { backendNodeId: id } });
-        (window as unknown as W).__zippyDevtools!.dispatchEvent(new MessageEvent("message", { data }));
-      }, backendNodeId);
+      const b = bridgeOf(dt.page);
+      await Promise.race([b.ready, sleep(15_000).then(() => Promise.reject(new Error("DevTools didn't connect.")))]);
+      deliver(b, { method: "Overlay.inspectNodeRequested", params: { backendNodeId } });
+    } finally {
+      await cdp.detach().catch(() => {});
     }
-    return dt.tab;
-  } finally {
-    await cdp.detach().catch(() => {});
   }
+  return dt.tab;
+}
+
+// The DevTools tab's protocol traffic: frontend → __zippyCdp binding → a CDP session on the inspected page (over
+// Playwright's own pipe), and replies and events back in batches. Only pages devtools() opened get a session.
+type Bridge = { dt: Page; target: Page; cdp: Promise<CDPSession> | null; ready: Promise<void>; opened: () => void; out: string[] };
+const bridges = new WeakMap<Page, Bridge>();
+function bridgeOf(dt: Page) {
+  let b = bridges.get(dt);
+  if (b) return b;
+  const id = [...inspectors].find(([, d]) => live.get(d)?.page === dt)?.[0];
+  const target = id && live.get(id)?.page;
+  if (!target) throw new Error("Not a DevTools tab.");
+  let opened!: () => void;
+  const ready = new Promise<void>((ok) => (opened = ok));
+  bridges.set(dt, (b = { dt, target, cdp: null, ready, opened, out: [] }));
+  dt.once("close", () => void b.cdp?.then((c) => c.detach()).catch(() => {}));
+  return b;
+}
+const deliver = (b: Bridge, m: object) => {
+  b.out.push(JSON.stringify(m));
+  if (b.out.length === 1) setImmediate(() => void b.dt.evaluate((msgs) => (window as unknown as { __zippyDeliver(m: string[]): void }).__zippyDeliver(msgs), b.out.splice(0)).catch(() => {}));
+};
+async function relay(dt: Page, msg: string) {
+  const b = bridgeOf(dt);
+  if (msg === "open") {
+    b.cdp ??= b.target.context().newCDPSession(b.target).then((cdp) => {
+      // ponytail: Playwright has no catch-all CDP event listener; this taps the session's emitter.
+      const s = cdp as unknown as { emit(event: string | symbol, ...a: unknown[]): boolean };
+      const emit = s.emit.bind(s);
+      s.emit = (event, ...a) => (typeof event === "string" && event.includes(".") && deliver(b, { method: event, params: a[0] }), emit(event, ...a));
+      return cdp;
+    });
+    await b.cdp;
+    return b.opened();
+  }
+  if (!b.cdp) throw new Error("Not connected.");
+  const cdp = await b.cdp;
+  const { id, method, params, sessionId } = JSON.parse(msg) as { id: number; method: string; params?: object; sessionId?: string };
+  // ponytail: the page's own session only; child targets (out-of-process iframes, workers) get an error. Upgrade path:
+  // Target.attachToTarget + sendMessageToTarget on this session.
+  if (sessionId) return deliver(b, { id, sessionId, error: { code: -32601, message: "Zippy's DevTools reaches the page only." } });
+  // Edge's DevTools screencasts headless targets; the Browser page already streams this tab.
+  if (method === "Page.startScreencast" || method === "Page.stopScreencast") return deliver(b, { id, result: {} });
+  cdp.send(method as "Page.enable", params).then(
+    (result) => deliver(b, { id, result }),
+    (e: Error) => deliver(b, { id, error: { code: -32000, message: e.message.replace(/^.*?Protocol error \([^)]*\): /, "") } }),
+  );
 }
 
 export async function closeTab(id: string) {

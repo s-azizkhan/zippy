@@ -124,7 +124,7 @@ test("tabs: snapshot, shadow DOM, cross-origin iframe, scroll, network, dialog, 
   assert.equal(await b.evalScript(tab.id, "return document.getElementById('q').value"), '"ok"');
 
   // Right-click: Zippy's menu unless the page shows its own. Inspect reveals that element in a connected DevTools tab
-  // (which isn't brought back after a restart: its port dies with the browser).
+  // (not brought back after a restart).
   const [x, y] = JSON.parse(await b.evalScript(tab.id, "const h = document.querySelector('h1'); h.scrollIntoView(); const r = h.getBoundingClientRect(); return [r.x + 5, r.y + 5]")) as number[];
   const right = [{ t: "down", x, y, button: "right" }, { t: "up", x, y, button: "right" }] as const;
   assert.deepEqual(await b.input(tab.id, [...right]), { menu: true });
@@ -135,13 +135,18 @@ test("tabs: snapshot, shadow DOM, cross-origin iframe, scroll, network, dialog, 
     const t = setInterval(() => { const s = find(document); if (s && s.includes("<h1")) clearInterval(t), ok(s); }, 100); setTimeout(() => (clearInterval(t), ok(find(document) ?? null)), 10000); })`;
   assert.match(await b.evalScript(dt.id, picked), /<h1>.*Fixture/);
   assert.equal((await b.devtools(tab.id)).id, dt.id); // reused
+  // Only the DevTools frontend may drive the bridge: not a site its tab was navigated to.
+  await b.go(dt.id, `http://127.0.0.1:${port(main)}/`);
+  await b.settled(dt.id);
+  assert.match(await b.evalScript(dt.id, "return window.__zippyCdp('open')"), /^Error: .*Not a DevTools tab/);
+  await b.closeTab(dt.id);
 
   // Quitting keeps the tab; the next start brings it back with its id and owner.
   await b.closeBrowser();
   assert.equal(b.getTab(tab.id)?.agentId, "a1");
   await b.ensureBrowser();
   assert.match(await b.settled(tab.id), /# Fixture/);
-  assert.ok(!b.listTabs().some((t) => t.url.includes("/devtools/")));
+  assert.ok(!b.listTabs().some((t) => t.url.startsWith("devtools:")));
 
   await b.closeTab(tab.id);
   assert.equal(b.getTab(tab.id), undefined);
