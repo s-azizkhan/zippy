@@ -44,6 +44,13 @@ after(async () => {
   for (const s of [main, other]) s.closeAllConnections(), s.close();
 });
 
+test("scrub: credential fields masked in JSON, query strings and form bodies; the rest kept", () => {
+  assert.equal(b.scrub('{"access_token": "abc.def", "user": "sam", "refresh_token":"x\\"y", "expires_in": 3600}'), '{"access_token": "[redacted]", "user": "sam", "refresh_token":"[redacted]", "expires_in": 3600}');
+  assert.equal(b.scrub("https://x.com/cb?code=123&state=ok&id_token=zz#f"), "https://x.com/cb?code=[redacted]&state=ok&id_token=[redacted]#f");
+  assert.equal(b.scrub("email=a%40b.com&password=hunter2&remember=1"), "email=a%40b.com&password=[redacted]&remember=1");
+  assert.equal(b.scrub('{"csrfToken":123,"name":"pass"}'), '{"csrfToken":"[redacted]","name":"pass"}');
+});
+
 test("grants: scoped to ticket, agent, tab; a read grant never covers writes", () => {
   b.grant("t1", "a1", "tab1", "read");
   assert.equal(b.granted("t1", "a1", "tab1", "read"), true);

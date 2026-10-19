@@ -728,7 +728,7 @@ export async function consoleLog(id: string, only: "all" | "errors" | "console" 
 
 const kb = (n?: number) => (n === undefined ? "" : n >= 1024 * 1024 ? ` ${(n / 1024 / 1024).toFixed(1)}MB` : n >= 1024 ? ` ${Math.round(n / 1024)}KB` : ` ${n}B`);
 const netLine = (e: NetEntry) =>
-  `#${e.id} ${time(e.t)} ${e.method} ${e.ws ? `ws ↑${e.ws.sent} ↓${e.ws.recv}` : e.error ? `FAILED (${e.error})` : (e.status ?? "…")} ${e.type}${e.ms !== undefined ? ` ${e.ms}ms` : ""}${kb(e.size)} ${e.url}`;
+  `#${e.id} ${time(e.t)} ${e.method} ${e.ws ? `ws ↑${e.ws.sent} ↓${e.ws.recv}` : e.error ? `FAILED (${e.error})` : (e.status ?? "…")} ${e.type}${e.ms !== undefined ? ` ${e.ms}ms` : ""}${kb(e.size)} ${scrub(e.url)}`;
 
 /** The tab's network log: every request (documents, scripts, CSS, images, fonts, fetch/XHR, WebSockets). */
 export async function network(id: string, f: { type?: string; match?: string; failed?: boolean; last: number }) {
@@ -738,8 +738,15 @@ export async function network(id: string, f: { type?: string; match?: string; fa
   return `${UNTRUSTED}\n\n${rows.map(netLine).join("\n") || "No matching requests since the tab opened."}${rows.length ? "\n\nDetails (headers, body): browser_request with the #id." : ""}`;
 }
 
-// Credentials never reach an agent's context, even from the user's own tabs.
+// Credentials never reach an agent's context, even from the user's own tabs: credential headers are dropped, and
+// credential-named fields are masked in URLs (query strings), form and JSON bodies, and WebSocket frames.
 const SECRET_HEADER = /cookie|authorization|token|secret|api-?key|csrf|xsrf|session/i;
+const SECRET_KEY = String.raw`[\w.-]*(?:pass(?:word|wd)?|token|secret|api[_-]?key|session|csrf|xsrf|otp|auth|code|credential|cookie|signature|sig)[\w.-]*`;
+const SCRUB = [
+  new RegExp(String.raw`("${SECRET_KEY}"\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\s\]]+)`, "gi"), // JSON  "access_token": "…"
+  new RegExp(String.raw`((?:^|[?&;\s])${SECRET_KEY}=)[^&;\s#"]*`, "gi"), // query / form  password=…
+];
+export const scrub = (s: string) => SCRUB.reduce((t, re, i) => t.replace(re, i ? "$1[redacted]" : '$1"[redacted]"'), s);
 const headers = (h: Record<string, string>) =>
   Object.entries(h)
     .map(([k, v]) => `  ${k}: ${SECRET_HEADER.test(k) ? "[redacted]" : v.slice(0, 300)}`)
@@ -750,16 +757,16 @@ export async function requestDetail(id: string, n: number) {
   await ensureBrowser();
   const e = liveTab(id).net.find((x) => x.id === n);
   if (!e) return `No request #${n} in this tab's log (it keeps the last 500).`;
-  if (e.ws) return `${UNTRUSTED}\n\n${netLine(e)}\nLast frames:\n${e.ws.last.join("\n") || "(none)"}`;
+  if (e.ws) return `${UNTRUSTED}\n\n${netLine(e)}\nLast frames:\n${e.ws.last.map(scrub).join("\n") || "(none)"}`;
   const out = [UNTRUSTED, "", netLine(e), "Request headers:", headers(await e.req.allHeaders().catch(() => e.req.headers()))];
   const post = e.req.postData();
-  if (post) out.push("Request body:", post.slice(0, 5000));
+  if (post) out.push("Request body:", scrub(post.slice(0, 5000)));
   if (e.res) {
     out.push("Response headers:", headers(await e.res.allHeaders().catch(() => e.res!.headers())));
     const body = await e.res.body().catch(() => null);
     const type = e.res.headers()["content-type"] ?? "";
     if (!body) out.push("Response body: (not available: the page moved on, or it was a redirect)");
-    else if (/text|json|javascript|xml|css|html|svg/.test(type)) out.push(`Response body (${body.length} bytes):`, body.toString("utf8").slice(0, 20_000));
+    else if (/text|json|javascript|xml|css|html|svg/.test(type)) out.push(`Response body (${body.length} bytes):`, scrub(body.toString("utf8").slice(0, 20_000)));
     else out.push(`Response body: ${body.length} bytes of ${type || "binary"}`);
   }
   return out.join("\n");
