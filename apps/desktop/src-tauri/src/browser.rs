@@ -21,8 +21,10 @@ const TAB: &str = "tab-";
 const STORE: [u8; 16] = *b"zippy-browser-01";
 // WKWebView's default UA has no "Safari/…" token, and Google/Slack treat it as an unsupported browser.
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
-// WKWebView has no Web Notifications: fake a granted one and queue them; `drain_notes` shows them natively.
-const NOTIFY_SHIM: &str = r#"(() => {
+// Runs first in every page of a tab.
+// 1. WKWebView has no Web Notifications: fake a granted one and queue them; `drain_notes` shows them natively.
+// 2. Records console output, uncaught errors and requests in window.__zippyLog (last 300) for the browser_console tool.
+const PAGE_SHIM: &str = r#"(() => {
   const q = (window.__zippyNotes = []);
   class Notification extends EventTarget {
     static permission = "granted";
@@ -36,6 +38,39 @@ const NOTIFY_SHIM: &str = r#"(() => {
     close() {}
   }
   window.Notification = Notification;
+
+  const log = (window.__zippyLog = []);
+  const push = (e) => { e.t = Date.now(); log.push(e); if (log.length > 300) log.splice(0, log.length - 300); };
+  const str = (a) => { try { return typeof a === "string" ? a : a instanceof Error ? a.stack || String(a) : JSON.stringify(a); } catch (x) { return String(a); } };
+  const cut = (u) => String(u).slice(0, 300);
+  for (const level of ["error", "warn", "info", "log"]) {
+    const orig = console[level];
+    console[level] = function (...args) { push({ k: "console", level, msg: args.map(str).join(" ").slice(0, 1000) }); return orig.apply(this, args); };
+  }
+  addEventListener("error", (e) => {
+    const t = e.target;
+    if (t && t !== window && (t.src || t.href)) push({ k: "net", method: "GET", url: cut(t.src || t.href), status: 0, error: "failed to load " + t.tagName.toLowerCase() });
+    else if (t === window) push({ k: "console", level: "error", msg: String(e.message || "error") + (e.filename ? " @ " + e.filename + ":" + e.lineno : "") });
+  }, true);
+  addEventListener("unhandledrejection", (e) => {
+    const msg = str(e.reason);
+    // Tauri's notification plugin script runs in every webview and its IPC call is (rightly) refused in tabs: not the page's error.
+    if (!/^notification\.\w+ not allowed/.test(msg)) push({ k: "console", level: "error", msg: "Unhandled rejection: " + msg.slice(0, 1000) });
+  });
+  const f = window.fetch;
+  window.fetch = function (input, init) {
+    const t0 = Date.now(), method = String((init && init.method) || (input && input.method) || "GET").toUpperCase(), url = cut((input && input.url) || input);
+    return f.apply(this, arguments).then(
+      (r) => (push({ k: "net", method, url, status: r.status, ms: Date.now() - t0 }), r),
+      (err) => { push({ k: "net", method, url, status: 0, ms: Date.now() - t0, error: String(err) }); throw err; });
+  };
+  const open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (m, u) { this.__z = { method: String(m).toUpperCase(), url: cut(u) }; return open.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function () {
+    const z = this.__z, t0 = Date.now();
+    if (z) this.addEventListener("loadend", () => push({ k: "net", method: z.method, url: z.url, status: this.status, ms: Date.now() - t0 }));
+    return send.apply(this, arguments);
+  };
 })();"#;
 
 #[derive(Default)]
@@ -88,7 +123,7 @@ fn open_tab(app: &AppHandle, st: &Shared, tab: &str, url: Url) -> Result<(), Str
     let builder = WebviewBuilder::new(format!("{TAB}{tab}"), WebviewUrl::External(url))
         .data_store_identifier(STORE)
         .user_agent(UA)
-        .initialization_script(NOTIFY_SHIM)
+        .initialization_script(PAGE_SHIM)
         // Hidden tabs keep their sockets and timers, so Slack/Gmail still notify.
         .background_throttling(BackgroundThrottlingPolicy::Disabled)
         .on_navigation(|url| match url.scheme() {
@@ -197,7 +232,7 @@ struct Note {
     body: String,
 }
 
-/// Shows notifications the tabs queued through NOTIFY_SHIM.
+/// Shows notifications the tabs queued through PAGE_SHIM.
 pub async fn drain_notes(app: AppHandle) {
     loop {
         sleep(Duration::from_secs(2)).await;
