@@ -429,7 +429,7 @@ function buildServer(ticketId: string, agentId: string, canWrite: boolean, inPla
   server.registerTool(
     "browser_press",
     {
-      description: 'Press a key, optionally on an element by ref (default: the focused one). Examples: "Enter", "Escape", "Tab", "PageDown", "Meta+Enter". Returns the new snapshot. Read-only agents and other people\'s tabs: the user approves first.',
+      description: 'Press a key, optionally on an element by ref (default: the focused one). Examples: "Enter", "Escape", "Tab", "Meta+Enter". To scroll, use browser_scroll. Returns the new snapshot. Read-only agents and other people\'s tabs: the user approves first.',
       inputSchema: { tab: tabArg, key: z.string().max(40), ref: z.string().optional() },
     },
     async ({ tab, key, ref }) => browserGate(tab, `Press ${key}`, true, () => act(tab, { press: key, ref })),

@@ -17,7 +17,7 @@ import { termLine } from "./mcp.ts";
 import { DOMAIN, domainActive } from "./domain.ts";
 import { claudePath, foldersOf } from "./runner.ts";
 import { allTerminals, listTerminals, userEnv } from "./term.ts";
-import { act, closeTab, connected, DESKTOP_ONLY, evalScript, getTab, listTabs, openTab, readText, settled, snapshot } from "./browser.ts";
+import { act, closeTab, connected, consoleLog, DESKTOP_ONLY, evalScript, getTab, listTabs, openTab, readText, scroll, settled, snapshot } from "./browser.ts";
 
 // Zippy Hub: the human's whole Zippy (tickets, agents, terminals, knowledge) as one MCP server, registered in Claude Code at user scope
 // so any Claude session outside Zippy can drive it. Unlike /mcp (one agent on one ticket), this acts as the human, like the web UI does.
@@ -82,12 +82,14 @@ export const HUB_TOOLS: Record<string, ToolInfo> = {
   list_ports: T("System", "read", "Listening ports and their processes", "TCP ports listening on this machine with pid and command. Use to find what occupies a port or whether a dev server is up."),
   browser_tabs: T("Browser", "read", "List tabs in the Zippy browser", "List the browser tabs open in the Zippy desktop app: id, whose tab (the user's or an agent's), title, URL. Tabs share the user's signed-in session (Gmail, Slack, dashboards…). Use when the user refers to a page open in Zippy."),
   browser_open: T("Browser", "write", "Open a page in a new tab", "Open a URL in a new tab of the Zippy browser and get its snapshot. Tabs share the user's signed-in session, so you see sites as the user does, and the user watches it on the Browser page. Use for pages behind the user's logins; for public pages your own fetch tools are fine."),
-  browser_snapshot: T("Browser", "read", "Headings and clickable elements of a tab", "List a tab's headings and interactive elements, each with a ref like [e12] for browser_click / browser_type. Refs change with every snapshot."),
-  browser_read: T("Browser", "read", "Read a tab's text", "Read the visible text of a tab, or of one element by ref (e.g. an email body). Long pages come in chunks: pass offset to continue."),
+  browser_snapshot: T("Browser", "read", "Headings and clickable elements of a tab", "List a tab's headings and interactive elements, each with a ref like [e12] for browser_click / browser_type. Includes open shadow DOM and same-origin iframes; past 300 elements, the ones on screen win (scroll, then snapshot again). Refs change with every snapshot."),
+  browser_read: T("Browser", "read", "Read a tab's text", "Read the visible text of a tab (plus its shadow DOM and same-origin iframes), or of one element by ref (e.g. an email body). Long pages come in chunks: pass offset to continue."),
+  browser_scroll: T("Browser", "read", "Scroll a tab", "Scroll a tab: the scroller holding ref, else the page, else its biggest inner panel (Gmail, Slack). times>1 repeats; scrolling down at the end waits for infinite lists to load more. Returns where it ended and a fresh snapshot."),
+  browser_console: T("Browser", "read", "A tab's console and network log", "A tab's console messages, uncaught errors and network requests (fetch/XHR, failed loads) since the page loaded, newest last. only: errors = console errors + failed or 4xx/5xx requests."),
   browser_navigate: T("Browser", "write", "Load a URL, back, forward, reload", "Load a URL in a tab, or go back / forward / reload. Returns the new snapshot."),
   browser_click: T("Browser", "write", "Click in a tab", "Click an element by ref from the latest snapshot. Returns the new snapshot. Acts as the user in their signed-in accounts: only do what the user asked."),
   browser_type: T("Browser", "write", "Type into a tab", "Type into a text field or editor by ref (replaces its text unless clear=false; for a <select>, pass the option's text). submit=true presses Enter after. Returns the new snapshot. Acts as the user: only send what the user asked."),
-  browser_press: T("Browser", "write", "Press a key in a tab", 'Press a key, optionally on an element by ref (default: the focused one). Examples: "Enter", "Escape", "Tab", "PageDown", "Meta+Enter". Returns the new snapshot.'),
+  browser_press: T("Browser", "write", "Press a key in a tab", 'Press a key, optionally on an element by ref (default: the focused one). Examples: "Enter", "Escape", "Tab", "Meta+Enter". To scroll, use browser_scroll. Returns the new snapshot.'),
   browser_eval: T("Browser", "danger", "Run JavaScript in a tab", "Run JavaScript in a tab as a function body (use return; await works). Returns the JSON result. Runs inside the user's signed-in session; only for what the other browser tools can't do."),
   browser_close: T("Browser", "write", "Close a tab", "Close a browser tab. Close tabs you opened when done; close the user's or an agent's tab only when the user asks."),
   kill_port: T("System", "danger", "Kill whatever listens on a port", "Kill the process listening on a port (SIGTERM, force for SIGKILL). Only when the user asked to free that port."),
@@ -708,6 +710,16 @@ function buildServer(app: Hono) {
     "browser_read",
     { inputSchema: { tab: tabArg, ref: z.string().optional(), offset: z.number().int().min(0).default(0), max: z.number().int().min(200).max(30_000).default(8000) } },
     async ({ tab, ref, offset, max }) => inTab(tab, () => readText(tab, ref, offset, max)),
+  );
+  tool(
+    "browser_scroll",
+    { inputSchema: { tab: tabArg, to: z.enum(["down", "up", "top", "bottom"]).default("down"), ref: z.string().optional(), times: z.number().int().min(1).max(20).default(1) } },
+    async ({ tab, to, ref, times }) => inTab(tab, () => scroll(tab, ref, to, times)),
+  );
+  tool(
+    "browser_console",
+    { inputSchema: { tab: tabArg, only: z.enum(["all", "errors", "console", "net"]).default("all"), last: z.number().int().min(1).max(300).default(50), clear: z.boolean().default(false) } },
+    async ({ tab, only, last, clear }) => inTab(tab, () => consoleLog(tab, only, last, clear)),
   );
   tool("browser_navigate", { inputSchema: { tab: tabArg, to: z.union([httpUrl, z.enum(["back", "forward", "reload"])]) } }, async ({ tab, to }) => inTab(tab, () => act(tab, { go: to })));
   tool("browser_click", { inputSchema: { tab: tabArg, ref: z.string() } }, async ({ tab, ref }) => inTab(tab, () => act(tab, { click: ref })));
