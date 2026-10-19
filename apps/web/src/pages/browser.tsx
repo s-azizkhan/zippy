@@ -2,13 +2,21 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Bot, Globe, Loader2, Plus, RotateCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api, useAgents, useChats } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { cn } from "@/lib/utils";
 
 type Tab = { id: string; url: string; title: string; loading: boolean; ticketId: string | null; agentId: string | null };
-type State = { state: "off" | "starting" | "downloading" | "ready" | "error"; message: string; active: string | null; tabs: Tab[]; dialog: { type: string; message: string; default: string } | null };
+type State = {
+  state: "off" | "starting" | "downloading" | "ready" | "error";
+  message: string;
+  active: string | null;
+  tabs: Tab[];
+  dialog: { type: string; message: string; default: string } | null;
+  downloads: { id: string; tab: string; name: string; url: string }[];
+};
 type Mod = "Alt" | "Control" | "Meta" | "Shift";
 type Input =
   | { t: "move" | "down" | "up"; x: number; y: number; button?: "left" | "middle" | "right"; clicks?: number; mods?: Mod[] }
@@ -138,6 +146,21 @@ export function BrowserPage() {
           . Clicking around here can confuse it.
         </p>
       )}
+
+      {/* Pages can't save files on their own: each download waits here for a yes. */}
+      {data?.downloads.map((d) => (
+        <div key={d.id} className="flex items-center gap-2 border-b bg-amber-500/10 px-3 py-1.5 text-[12px]">
+          <span className="min-w-0 flex-1 truncate" title={d.url}>
+            {tabs.find((t) => t.id === d.tab)?.title || "A page"} wants to download <span className="font-medium">{d.name}</span>
+          </span>
+          <Button size="sm" variant="outline" className="h-6 text-[12px]" onClick={() => void api.post(`/browser/downloads/${d.id}`, { save: false }, true).finally(refresh)}>
+            Discard
+          </Button>
+          <Button size="sm" className="h-6 text-[12px]" onClick={() => void api.post<{ path: string }>(`/browser/downloads/${d.id}`, { save: true }, true).then((r) => toast.success(`Saved to ${r.path}`)).finally(refresh)}>
+            Save to Downloads
+          </Button>
+        </div>
+      ))}
 
       <div className="relative min-h-0 flex-1">
         {active && ready ? (

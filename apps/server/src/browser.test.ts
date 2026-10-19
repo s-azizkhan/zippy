@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,12 +8,15 @@ import { after, before, test } from "node:test";
 
 // Real Chromium against a local fixture: inner scroller with an infinite list, open shadow DOM, a cross-origin
 // iframe (second port), a dialog, console errors, a 404 and a cookie. Skips when no Chromium-family browser is installed.
-process.env.ZIPPY_CONFIG = join(mkdtempSync(join(tmpdir(), "zippy-browser-")), "config.json");
+const tmp = mkdtempSync(join(tmpdir(), "zippy-browser-"));
+process.env.ZIPPY_CONFIG = join(tmp, "config.json");
+process.env.ZIPPY_DOWNLOADS = join(tmp, "downloads");
 const b = await import("./browser.ts");
 
 const page = (frame: string) => `<!doctype html><title>Fixture</title>
 <style>html,body{height:100%;margin:0;overflow:hidden} #list{height:300px;overflow:auto}</style>
 <h1>Fixture</h1><div id="list" aria-label="Messages"></div><x-card></x-card>
+<a href="/report.txt" download>Get report</a>
 <button id="ask" onclick="document.title = confirm('Sure?') ? 'yes' : 'no'">Ask</button>
 <iframe src="${frame}/frame" width="300" height="120"></iframe>
 <script>
@@ -33,6 +37,7 @@ before(async () => {
   other = createServer((_, res) => res.end(frame)).listen(0, "127.0.0.1");
   main = createServer((req, res) => {
     if (req.url === "/") return res.setHeader("set-cookie", "sid=abc; Path=/"), res.end(page(`http://127.0.0.1:${port(other)}`));
+    if (req.url === "/report.txt") return res.setHeader("content-disposition", "attachment; filename=report.txt"), res.end("data");
     res.statusCode = 404;
     res.end("nope");
   }).listen(0, "127.0.0.1");
@@ -99,6 +104,18 @@ test("tabs: snapshot, shadow DOM, cross-origin iframe, scroll, network, dialog, 
 
   const jpeg = Buffer.from(await b.screenshot(tab.id, false), "base64");
   assert.equal(jpeg.subarray(0, 2).toString("hex"), "ffd8");
+
+  // Downloads wait for the user; saving never overwrites.
+  for (let i = 0; i < 2; i++) {
+    snap = await b.snapshot(tab.id);
+    await b.act(tab.id, { click: ref("Get report") });
+    for (let w = 0; w < 20 && b.browserState().downloads.length < 1; w++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(existsSync(join(tmp, "downloads")) && readdirSync(join(tmp, "downloads")).length, i ? 1 : false); // nothing written yet
+    assert.match(await b.snapshot(tab.id), /Downloads waiting for the user.*report\.txt/);
+    await b.decideDownload(b.browserState().downloads[0]!.id, true);
+  }
+  assert.deepEqual(readdirSync(join(tmp, "downloads")).sort(), ["report (1).txt", "report.txt"]);
+  if (process.platform === "darwin") assert.match(execFileSync("xattr", ["-p", "com.apple.quarantine", join(tmp, "downloads", "report.txt")], { encoding: "utf8" }), /;Zippy;/);
 
   // Viewer input: ⌘A arrives as one key event carrying its modifiers (no separate Meta keydown), then Backspace.
   await b.evalScript(tab.id, "const i = document.createElement('input'); i.id = 'q'; i.value = 'hello'; document.body.append(i); i.focus();");

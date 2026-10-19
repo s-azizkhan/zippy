@@ -61,7 +61,7 @@ import { listNews, refreshNews, refreshedAt, setSaved } from "./news.ts";
 import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
-import { answerDialog, browserState, closeTab, ensureBrowser, go, input, openTab, refreshTitles, selection, setView, watch } from "./browser.ts";
+import { answerDialog, browserState, closeTab, decideDownload, ensureBrowser, go, input, openTab, refreshTitles, selection, setView, watch } from "./browser.ts";
 import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudeBin, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
@@ -207,6 +207,10 @@ app.post("/browser/tabs/:id/input", async (c) => {
   return c.body(null, 204);
 });
 app.post("/browser/tabs/:id/copy", async (c) => c.json({ text: await selection(c.req.param("id")) }));
+app.post("/browser/downloads/:id", async (c) => {
+  const { save } = await body(c, z.object({ save: z.boolean() }));
+  return c.json({ path: (await decideDownload(c.req.param("id"), save)) ?? null });
+});
 app.post("/browser/tabs/:id/dialog", async (c) => {
   const { accept, text } = await body(c, z.object({ accept: z.boolean(), text: z.string().max(10_000).optional() }));
   return c.json({ message: await answerDialog(c.req.param("id"), accept, text) });

@@ -2,10 +2,10 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
-import { chromium, type BrowserContext, type CDPSession, type Dialog, type Frame, type Page, type Request, type Response } from "playwright-core";
+import { chromium, type BrowserContext, type CDPSession, type Dialog, type Download, type Frame, type Page, type Request, type Response } from "playwright-core";
 import { desktopNote } from "./notify.ts";
 
 // The browser: a Chromium the server runs headless with one persistent profile (sign-ins survive restarts),
@@ -24,6 +24,9 @@ export type Tab = {
 type LogEntry = { t: number; level: string; msg: string };
 type NetEntry = { id: number; t: number; method: string; url: string; type: string; status?: number; ms?: number; size?: number; error?: string; req: Request; res?: Response; ws?: { sent: number; recv: number; last: string[] } };
 type Live = { tab: Tab; page: Page; log: LogEntry[]; net: NetEntry[]; netSeq: number; dialog: Dialog | null; frames: Frame[]; nav?: Promise<unknown> };
+// A download a page started, held until the user saves or discards it on the Browser page. Agents can't approve them.
+type Pending = { id: string; tab: string; name: string; url: string; d: Download };
+const downloads = new Map<string, Pending>();
 
 const MAX_TABS = 20; // ponytail: each tab is a renderer process (~100–300 MB); raise if people need more
 const DATA = process.env.ZIPPY_CONFIG ? dirname(process.env.ZIPPY_CONFIG) : join(homedir(), ".zippy");
@@ -73,7 +76,13 @@ let starting: Promise<BrowserContext> | null = null;
 let closing = false; // the whole browser is going away (quit, crash): its pages' close events must not forget the tabs
 const view = { active: null as string | null, w: 1280, h: 800, dpr: 1 };
 
-export const browserState = () => ({ ...status, active: view.active, tabs: listTabs(), dialog: dialogOf(view.active) });
+export const browserState = () => ({
+  ...status,
+  active: view.active,
+  tabs: listTabs(),
+  dialog: dialogOf(view.active),
+  downloads: [...downloads.values()].map(({ id, tab, name, url }) => ({ id, tab, name, url: url.slice(0, 300) })),
+});
 
 /** First Chromium-family browser on this machine, else a Chrome for Testing we downloaded before. */
 function findChrome(): string | null {
@@ -189,6 +198,7 @@ export function ensureBrowser(): Promise<BrowserContext> {
     c.on("close", () => {
       closing = true;
       saved.splice(0, saved.length, ...[...live.values()].map((x) => x.tab));
+      downloads.clear(); // their temp files go with the browser
       ctx = null;
       starting = null;
       live.clear();
@@ -313,11 +323,13 @@ async function register(page: Page): Promise<Live> {
     broadcast({ type: "state" });
   });
   page.on("download", (d) => {
-    const to = join(homedir(), "Downloads", d.suggestedFilename());
-    d.saveAs(to).then(
-      () => (push(l.log, { t: Date.now(), level: "info", msg: `Downloaded ${to}` }, 300), desktopNote("Downloaded", d.suggestedFilename())),
-      (e: Error) => push(l.log, { t: Date.now(), level: "error", msg: `Download failed: ${e.message}` }, 300),
-    );
+    // Never written anywhere until the user says so: a page (or an agent's) can't drop files on the machine by itself.
+    if (downloads.size >= 10) return void d.cancel().catch(() => {});
+    const id = randomUUID().slice(0, 8);
+    downloads.set(id, { id, tab: l.tab.id, name: basename(d.suggestedFilename()).replace(/^\.+/, "") || "download", url: d.url(), d });
+    push(l.log, { t: Date.now(), level: "info", msg: `Download waiting for the user: ${d.suggestedFilename()}` }, 300);
+    desktopNote("Download waiting", `${d.suggestedFilename()}: save or discard it on the Browser page`);
+    broadcast({ type: "state" });
   });
   // Pages think they have focus (carets blink, apps accept input) though the window is headless.
   const cdp = await page.context().newCDPSession(page);
@@ -388,6 +400,23 @@ export async function go(id: string, to: string) {
   const opts = { waitUntil: "domcontentloaded" as const, timeout: 30_000 };
   if (/^https?:\/\//i.test(to)) await page.goto(to, opts);
   else await (to === "back" ? page.goBack(opts) : to === "forward" ? page.goForward(opts) : page.reload(opts));
+}
+
+/** Saves a held download to ~/Downloads under a free name (never overwrites), quarantined on macOS; or discards it. */
+export async function decideDownload(id: string, save: boolean) {
+  const p = downloads.get(id);
+  if (!p) throw new Error("No such download.");
+  downloads.delete(id);
+  broadcast({ type: "state" });
+  if (!save) return void (await p.d.cancel().catch(() => {}), await p.d.delete().catch(() => {}));
+  const dir = process.env.ZIPPY_DOWNLOADS ?? join(homedir(), "Downloads");
+  mkdirSync(dir, { recursive: true });
+  let to = join(dir, p.name);
+  for (let i = 1; existsSync(to); i++) to = join(dir, p.name.replace(/(\.[^.]*)?$/, ` (${i})$1`));
+  await p.d.saveAs(to);
+  if (process.platform === "darwin")
+    await promisify(execFile)("xattr", ["-w", "com.apple.quarantine", `0081;${Math.floor(Date.now() / 1000).toString(16)};Zippy;`, to]).catch(() => {});
+  return to;
 }
 
 export async function answerDialog(id: string, accept: boolean, text?: string) {
@@ -612,7 +641,8 @@ export async function snapshot(id: string) {
     more += s.more;
   }
   l.tab.title = await l.page.title().catch(() => l.tab.title);
-  return `Tab ${id}: ${l.tab.title}\nURL: ${l.page.url()}\n${UNTRUSTED}\n\n${parts.join("\n") || "(no interactive elements yet; the page may still be loading)"}${more ? `\n… ${more} more elements not shown (scroll, then snapshot again; or use browser_read).` : ""}`;
+  const held = [...downloads.values()].filter((p) => p.tab === id).map((p) => p.name);
+  return `Tab ${id}: ${l.tab.title}\nURL: ${l.page.url()}\n${held.length ? `Downloads waiting for the user to save or discard (you can't): ${held.join(", ")}\n` : ""}${UNTRUSTED}\n\n${parts.join("\n") || "(no interactive elements yet; the page may still be loading)"}${more ? `\n… ${more} more elements not shown (scroll, then snapshot again; or use browser_read).` : ""}`;
 }
 
 export async function readText(id: string, ref: string | undefined, offset: number, max: number) {
