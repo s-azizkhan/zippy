@@ -3,7 +3,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronUp, Columns2, Eraser, FilePlus2, Folder, FolderOpen, GripVertical, Keyboard, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, SquareX, Trash2, X } from "lucide-react";
+import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronUp, Columns2, Eraser, FilePlus2, Folder, FolderOpen, GitBranch, GripVertical, History, Keyboard, ListChecks, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RotateCw, Search, ShieldOff, SquareX, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig, Reorder, useDragControls } from "motion/react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { api, keys, useApiMutation, useTerminalTemplates, useWorkspaces, type TermInfo } from "@/lib/api";
+import { api, keys, useApiMutation, useTerminalTemplates, useWorkspaces, type ClaudeSession, type TermInfo } from "@/lib/api";
 import { useOrg } from "@/lib/org";
 import { useUI } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -49,17 +49,17 @@ const THEME = {
 /** Selection, or the last `lines` non-empty rows when nothing is selected. */
 export type TermTextRef = { current: Record<string, (lines: number) => string> };
 
-function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textRef }: { id: string; focused: boolean; fontSize: number; findReq: number; onFocus: () => void; onRestart: () => void; textRef: TermTextRef }) {
+function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, onFiles, textRef, roomy }: { id: string; focused: boolean; fontSize: number; findReq: number; onFocus: () => void; onRestart: () => void; onFiles: (files: File[]) => void; textRef: TermTextRef; roomy?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<{ t: XTerm; fit: FitAddon; search: SearchAddon } | null>(null);
-  const cb = useRef({ onFocus, onRestart });
-  cb.current = { onFocus, onRestart };
+  const cb = useRef({ onFocus, onRestart, onFiles });
+  cb.current = { onFocus, onRestart, onFiles };
   const [find, setFind] = useState<string | null>(null);
   const findInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = host.current!;
-    const t = new XTerm({ cursorBlink: true, fontSize, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", scrollback: 10_000, allowProposedApi: true, theme: THEME });
+    const t = new XTerm({ cursorBlink: true, fontSize, lineHeight: 1.15, fontFamily: '"SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace', scrollback: 10_000, allowProposedApi: true, theme: THEME });
     const fit = new FitAddon();
     const search = new SearchAddon();
     t.loadAddon(fit);
@@ -77,6 +77,15 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textR
       return rows.join("\n").trim();
     };
     t.textarea?.addEventListener("focus", () => cb.current.onFocus());
+    // ⌘V of a screenshot: xterm only pastes text, so upload the image and type its path (Claude attaches image paths as images).
+    const paste = (e: ClipboardEvent) => {
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (!files.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cb.current.onFiles(files);
+    };
+    el.addEventListener("paste", paste, true);
     // ⌘F belongs to the focused pane's find bar, not the browser.
     t.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && e.key === "f") return (e.preventDefault(), setFind((f) => f ?? ""), false);
@@ -125,6 +134,7 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textR
     });
 
     return () => {
+      el.removeEventListener("paste", paste, true);
       delete getters[id];
       es.close();
       ro.disconnect();
@@ -159,7 +169,7 @@ function PtyTerminal({ id, focused, fontSize, findReq, onFocus, onRestart, textR
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={host} className="h-full w-full overflow-hidden px-2 pt-1 pb-1 max-md:px-1" />
+      <div ref={host} className={cn("h-full w-full overflow-hidden max-md:px-1", roomy ? "px-3.5 pt-2.5 pb-1.5" : "px-2 pt-1 pb-1")} />
       {find !== null && (
         <div className="bg-popover/95 border-foreground/10 absolute top-2 right-3 z-10 flex items-center gap-1 rounded-lg border p-1 shadow-lg backdrop-blur">
           <Search className="text-muted-foreground ml-1 size-3.5" aria-hidden />
@@ -211,21 +221,95 @@ function TagChips({ t, onRemove, className }: { t: TermInfo; onRemove?: (tag: st
   );
 }
 
-/** Live state at a glance: equalizer = output right now, breathing blue = new output you haven't looked at, red = crashed. */
+/** Live state at a glance: equalizer = output right now, amber = Claude waits on you, breathing blue = new output you haven't looked at, red = crashed. */
 function StatusDot({ t, unread, now }: { t: TermInfo; unread: boolean; now: number }) {
-  const busy = t.alive && now - t.lastDataAt < 2000;
-  const label = !t.alive ? `exited ${t.exitCode}` : busy ? "output now" : unread ? "new output" : "idle";
+  const waiting = t.claude?.state === "waiting";
+  const busy = t.alive && !waiting && now - t.lastDataAt < 2000;
+  const label = !t.alive ? `exited ${t.exitCode}` : waiting ? "Claude needs you" : busy ? "output now" : unread ? "new output" : "idle";
   return (
     <span className="relative flex size-2.5 shrink-0 items-center justify-center" title={label} aria-label={label} role="img">
       {busy ? (
         <Eq />
       ) : (
         <span
-          className={cn("size-2 rounded-full transition-colors", !t.alive ? (t.exitCode ? "bg-red-500 shadow-[0_0_8px_rgb(239_68_68/0.7)]" : "bg-muted-foreground/40") : unread ? "unread-dot bg-primary" : "bg-emerald-500/80")}
-          style={unread ? ({ "--c": "var(--primary)" } as React.CSSProperties) : undefined}
+          className={cn("size-2 rounded-full transition-colors", !t.alive ? (t.exitCode ? "bg-red-500 shadow-[0_0_8px_rgb(239_68_68/0.7)]" : "bg-muted-foreground/40") : waiting ? "unread-dot bg-amber-500" : unread ? "unread-dot bg-primary" : "bg-emerald-500/80")}
+          style={waiting || unread ? ({ "--c": waiting ? "#f59e0b" : "var(--primary)" } as React.CSSProperties) : undefined}
         />
       )}
     </span>
+  );
+}
+
+const isClaude = (t: TermInfo) => t.alive && (!!t.claude || t.process === "claude");
+const CLAUDE_STATES = {
+  ready: { label: "Ready", cls: "bg-[#d97757]/12 text-[#d97757]" },
+  working: { label: "Working", cls: "bg-[#d97757]/15 text-[#d97757]" },
+  waiting: { label: "Needs you", cls: "bg-amber-500/15 text-amber-500" },
+  done: { label: "Done", cls: "bg-emerald-500/12 text-emerald-500" },
+} as const;
+const MODES: Record<string, string> = { plan: "plan", bypassPermissions: "skip perms", acceptEdits: "auto-edit", auto: "auto" };
+
+/** ✻ + where the Claude session is: Working / Needs you / Done / Ready. A `claude` typed by hand (no hooks) just reads "Claude". */
+function ClaudeBadge({ t, className }: { t: TermInfo; className?: string }) {
+  const s = t.claude ? CLAUDE_STATES[t.claude.state] : { label: "Claude", cls: CLAUDE_STATES.ready.cls };
+  const working = t.claude?.state === "working";
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1 rounded px-1 font-medium", s.cls, className)} title={t.claude?.note || undefined}>
+      <span aria-hidden className={cn(working && "claude-spin inline-block")}>✻</span>
+      <span className={cn(working && "claude-shimmer")}>{s.label}</span>
+    </span>
+  );
+}
+
+type ClaudeOpen = (workspaceId: string, command: string, title?: string) => void;
+const LAUNCH: { label: string; hint: string; cmd: string; icon: typeof X; danger?: boolean }[] = [
+  { label: "Continue last", hint: "claude -c", cmd: "claude -c", icon: History },
+  { label: "Plan mode", hint: "Read-only until you approve a plan", cmd: "claude --permission-mode plan", icon: ListChecks },
+  { label: "Skip permissions", hint: "Runs every tool without asking", cmd: "claude --dangerously-skip-permissions", icon: ShieldOff, danger: true },
+];
+
+/** Claude launcher for one folder: new session, continue, plan mode, skip permissions, and recent conversations to resume. */
+function ClaudeMenu({ workspaceId, sessions, terms, onOpen, onShow, children, align = "start" }: { workspaceId: string; sessions: ClaudeSession[]; terms: TermInfo[]; onOpen: ClaudeOpen; onShow: (tid: string) => void; children: React.ReactNode; align?: "start" | "end" }) {
+  const [open, setOpen] = useState(false);
+  const mine = sessions.filter((s) => s.workspaceId === workspaceId).slice(0, 8);
+  const go = (f: () => void) => (setOpen(false), f());
+  const item = "hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-xs outline-none";
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent align={align} className="w-80 p-1.5">
+        <button autoFocus className={cn(item, "py-2")} onClick={() => go(() => onOpen(workspaceId, "claude"))}>
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[#d97757] text-sm text-white shadow-[0_0_14px_-3px_#d97757]" aria-hidden>✻</span>
+          <span className="flex-1 font-medium">New session</span>
+          <Kbd className="font-mono text-[10px]">{M}⇧L</Kbd>
+        </button>
+        {LAUNCH.map((l) => (
+          <button key={l.cmd} className={item} onClick={() => go(() => onOpen(workspaceId, l.cmd))}>
+            <span className="flex size-6 shrink-0 items-center justify-center" aria-hidden><l.icon className={cn("size-3.5", l.danger ? "text-amber-500" : "text-muted-foreground")} /></span>
+            <span className="grid min-w-0 flex-1">
+              <span>{l.label}</span>
+              <span className="text-muted-foreground truncate text-[10.5px]">{l.hint}</span>
+            </span>
+          </button>
+        ))}
+        {mine.length > 0 && (
+          <>
+            <p className="text-muted-foreground mt-1.5 border-t px-2 pt-2.5 pb-1 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">Resume</p>
+            <div className="max-h-64 overflow-y-auto">
+              {mine.map((s) => {
+                const live = terms.find((t) => t.alive && t.claude?.sessionId === s.id);
+                return (
+                  <button key={s.id} className={item} title={s.title} onClick={() => go(() => (live ? onShow(live.id) : onOpen(workspaceId, `claude --resume ${s.id}`, s.title)))}>
+                    <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                    {live ? <span className="shrink-0 text-[10px] text-emerald-500">open</span> : <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">{ago(Date.now() - s.updatedAt)}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -268,7 +352,8 @@ const SHORTCUTS: [string, string][] = [
   [`${M}⌥←  ${M}⌥→`, "Move between panes"],
   [`${M}⇧↵`, "Zoom pane"],
   [`${M}F`, "Find in terminal"],
-  [`${M}⇧L`, "New Claude terminal"],
+  [`${M}⇧L`, "New Claude session"],
+  ["⌘V / drop image", "Attach a screenshot or file to Claude"],
   [`${M}E`, "Files panel for this folder (tree, viewer, git)"],
   [`${M}⇧E`, "Hide / show terminals (files only)"],
   [`${M}P`, "Go to file (files panel open)"],
@@ -391,7 +476,8 @@ export function TerminalsPage() {
   const { data: terms = [], isSuccess } = useQuery({ queryKey: key, queryFn: () => api.get<TermInfo[]>(`/orgs/${org.id}/terminals`), refetchInterval: 1500 });
   const { data: ports = [] } = useQuery({ queryKey: ["system", "ports"], queryFn: () => api.get<PortInfo[]>("/system/ports"), refetchInterval: 5000, enabled: terms.some((t) => t.alive) });
   const portsOf = (tid: string) => [...new Set(ports.filter((p) => p.terminalId === tid).map((p) => p.port))].sort((a, b) => a - b);
-  const spawn = useApiMutation((v: { workspaceId: string; command?: string }) => api.post<TermInfo>(`/workspaces/${v.workspaceId}/terminals`, { command: v.command }, true), [key]);
+  const { data: sessions = [] } = useQuery({ queryKey: keys.res(org.id, "claude-sessions"), queryFn: () => api.get<ClaudeSession[]>(`/orgs/${org.id}/claude-sessions`), staleTime: 15_000 });
+  const spawn = useApiMutation((v: { workspaceId: string; command?: string; title?: string }) => api.post<TermInfo>(`/workspaces/${v.workspaceId}/terminals`, { command: v.command, title: v.title }, true), [key, keys.res(org.id, "claude-sessions")]);
   const close = useApiMutation((termId: string) => api.del(`/terminals/${termId}`), [key]);
   const restartM = useApiMutation((termId: string) => api.post<TermInfo>(`/terminals/${termId}/restart`, {}, true), [key]);
   const rename = useApiMutation((v: { id: string; title?: string; tags?: string[] }) => api.patch(`/terminals/${v.id}`, v, true), [key]);
@@ -466,7 +552,8 @@ export function TerminalsPage() {
   }, [id, isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addTerms = (opened: TermInfo[]) => qc.setQueryData<TermInfo[]>(key, (ts = []) => [...ts, ...opened.filter((t) => !ts.some((x) => x.id === t.id))]);
-  const open = (workspaceId: string, split = false, command?: string) => spawn.mutateAsync({ workspaceId, command }).then((t) => (addTerms([t]), show(t.id, split)));
+  const open = (workspaceId: string, split = false, command?: string, title?: string) => spawn.mutateAsync({ workspaceId, command, title }).then((t) => (addTerms([t]), show(t.id, split)));
+  const openClaude: ClaudeOpen = (wid, command, title) => void open(wid, false, command, title?.slice(0, 60));
   const restart = (tid: string) => restartM.mutate(tid);
   const kill = (t: TermInfo) =>
     close.mutateAsync(t.id).then(() => {
@@ -489,6 +576,14 @@ export function TerminalsPage() {
     if (/[\x00-\x1f\x7f]/.test(path)) return void toast.error("Path contains control characters");
     void api.post(`/terminals/${t.id}/input`, { data: `${shellQuote(path.startsWith("-") ? `./${path}` : path)} ` }, true).catch((e: Error) => toast.error(e.message));
   };
+  /** Dropped or pasted files (screenshots, logs) live outside the folder: upload, then type their saved path. */
+  const pasteFiles = async (files: File[], tid: string) => {
+    for (const f of files) {
+      const res = await fetch(`/api/uploads?name=${encodeURIComponent(f.name || "pasted.png")}`, { method: "POST", body: f, headers: { "x-zippy": "1" } });
+      if (!res.ok) return void toast.error(`Could not attach ${f.name}`);
+      pastePath(((await res.json()) as { path: string }).path, tid);
+    }
+  };
 
   // Unread: output that arrived while a terminal was off screen. The first sighting is the baseline so a shell's startup prompt doesn't count.
   const seen = useRef<Record<string, number>>({});
@@ -496,13 +591,20 @@ export function TerminalsPage() {
   for (const t of terms) if (live.includes(t.id) || seen.current[t.id] === undefined) seen.current[t.id] = t.lastDataAt;
   const unread = (t: TermInfo) => !live.includes(t.id) && t.lastDataAt > seen.current[t.id]! + 500;
 
-  // A background shell that crashes gets a toast; the visible ones already show it inline.
+  // A background shell that crashes, or a background Claude that needs you / finishes, gets a toast; the visible ones already show it inline.
   const wasAlive = useRef<Record<string, boolean>>({});
+  const wasClaude = useRef<Record<string, string | undefined>>({});
   useEffect(() => {
     for (const t of terms) {
-      if (wasAlive.current[t.id] && !t.alive && t.exitCode && !live.includes(t.id))
-        toast.error(`${t.title} exited with code ${t.exitCode}`, { description: wsName(t.workspaceId), action: { label: "Show", onClick: () => show(t.id) } });
+      const action = { label: "Show", onClick: () => show(t.id) };
+      const cs = t.claude?.state;
+      if (wasAlive.current[t.id] && !t.alive && t.exitCode && !live.includes(t.id)) toast.error(`${t.title} exited with code ${t.exitCode}`, { description: wsName(t.workspaceId), action });
+      else if (t.id in wasClaude.current && cs !== wasClaude.current[t.id] && !live.includes(t.id)) {
+        if (cs === "waiting") toast.warning(`${t.title} needs you`, { description: t.claude!.note || wsName(t.workspaceId), action });
+        else if (cs === "done") toast.success(`${t.title} finished`, { description: wsName(t.workspaceId), action });
+      }
       wasAlive.current[t.id] = t.alive;
+      wasClaude.current[t.id] = cs;
     }
   }, [terms]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -622,16 +724,14 @@ export function TerminalsPage() {
                 <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-[10.5px] leading-4">
                   {!t.alive ? (
                     <span className={cn("shrink-0", t.exitCode && "text-red-500")}>exited {t.exitCode}</span>
-                  ) : proc === "claude" ? (
-                    <span className="flex shrink-0 items-center gap-1 rounded bg-[#d97757]/15 px-1 font-medium text-[#d97757]">
-                      <span aria-hidden>✻</span>Claude
-                    </span>
+                  ) : isClaude(t) ? (
+                    <ClaudeBadge t={t} />
                   ) : proc ? (
                     <span className="text-foreground/70 shrink-0 font-mono">{proc}</span>
                   ) : (
                     <span className="truncate font-mono">{t.command ? `$ ${t.command}` : "shell"}</span>
                   )}
-                  {t.lastDataAt > 0 && <span className="text-muted-foreground/60 shrink-0 tabular-nums">· {ago(now - t.lastDataAt)}</span>}
+                  {t.lastDataAt > 0 && <span className="text-muted-foreground/60 shrink-0 tabular-nums">· {ago(now - (t.claude?.since ?? t.lastDataAt))}</span>}
                 </span>
               </span>
             </button>
@@ -708,10 +808,10 @@ export function TerminalsPage() {
         {hidden ? (
           <div className="flex flex-col items-center gap-1 px-1 pb-4">
             {ordered.map((t, i) => (
-              <button key={t.id} title={t.title} aria-label={t.alive && t.process === "claude" ? `${t.title} (Claude)` : t.title} onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)} style={{ "--i": i } as React.CSSProperties} className={cn("rise relative flex size-9 items-center justify-center rounded-lg font-mono text-[10px] uppercase", t.id === id ? "text-foreground" : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground", t.id !== id && live.includes(t.id) && "bg-foreground/[0.04]")}>
+              <button key={t.id} title={t.title} aria-label={isClaude(t) ? `${t.title} (Claude${t.claude ? `, ${CLAUDE_STATES[t.claude.state].label}` : ""})` : t.title} onClick={(e) => show(t.id, e.metaKey || e.ctrlKey)} style={{ "--i": i } as React.CSSProperties} className={cn("rise relative flex size-9 items-center justify-center rounded-lg font-mono text-[10px] uppercase", t.id === id ? "text-foreground" : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground", t.id !== id && live.includes(t.id) && "bg-foreground/[0.04]")}>
                 {t.id === id && <motion.span layoutId="term-rail-active" transition={spring} className="bg-primary/15 ring-primary/30 absolute inset-0 rounded-lg ring-1" aria-hidden />}
-                {t.alive && t.process === "claude" ? (
-                  <span className="relative text-sm text-[#d97757]" aria-hidden>✻</span>
+                {isClaude(t) ? (
+                  <span className={cn("relative text-sm", t.claude?.state === "waiting" ? "text-amber-500" : "text-[#d97757]", t.claude?.state === "working" && "claude-spin")} aria-hidden>✻</span>
                 ) : (
                   <span className="relative">{t.title.replace(/[^a-z0-9]/gi, "").slice(0, 2) || "sh"}</span>
                 )}
@@ -799,9 +899,11 @@ export function TerminalsPage() {
                     <Button size="icon-xs" variant="ghost" aria-label={`New terminal in ${w.name}`} title={`New terminal in ${w.name} (${M}-click to split)`} onClick={(e) => open(w.id, e.metaKey || e.ctrlKey)} disabled={spawn.isPending} className="opacity-60 group-hover/s:opacity-100 hover:rotate-90">
                       <Plus aria-hidden />
                     </Button>
-                    <Button size="icon-xs" variant="ghost" aria-label={`New Claude terminal in ${w.name}`} title={`New Claude terminal in ${w.name} (${M}⇧L)`} onClick={(e) => open(w.id, e.metaKey || e.ctrlKey, "claude")} disabled={spawn.isPending} className="opacity-60 group-hover/s:opacity-100">
-                      <span className="text-[#d97757]" aria-hidden>✻</span>
-                    </Button>
+                    <ClaudeMenu workspaceId={w.id} sessions={sessions} terms={terms} onOpen={openClaude} onShow={show}>
+                      <Button size="icon-xs" variant="ghost" aria-label={`Claude in ${w.name}`} title={`Claude: new, continue, resume (${M}⇧L new)`} disabled={spawn.isPending} className="opacity-60 group-hover/s:opacity-100">
+                        <span className="text-[#d97757]" aria-hidden>✻</span>
+                      </Button>
+                    </ClaudeMenu>
                     </div>
                   </div>
                   <AnimatePresence initial={false}>
@@ -844,19 +946,21 @@ export function TerminalsPage() {
             if (!t) return null;
             const focused = t.id === id;
             const proc = t.process && !SHELLS.has(t.process) ? t.process : null;
+            const claude = isClaude(t);
+            const cs = t.claude?.state;
             return (
               <section
                 key={pid}
                 aria-label={t.title}
                 className={cn(
-                  "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-[#0f0f10] ring-1 transition-shadow max-md:rounded-none max-md:ring-0",
-                  focused && n > 1 ? "ring-primary/70" : "ring-white/[0.06]",
+                  "relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-[#0f0f10] ring-1 transition-shadow duration-300 max-md:rounded-none max-md:ring-0",
+                  cs === "waiting" ? "ring-amber-500/70 shadow-[0_0_0_4px_rgb(245_158_11/0.12)]" : focused && n > 1 ? "ring-primary/70" : "ring-white/[0.06]",
                   !shown.includes(pid) && "hidden",
                   n % 2 === 1 && n > 1 && i === 0 && "row-span-2",
                   dropping === pid && "ring-primary ring-2",
                 )}
                 onDragOver={(e) => {
-                  if (!e.dataTransfer.types.includes("text/zippy-path")) return;
+                  if (!e.dataTransfer.types.includes("text/zippy-path") && !e.dataTransfer.types.includes("Files")) return;
                   e.preventDefault();
                   e.stopPropagation();
                   if (dropping !== pid) setDropping(pid);
@@ -864,21 +968,24 @@ export function TerminalsPage() {
                 onDragLeave={() => dropping === pid && setDropping(null)}
                 onDrop={(e) => {
                   const p = e.dataTransfer.getData("text/zippy-path");
-                  if (!p) return;
+                  const files = [...e.dataTransfer.files];
+                  if (!p && !files.length) return;
                   e.preventDefault();
                   e.stopPropagation();
                   setDropping(null);
-                  pastePath(p, pid);
+                  if (p) pastePath(p, pid);
+                  else void pasteFiles(files, pid);
                   navigate(`/terminals/${pid}`);
                 }}
               >
-                <header className="group/h flex h-8 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 font-mono text-[11px] text-white/50" onClick={() => !focused && navigate(`/terminals/${pid}`)}>
+                {cs === "working" && <span className="claude-line pointer-events-none absolute inset-x-0 top-0 z-10 h-px" aria-hidden />}
+                <header className={cn("group/h flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 font-mono text-[11px] text-white/50", claude ? "h-9 bg-[linear-gradient(180deg,rgb(217_119_87/0.07),transparent)]" : "h-8")} onClick={() => !focused && navigate(`/terminals/${pid}`)}>
                   {phone && (
                     <button type="button" aria-label="All terminals" onClick={(e) => (e.stopPropagation(), navigate("/terminals"))} className="-ml-2 flex size-6 shrink-0 items-center justify-center rounded text-white/70">
                       <ChevronLeft className="size-4" aria-hidden />
                     </button>
                   )}
-                  <StatusDot t={t} unread={false} now={now} />
+                  {claude ? <span className={cn("text-sm leading-none", cs === "waiting" ? "text-amber-400" : "text-[#d97757]", cs === "working" && "claude-spin")} aria-hidden>✻</span> : <StatusDot t={t} unread={false} now={now} />}
                   {editing === `pane:${t.id}` ? (
                     <input
                       autoFocus
@@ -893,13 +1000,26 @@ export function TerminalsPage() {
                       onKeyDown={(e) => (e.key === "Enter" && e.currentTarget.blur(), e.key === "Escape" && ((e.currentTarget.value = t.title), e.currentTarget.blur()))}
                     />
                   ) : (
-                    <span className={cn("truncate", focused ? "text-white/90" : "text-white/60")} onDoubleClick={() => setEditing(`pane:${t.id}`)} title="Double-click to rename">
+                    <span className={cn("truncate", focused ? "text-white/90" : "text-white/60", claude && "font-sans text-[12.5px] font-medium tracking-tight")} onDoubleClick={() => setEditing(`pane:${t.id}`)} title="Double-click to rename">
                       {t.title}
                     </span>
                   )}
                   <span className="truncate max-md:hidden">{wsName(t.workspaceId)}</span>
+                  {t.claude?.branch && (
+                    <span className="flex min-w-0 shrink items-center gap-1 truncate text-white/45 max-md:hidden" title={`Branch ${t.claude.branch}`}>
+                      <GitBranch className="size-3 shrink-0" aria-hidden />
+                      <span className="truncate">{t.claude.branch}</span>
+                    </span>
+                  )}
                   <TagChips t={t} onRemove={(tag) => untag(t, tag)} className="text-white/70 max-md:hidden" />
-                  {proc && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-white/70">{proc}</span>}
+                  {claude ? (
+                    <>
+                      {t.claude && MODES[t.claude.mode] && <span className={cn("shrink-0 rounded px-1", t.claude.mode === "bypassPermissions" ? "bg-amber-500/15 text-amber-300" : "bg-white/[0.06] text-white/70")}>{MODES[t.claude.mode]}</span>}
+                      <ClaudeBadge t={t} className="font-sans text-[10.5px]" />
+                    </>
+                  ) : (
+                    proc && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-white/70">{proc}</span>
+                  )}
                   {!t.alive && <span className={cn("shrink-0", t.exitCode ? "text-red-400" : "")}>exit {t.exitCode}</span>}
                   <PortChips ports={portsOf(t.id)} className="text-sky-300" />
                   <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/h:opacity-100 focus-within:opacity-100 max-md:opacity-100">
@@ -913,7 +1033,18 @@ export function TerminalsPage() {
                     <PaneBtn label="Close terminal" onClick={() => kill(t)} icon={X} danger />
                   </span>
                 </header>
-                <PtyTerminal id={pid} focused={focused} fontSize={fontSize} findReq={focused ? findReq : 0} onFocus={() => !focused && navigate(`/terminals/${pid}`)} onRestart={() => restart(pid)} textRef={textRef} />
+                <AnimatePresence initial={false}>
+                  {cs === "waiting" && (
+                    <motion.div key="wait" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring} className="shrink-0 overflow-hidden">
+                      <p className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3.5 py-1.5 text-xs text-amber-200">
+                        <span className="unread-dot size-1.5 shrink-0 rounded-full bg-amber-400" style={{ "--c": "#f59e0b" } as React.CSSProperties} aria-hidden />
+                        <span className="truncate">{t.claude?.note || "Claude is waiting for your approval"}</span>
+                        <span className="ml-auto shrink-0 text-amber-200/60">answer below</span>
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <PtyTerminal id={pid} focused={focused} fontSize={fontSize} findReq={focused ? findReq : 0} onFocus={() => !focused && navigate(`/terminals/${pid}`)} onRestart={() => restart(pid)} onFiles={(f) => void pasteFiles(f, pid)} textRef={textRef} roomy={claude} />
                 {phone && focused && t.alive && (
                   <div className="flex shrink-0 gap-1 overflow-x-auto border-t border-white/[0.06] p-1.5 font-mono text-xs text-white/80" aria-label="Terminal keys">
                     {KEYS.map(([label, data]) => (
@@ -934,7 +1065,7 @@ export function TerminalsPage() {
             );
           })
         )}
-        {!n && <EmptyState workspaces={workspaces} templates={templates} terms={terms} onOpen={(wid, cmd) => open(wid, false, cmd)} onShow={(tid) => show(tid)} onRun={runTemplate} />}
+        {!n && <EmptyState workspaces={workspaces} templates={templates} terms={terms} sessions={sessions} onOpen={(wid, cmd) => open(wid, false, cmd)} onClaude={openClaude} onShow={(tid) => show(tid)} onRun={runTemplate} />}
       </div>
       </Panel>
       )}
@@ -982,26 +1113,38 @@ function PaneBtn({ label, onClick, icon: Icon, danger, active }: { label: string
 
 const eyebrow = "text-muted-foreground font-mono text-[10px] font-medium tracking-[0.14em] uppercase";
 
-function EmptyState({ workspaces, templates, terms, onOpen, onShow, onRun }: { workspaces: Workspace[]; templates: TerminalTemplate[]; terms: TermInfo[]; onOpen: (wid: string, command?: string) => void; onShow: (tid: string) => void; onRun: (tid: string) => void }) {
+function EmptyState({ workspaces, templates, terms, sessions, onOpen, onClaude, onShow, onRun }: { workspaces: Workspace[]; templates: TerminalTemplate[]; terms: TermInfo[]; sessions: ClaudeSession[]; onOpen: (wid: string, command?: string) => void; onClaude: ClaudeOpen; onShow: (tid: string) => void; onRun: (tid: string) => void }) {
   const running = terms.filter((t) => t.alive);
   const now = Date.now();
+  const wsName = (wid: string) => workspaces.find((w) => w.id === wid)?.name ?? "";
+  const recent = sessions.filter((s) => !terms.some((t) => t.alive && t.claude?.sessionId === s.id)).slice(0, 5);
   return (
-    <div className="m-auto grid w-full max-w-xl gap-7 p-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Open a terminal</h2>
-        <p className="text-muted-foreground mt-1 text-[13px]">Shells run on this machine in your working folders and keep running while you're on other pages.</p>
+    <div className="stagger m-auto grid w-full max-w-xl grid-cols-[minmax(0,1fr)] gap-7 p-6">
+      <div className="rise flex items-center gap-4">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#e08a6b,#c4613f)] text-2xl text-white shadow-[0_8px_30px_-8px_#d97757]" aria-hidden>✻</span>
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold tracking-tight">Start with Claude</h2>
+          <p className="text-muted-foreground mt-0.5 text-[13px]">Sessions run on this machine and keep going while you're elsewhere. We'll ping you when one needs you.</p>
+        </div>
       </div>
       {workspaces.length > 0 && (
-        <section className="grid gap-2">
+        <section className="rise flex flex-col gap-2">
           <p className={eyebrow}>Start in</p>
           <div className="border-foreground/[0.07] divide-foreground/[0.06] divide-y overflow-hidden rounded-xl border">
             {workspaces.map((w) => (
-              <div key={w.id} className="flex items-center gap-3 px-3 py-2">
+              <div key={w.id} className="hover:bg-foreground/[0.02] flex items-center gap-3 px-3 py-2 transition-colors">
                 <Folder className="text-muted-foreground size-4 shrink-0" aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{w.name}</span>
-                <Button size="sm" onClick={() => onOpen(w.id, "claude")} title={`New Claude terminal in ${w.name} (${M}⇧L)`}>
-                  <span aria-hidden>✻</span> Claude
-                </Button>
+                <span className="flex">
+                  <Button size="sm" onClick={() => onClaude(w.id, "claude")} title={`New Claude session in ${w.name} (${M}⇧L)`} className="rounded-r-none bg-[#d97757] text-white hover:bg-[#c96a4b]">
+                    <span aria-hidden>✻</span> Claude
+                  </Button>
+                  <ClaudeMenu workspaceId={w.id} sessions={sessions} terms={terms} onOpen={onClaude} onShow={onShow} align="end">
+                    <Button size="sm" aria-label={`More Claude options in ${w.name}`} className="rounded-l-none border-l border-white/20 bg-[#d97757] px-1.5 text-white hover:bg-[#c96a4b]">
+                      <ChevronDown aria-hidden />
+                    </Button>
+                  </ClaudeMenu>
+                </span>
                 <Button size="sm" variant="outline" onClick={() => onOpen(w.id)} title={`New shell in ${w.name} (${M}T)`}>
                   <Plus aria-hidden /> Shell
                 </Button>
@@ -1010,23 +1153,38 @@ function EmptyState({ workspaces, templates, terms, onOpen, onShow, onRun }: { w
           </div>
         </section>
       )}
+      {recent.length > 0 && (
+        <section className="rise flex flex-col gap-2">
+          <p className={eyebrow}>Pick up where you left off</p>
+          <div className="flex flex-col gap-0.5">
+            {recent.map((s) => (
+              <button key={s.id} onClick={() => onClaude(s.workspaceId, `claude --resume ${s.id}`, s.title)} title={`Resume in ${wsName(s.workspaceId)}`} className="group/r hover:bg-foreground/[0.05] flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors">
+                <History className="text-muted-foreground group-hover/r:text-[#d97757] size-3.5 shrink-0 transition-colors" aria-hidden />
+                <span className="min-w-0 flex-1 truncate font-medium">{s.title}</span>
+                <span className="text-muted-foreground shrink-0 font-mono text-[10px]">{wsName(s.workspaceId)} · {ago(now - s.updatedAt)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       {running.length > 0 && (
-        <section className="grid gap-2">
+        <section className="rise flex flex-col gap-2">
           <p className={eyebrow}>Running · {running.length}</p>
-          <div className="grid gap-0.5">
+          <div className="flex flex-col gap-0.5">
             {running.map((t) => (
               <button key={t.id} onClick={() => onShow(t.id)} className="hover:bg-foreground/[0.05] flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs transition-colors">
                 <StatusDot t={t} unread={false} now={now} />
-                {t.process === "claude" ? <span className="text-[#d97757]" aria-hidden>✻</span> : <span className="text-muted-foreground font-mono" aria-hidden>$</span>}
+                {isClaude(t) ? <span className="text-[#d97757]" aria-hidden>✻</span> : <span className="text-muted-foreground font-mono" aria-hidden>$</span>}
                 <span className="truncate font-medium">{t.title}</span>
-                <span className="text-muted-foreground ml-auto max-w-[45%] truncate font-mono text-[10px]">{workspaces.find((w) => w.id === t.workspaceId)?.name}{t.command ? ` · ${t.command}` : ""}</span>
+                {t.claude && <ClaudeBadge t={t} className="text-[10px]" />}
+                <span className="text-muted-foreground ml-auto max-w-[45%] truncate font-mono text-[10px]">{wsName(t.workspaceId)}{t.command && !isClaude(t) ? ` · ${t.command}` : ""}</span>
               </button>
             ))}
           </div>
         </section>
       )}
       {templates.length > 0 && (
-        <section className="grid gap-2">
+        <section className="rise flex flex-col gap-2">
           <p className={eyebrow}>Templates</p>
           <div className="flex flex-wrap gap-2">
             {templates.map((t) => (
@@ -1038,7 +1196,7 @@ function EmptyState({ workspaces, templates, terms, onOpen, onShow, onRun }: { w
           </div>
         </section>
       )}
-      <details className="group border-foreground/[0.07] rounded-xl border">
+      <details className="rise group border-foreground/[0.07] rounded-xl border">
         <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs"><Keyboard className="size-3.5" aria-hidden /> Keyboard shortcuts</summary>
         <div className="px-4 pb-4"><ShortcutList /></div>
       </details>

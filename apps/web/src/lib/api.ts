@@ -102,8 +102,14 @@ export type TermInfo = {
   ticketId: string | null;
   ticketKind: "ticket" | "chat" | null;
   agentId: string | null; // opened by this agent; null = human
+  claude: ClaudeState | null; // live Claude Code session in this shell (Zippy-launched only)
 };
-export const useTerminals = (orgId?: string) => useApiQuery<TermInfo[]>(keys.res(orgId!, "terminals"), orgId ? `/orgs/${orgId}/terminals` : null);
+/** ready = waiting for a prompt, working = mid-turn, waiting = blocked on a permission prompt, done = turn finished. */
+export type ClaudeState = { state: "ready" | "working" | "waiting" | "done"; sessionId: string; since: number; note: string; mode: string; branch: string };
+export type ClaudeSession = { id: string; title: string; updatedAt: number; workspaceId: string };
+// Polled app-wide so the nav can flag a Claude session that needs you from any page.
+export const useTerminals = (orgId?: string) =>
+  useQuery({ queryKey: keys.res(orgId!, "terminals"), queryFn: () => api.get<TermInfo[]>(`/orgs/${orgId}/terminals`), enabled: !!orgId, refetchInterval: 4000 });
 export const useTerminalTemplates = (orgId?: string) => useApiQuery<TerminalTemplate[]>(keys.res(orgId!, "terminal-templates"), orgId ? `/orgs/${orgId}/terminal-templates` : null);
 export const useInbox = (orgId?: string) =>
   useQuery({ queryKey: keys.res(orgId!, "inbox"), queryFn: () => api.get<InboxItem[]>(`/orgs/${orgId}/inbox`), enabled: !!orgId, refetchInterval: 15_000 });

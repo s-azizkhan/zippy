@@ -3,6 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import { z, ZodError } from "zod";
 import {
   agentInput,
@@ -47,7 +48,7 @@ import { desktopNote, takeNotes } from "./notify.ts";
 import { DEFAULT_AGENTS } from "./default-agents.ts";
 import { browse, listFiles, resolveIn, saveFile } from "./browse.ts";
 import { listEditors, openWith } from "./editors.ts";
-import { localizeImages, readCached, readUpload, saveUpload } from "./files.ts";
+import { localizeImages, readCached, readUpload, saveUpload, UPLOADS_DIR } from "./files.ts";
 import { bodyLimit } from "hono/body-limit";
 import { branchInfo, checkout, commitFiles, createBranch, detectFolder, fetchAll, folderDiff, isRepo, mergePr, popStash, prState, pullFf, pushHead, runTests, setIdentity, workingDiff } from "./git.ts";
 import { checkPrs } from "./github.ts";
@@ -62,7 +63,7 @@ import { humanDecision, loadPipeline, startPipeline } from "./pipeline.ts";
 import { autoStart, createTicket, hasFolders, setFolders } from "./tickets.ts";
 import { killPid, listPorts } from "./ports.ts";
 import { answerDialog, browserState, closeTab, decideDownload, devtools, ensureBrowser, go, input, openTab, refreshTitles, selection, setView, watch } from "./browser.ts";
-import { closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, writeTerminal } from "./term.ts";
+import { claudeHook, claudeSessions, closeTerminal, getTerminal, listTerminals, readTerminal, renameTerminal, resizeTerminal, restartTerminal, setTags, spawnTerminal, watched, writeTerminal } from "./term.ts";
 import { addComment, cancelAgent, foldersOf, acpHealth, claudeAuthStatus, accountUsage, claudeBin, claudePath, decideApproval, dropIdle, isRunning, runAgent, setStatus } from "./runner.ts";
 
 export const app = new Hono().basePath("/api");
@@ -485,6 +486,23 @@ app.post("/terminal-templates/:id/run", async (c) => {
     opened.push(spawnTerminal(w.id, w.path, 80, 24, step.title, step.command, step.delaySec ?? 0));
   }
   return c.json(opened, 201);
+});
+// Claude Code hooks (see withHooks in term.ts): live state, auto title, and a banner when a session nobody is looking at needs you or finishes.
+app.post("/terminals/:id/hook", async (c) => {
+  const id = c.req.param("id");
+  const h = z.object({ hook_event_name: z.string(), session_id: z.string().optional(), prompt: z.string().optional(), message: z.string().optional(), notification_type: z.string().optional(), permission_mode: z.string().max(40).optional() }).parse(await c.req.json());
+  const r = claudeHook(id, h);
+  if (!r) return c.notFound();
+  if (h.hook_event_name === "SessionStart")
+    execFile("git", ["branch", "--show-current"], { cwd: r.s.cwd }, (e, out) => r.s.claude && !e && (r.s.claude.branch = out.trim()));
+  if (r.next !== r.prev && (r.next === "waiting" || r.next === "done") && !watched(id)) desktopNote(`✻ ${r.s.title}`, r.next === "waiting" ? r.s.claude?.note || "Claude needs your approval" : "Claude finished");
+  return c.body(null, 204);
+});
+// Past Claude Code conversations per working folder, for "resume".
+app.get("/orgs/:id/claude-sessions", async (c) => {
+  const ws = await db.select({ id: workspaces.id, path: workspaces.path }).from(workspaces).where(eq(workspaces.orgId, c.req.param("id")));
+  const all = await Promise.all(ws.map(async (w) => (await claudeSessions(w.path)).map((s) => ({ ...s, workspaceId: w.id }))));
+  return c.json(all.flat().sort((a, b) => b.updatedAt - a.updatedAt));
 });
 app.post("/terminals/:id/restart", (c) => {
   const t = restartTerminal(c.req.param("id"));
@@ -973,7 +991,7 @@ app.get("/files/:key", async (c) => {
 app.post("/uploads", bodyLimit({ maxSize: 50 * 1024 * 1024 }), async (c) => {
   const name = c.req.query("name") ?? "file";
   const { key, inline } = await saveUpload(name, await c.req.arrayBuffer());
-  return c.json({ url: `/api/uploads/${key}`, name, inline }, 201);
+  return c.json({ url: `/api/uploads/${key}`, path: join(UPLOADS_DIR, key), name, inline }, 201);
 });
 app.get("/uploads/:key", async (c) => {
   const f = await readUpload(c.req.param("key"));

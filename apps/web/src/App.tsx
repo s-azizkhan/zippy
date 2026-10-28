@@ -193,6 +193,7 @@ function Sidebar() {
   const { data: running = [] } = useRunning(org.id);
   const { data: terms = [] } = useTerminals(org.id);
   const shells = terms.filter((t) => t.alive).length;
+  const needYou = terms.filter((t) => t.claude?.state === "waiting").length;
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
@@ -253,7 +254,7 @@ function Sidebar() {
         <Section title="Workspace">
           <NavItem to="/zippers" icon={BotIcon} color="#4cb782" label="Zippers" match={pathname.startsWith("/zippers")} />
           <NavItem to="/running" icon={ActivityIcon} color="#4cb782" label="Running" count={running.length} />
-          <NavItem to="/terminals" icon={TerminalSquare} color="#a3a3a3" label="Terminals" count={shells} countLabel="running" live match={pathname.startsWith("/terminals")} />
+          <NavItem to="/terminals" icon={TerminalSquare} color={needYou ? "#f59e0b" : "#a3a3a3"} label="Terminals" count={needYou || shells} countLabel={needYou ? "Claude waiting on you" : "running"} live={!needYou} match={pathname.startsWith("/terminals")} />
           <NavItem to="/browser" icon={GlobeIcon} color="#38bdf8" label="Browser" />
           <NavItem to="/ports" icon={RadioIcon} color="#34d399" label="Ports" />
           <NavItem to="/pipelines" icon={WorkflowIcon} color="#26b5ce" label="Pipelines" />

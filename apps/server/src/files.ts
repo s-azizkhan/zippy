@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 // Linear upload URLs are signed for ~5 minutes, so images are copied here at sync time.
 export const FILES_DIR = join(homedir(), ".zippy", "files");
-const UPLOADS_DIR = join(FILES_DIR, "uploads");
+export const UPLOADS_DIR = join(FILES_DIR, "uploads");
 export const FILE_KEY_RE = /^[a-f0-9]{32}\.(png|jpg|gif|webp|bin)$/;
 
 // No SVG: it can carry script and would run on Zippy's origin.

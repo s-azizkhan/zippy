@@ -358,3 +358,11 @@ html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 ::highlight(find-active) {
   background-color: #8b93e6aa;
 }
+
+/* Claude sessions: ✻ turns while working, label shimmers in Claude orange, a light sweeps the pane's top edge. */
+@keyframes claude-spin { to { transform: rotate(360deg); } }
+.claude-spin { animation: claude-spin 2.4s linear infinite; }
+.claude-shimmer { color: transparent; background: linear-gradient(90deg, #d97757 30%, #ffd2bf 50%, #d97757 70%) 0 0 / 200% 100% text; animation: shimmer 1.6s linear infinite; }
+@keyframes claude-line { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.claude-line { background: linear-gradient(90deg, transparent 0%, #d97757 45%, #ffd2bf 50%, #d97757 55%, transparent 100%) 0 0 / 50% 100% no-repeat; animation: claude-line 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .claude-spin, .claude-shimmer, .claude-line { animation: none; } .claude-shimmer { color: #d97757; } }
