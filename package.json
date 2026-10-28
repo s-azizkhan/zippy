@@ -1,6 +1,13 @@
 {
   "name": "zippy",
   "private": true,
+  "description": "Agent coworkers for your tickets. Local, open-source task board that runs Claude Code agents on tickets in git worktrees.",
+  "keywords": ["claude-code", "ai-agents", "coding-agent", "agentic", "kanban", "task-manager", "linear", "git-worktree", "acp", "mcp", "tauri", "developer-tools"],
+  "homepage": "https://s-azizkhan.github.io/zippy/",
+  "repository": { "type": "git", "url": "git+https://github.com/s-azizkhan/zippy.git" },
+  "bugs": { "url": "https://github.com/s-azizkhan/zippy/issues" },
+  "author": "S. Aziz Khan <sakatazizkhan1@gmail.com> (https://justaziz.com)",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "zippy": "scripts/zippy.mjs"

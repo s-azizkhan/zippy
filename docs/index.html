@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zippy – Local task board for Claude Code agents (open source)</title>
+<meta name="description" content="Zippy is a free, open-source task board that hands your tickets to Claude Code agents in isolated git worktrees, then lets you review diffs, tests and screenshots. Runs locally with your claude login. Linear sync, MCP, macOS desktop app.">
+<meta name="keywords" content="Claude Code, AI coding agent, agent task manager, kanban for AI agents, git worktree, Linear, ACP, MCP, Vibe Kanban alternative, Conductor alternative, open source">
+<meta name="author" content="S. Aziz Khan">
+<link rel="canonical" href="https://s-azizkhan.github.io/zippy/">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0B0C10">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Zippy">
+<meta property="og:url" content="https://s-azizkhan.github.io/zippy/">
+<meta property="og:title" content="Zippy – Agent coworkers for your tickets">
+<meta property="og:description" content="Open-source, local task board that runs Claude Code agents on your tickets. Tickets in, verified work out.">
+<meta property="og:image" content="https://s-azizkhan.github.io/zippy/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Zippy – Agent coworkers for your tickets">
+<meta name="twitter:description" content="Open-source, local task board that runs Claude Code agents on your tickets. Tickets in, verified work out.">
+<meta name="twitter:image" content="https://s-azizkhan.github.io/zippy/og.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Zippy",
+  "description": "Open-source, local task board that hands tickets to Claude Code agents in git worktrees and lets you verify the result.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS",
+  "url": "https://s-azizkhan.github.io/zippy/",
+  "downloadUrl": "https://github.com/s-azizkhan/zippy",
+  "codeRepository": "https://github.com/s-azizkhan/zippy",
+  "license": "https://opensource.org/licenses/MIT",
+  "image": "https://s-azizkhan.github.io/zippy/og.png",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "S. Aziz Khan", "url": "https://justaziz.com" }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0B0C10;--ink-2:#101118;--ink-3:#161823;--line:rgba(255,255,255,.08);--line-2:rgba(255,255,255,.14);
+  --fg:#EDEEF4;--muted:#9097A6;--dim:#5E6472;
+  --i600:#4650C0;--i500:#5E6AD2;--i400:#7C86E8;--i200:#C4C9F5;
+  --ok:#4CB782;--warn:#F2C94C;--bad:#E5484D;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ink);color:var(--fg);font:16px/1.6 "Space Grotesk",-apple-system,system-ui,sans-serif;letter-spacing:-.01em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+code,.mono{font-family:var(--mono)}
+::selection{background:var(--i500);color:#fff}
+.wrap{max-width:1180px;margin-inline:auto;padding-inline:16px}
+@media (min-width:720px){.wrap{padding-inline:28px}}
+
+/* background */
+.bg{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+.bg .grid{position:absolute;inset:-1px;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:64px 64px;mask-image:radial-gradient(ellipse 70% 55% at 50% 0%,#000 30%,transparent 75%);opacity:.55}
+.blob{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:drift 22s var(--ease) infinite alternate}
+.blob.a{width:620px;height:620px;left:-140px;top:-220px;background:radial-gradient(circle,var(--i600),transparent 65%)}
+.blob.b{width:520px;height:520px;right:-160px;top:-120px;background:radial-gradient(circle,#8a5cf6,transparent 65%);animation-delay:-8s;opacity:.32}
+.blob.c{width:480px;height:480px;left:35%;top:280px;background:radial-gradient(circle,var(--i400),transparent 65%);animation-delay:-14s;opacity:.18}
+@keyframes drift{to{transform:translate3d(80px,60px,0) scale(1.15)}}
+.noise{position:absolute;inset:0;opacity:.05;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* nav */
+nav{position:sticky;top:0;z-index:50;transition:background .3s,border-color .3s;border-bottom:1px solid transparent}
+nav.scrolled{background:rgba(11,12,16,.72);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-color:var(--line)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.brand{display:flex;gap:10px;align-items:center;font-weight:700;font-size:19px;letter-spacing:-.03em}
+.nav-links{display:none;gap:28px;color:var(--muted);font-size:14.5px}
+.nav-links a:hover{color:var(--fg)}
+@media (min-width:860px){.nav-links{display:flex}}
+.btn{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 18px;border-radius:11px;font-weight:600;font-size:15px;border:1px solid var(--line-2);background:rgba(255,255,255,.03);transition:transform .2s var(--ease),background .2s,border-color .2s;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.22)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:linear-gradient(180deg,#fff,#dfe2f2);color:var(--ink);border-color:transparent;box-shadow:0 0 0 1px rgba(255,255,255,.2),0 8px 30px -8px rgba(124,134,232,.6)}
+.btn.primary:hover{box-shadow:0 0 0 1px rgba(255,255,255,.3),0 10px 40px -6px rgba(124,134,232,.85)}
+.btn.sm{height:36px;padding:0 14px;font-size:14px}
+.btn svg{width:16px;height:16px}
+.stars{font-family:var(--mono);font-size:12.5px;color:var(--muted);padding-left:8px;border-left:1px solid var(--line-2)}
+.btn.primary .stars{color:#4a4f60;border-color:rgba(0,0,0,.12)}
+
+/* hero */
+.hero{padding-top:72px;text-align:center;position:relative}
+@media (min-width:720px){.hero{padding-top:104px}}
+.pill{display:inline-flex;align-items:center;gap:10px;padding:6px 14px 6px 6px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.03);font-size:13.5px;color:var(--muted);backdrop-filter:blur(8px)}
+.pill b{font:600 11.5px var(--mono);color:var(--fg);padding:3px 9px;border-radius:999px;background:linear-gradient(135deg,var(--i400),var(--i600))}
+h1{font-size:clamp(44px,9vw,92px);line-height:.98;letter-spacing:-.055em;margin:26px 0 22px;font-weight:700}
+h1 .line{display:block;overflow:hidden;padding-bottom:.08em}
+h1 .w{display:inline-block;transform:translateY(105%);opacity:0;animation:rise .9s var(--ease) forwards}
+h1 .grad{background:linear-gradient(100deg,var(--i200) 0%,var(--i400) 25%,#a78bfa 50%,var(--i400) 75%,var(--i200) 100%);-webkit-background-clip:text;background-clip:text;color:transparent;background-size:200% 100%;animation:rise .9s var(--ease) forwards,sheen 8s linear infinite}
+@keyframes rise{to{transform:none;opacity:1}}
+@keyframes sheen{to{background-position:-200% 0}}
+.lede{font-size:clamp(17px,2.2vw,20px);color:var(--muted);max-width:640px;margin:0 auto 34px}
+.lede b{color:var(--fg);font-weight:500}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;align-items:center}
+.copy{display:inline-flex;align-items:center;gap:12px;height:42px;padding:0 8px 0 16px;border-radius:11px;border:1px solid var(--line-2);background:rgba(11,12,16,.6);font:500 13.5px var(--mono);color:var(--muted);cursor:pointer;max-width:100%}
+.copy span.cmd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy .p{color:var(--i400)}
+.copy .ic{display:grid;place-items:center;width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,.06);color:var(--fg);flex:none}
+.copy.ok .ic{background:rgba(76,183,130,.18);color:var(--ok)}
+.facts{margin:22px 0 0;font:400 12.5px var(--mono);color:var(--dim)}
+.star{position:absolute;width:2px;height:2px;border-radius:50%;background:#fff;opacity:.5;animation:tw 4s ease-in-out infinite}
+@keyframes tw{50%{opacity:.08}}
+.fade{opacity:0;transform:translateY(14px);animation:rise .9s var(--ease) forwards}
+
+/* app mockup */
+.stage{perspective:1600px;margin:72px auto 0;max-width:1120px;position:relative}
+.stage::before{content:"";position:absolute;left:10%;right:10%;top:8%;height:70%;background:radial-gradient(ellipse at center,rgba(94,106,210,.55),transparent 70%);filter:blur(60px);z-index:-1}
+.app{border-radius:16px;border:1px solid var(--line-2);background:linear-gradient(180deg,rgba(22,24,35,.92),rgba(13,14,20,.96));box-shadow:0 40px 120px -20px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.06);overflow:hidden;transform-origin:50% 0;transform:rotateX(var(--tilt,18deg)) scale(var(--sc,.94));transition:transform .1s linear;text-align:left;will-change:transform}
+.chrome{display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-bottom:1px solid var(--line)}
+.chrome i{width:11px;height:11px;border-radius:50%;background:#2a2c38}
+.chrome i:nth-child(1){background:#ff5f57}.chrome i:nth-child(2){background:#febc2e}.chrome i:nth-child(3){background:#28c840}
+.chrome .t{margin:0 auto;font:500 12px var(--mono);color:var(--dim);transform:translateX(-24px)}
+.app-body{display:grid;grid-template-columns:1fr;min-height:430px}
+@media (min-width:900px){.app-body{grid-template-columns:190px 1fr 300px}}
+.side{display:none;border-right:1px solid var(--line);padding:14px 10px;font-size:13px;color:var(--muted)}
+@media (min-width:900px){.side{display:block}}
+.side .it{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:7px}
+.side .it.on{background:rgba(255,255,255,.06);color:var(--fg)}
+.side .it .n{margin-left:auto;font:500 11px var(--mono);color:var(--dim)}
+.side .h{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:16px 9px 6px}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px;overflow:hidden}
+.col h4{display:flex;align-items:center;gap:7px;margin:2px 4px 10px;font:600 12px "Space Grotesk";color:var(--muted)}
+.col h4 .c{font:500 11px var(--mono);color:var(--dim)}
+.col .list{display:flex;flex-direction:column;gap:8px;min-height:300px}
+.st{width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;flex:none;position:relative}
+.st.todo{color:var(--muted)}.st.prog{color:var(--warn);background:conic-gradient(currentColor 0 50%,transparent 0)}
+.st.rev{color:var(--i400);background:conic-gradient(currentColor 0 75%,transparent 0)}.st.done{color:var(--i500);background:currentColor}
+.card{position:relative;border:1px solid var(--line);background:var(--ink-3);border-radius:10px;padding:10px 11px;font-size:12.5px;line-height:1.4;box-shadow:0 1px 0 rgba(255,255,255,.03) inset}
+.card .id{font:500 10.5px var(--mono);color:var(--dim)}
+.card .tt{margin:3px 0 8px;color:var(--fg);font-weight:500}
+.card .meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tag{font:500 10px var(--mono);padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.05);color:var(--muted)}
+.av{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font:700 9px var(--mono);color:#fff;background:linear-gradient(135deg,var(--i400),var(--i600));margin-left:auto}
+.card.hot{border-color:rgba(124,134,232,.55);box-shadow:0 0 0 1px rgba(124,134,232,.25),0 10px 40px -10px rgba(94,106,210,.7)}
+.card.hot.working::after{content:"";position:absolute;inset:-1px;border-radius:10px;padding:1px;background:conic-gradient(from var(--a),transparent 70%,var(--i400),#a78bfa,transparent);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spin 2.2s linear infinite}
+@property --a{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes spin{to{--a:360deg}}
+.working-l{display:none;align-items:center;gap:6px;font:500 10.5px var(--mono);color:var(--i200)}
+.card.working .working-l{display:flex}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--i400);box-shadow:0 0 0 0 rgba(124,134,232,.7);animation:pulse 1.4s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 7px rgba(124,134,232,0)}100%{box-shadow:0 0 0 0 rgba(124,134,232,0)}}
+.diff{display:none;gap:6px;font:500 10.5px var(--mono);margin-top:6px}
+.card.reviewed .diff{display:flex}
+.diff .p{color:var(--ok)}.diff .m{color:var(--bad)}.diff .ok{color:var(--ok);margin-left:auto}
+.stream{display:none;border-left:1px solid var(--line);padding:14px;font:12px/1.55 var(--mono);color:var(--muted);flex-direction:column;gap:2px;overflow:hidden;position:relative}
+@media (min-width:900px){.stream{display:flex}}
+.stream .hd{display:flex;align-items:center;gap:8px;font:600 12.5px "Space Grotesk";color:var(--fg);margin-bottom:10px}
+.stream .hd .av{margin:0}
+.ln{opacity:0;transform:translateY(6px);animation:rise .45s var(--ease) forwards;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ln .k{color:var(--i400)}.ln .g{color:var(--ok)}.ln .y{color:var(--warn)}.ln .d{color:var(--dim)}
+.caret{display:inline-block;width:7px;height:14px;background:var(--i400);vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@media (max-width:640px){.board{grid-template-columns:repeat(4,minmax(150px,1fr));overflow-x:auto;scrollbar-width:none}.board::-webkit-scrollbar{display:none}}
+
+/* sections */
+section{margin-top:144px;scroll-margin-top:72px}
+@media (max-width:720px){section{margin-top:104px}}
+.eyebrow{font:600 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--i400);margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:18px;height:1px;background:currentColor}
+h2{font-size:clamp(32px,5vw,54px);line-height:1.04;letter-spacing:-.045em;margin:0 0 16px;font-weight:700;max-width:780px}
+h2 .soft{color:var(--dim)}
+.sub{color:var(--muted);font-size:18px;max-width:600px;margin:0}
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .9s var(--ease),transform .9s var(--ease)}
+.reveal.in{opacity:1;transform:none}
+.d1{transition-delay:.08s}.d2{transition-delay:.16s}.d3{transition-delay:.24s}.d4{transition-delay:.32s}
+
+/* marquee */
+.logos{margin-top:96px;border-block:1px solid var(--line);padding:22px 0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.logos .track{display:flex;gap:56px;width:max-content;animation:marq 38s linear infinite}
+.logos span{display:flex;align-items:center;gap:10px;color:var(--muted);font:500 15px var(--mono);white-space:nowrap}
+.logos span::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--i500);transform:rotate(45deg)}
+@keyframes marq{to{transform:translateX(-50%)}}
+
+/* steps */
+.steps{display:grid;gap:16px;margin-top:48px}
+@media (min-width:860px){.steps{grid-template-columns:repeat(3,1fr)}}
+.step{position:relative;border:1px solid var(--line);border-radius:18px;padding:26px;background:linear-gradient(180deg,rgba(255,255,255,.025),transparent)}
+.step .num{font:600 13px var(--mono);color:var(--i400)}
+.step h3{font-size:22px;letter-spacing:-.03em;margin:10px 0 8px}
+.step p{margin:0;color:var(--muted)}
+.step .vis{margin-top:22px;height:120px;border-radius:12px;border:1px solid var(--line);background:var(--ink-2);display:grid;place-items:center;overflow:hidden;position:relative}
+
+/* pipeline */
+.pipe{margin-top:48px;border:1px solid var(--line);border-radius:22px;padding:40px 22px;background:radial-gradient(ellipse at 50% 0%,rgba(94,106,210,.14),transparent 60%),var(--ink-2);position:relative;overflow:hidden}
+.nodes{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;position:relative}
+@media (min-width:860px){.nodes{grid-template-columns:repeat(5,1fr)}}
+.node{position:relative;z-index:1;border:1px solid var(--line-2);border-radius:14px;padding:16px;background:var(--ink-3);transition:border-color .5s,box-shadow .5s,transform .5s var(--ease)}
+.node .h{font:600 13.5px var(--mono);color:var(--fg)}
+.node .r{font-size:13px;color:var(--muted);margin-top:4px}
+.node .s{margin-top:12px;font:500 11px var(--mono);color:var(--dim);display:flex;align-items:center;gap:6px}
+.node.on{border-color:rgba(124,134,232,.7);box-shadow:0 0 0 4px rgba(94,106,210,.12),0 20px 50px -20px rgba(94,106,210,.9);transform:translateY(-3px)}
+.node.on .s{color:var(--i200)}
+.node.ok .s{color:var(--ok)}
+.wire{display:none;position:absolute;left:4%;right:4%;top:50%;height:2px;background:var(--line-2);z-index:0}
+@media (min-width:860px){.wire{display:block}}
+.wire i{position:absolute;top:-2px;left:0;width:90px;height:6px;border-radius:6px;background:linear-gradient(90deg,transparent,var(--i400),#fff);filter:drop-shadow(0 0 8px var(--i400));animation:flow 3.2s var(--ease) infinite}
+@keyframes flow{from{left:-90px}to{left:100%}}
+.pipe .log{margin-top:28px;font:12.5px/1.6 var(--mono);color:var(--muted);min-height:40px;text-align:center}
+
+/* bento */
+.bento{display:grid;gap:16px;margin-top:48px;grid-template-columns:1fr}
+@media (min-width:760px){.bento{grid-template-columns:repeat(6,1fr)}.b-3{grid-column:span 3}.b-2{grid-column:span 2}.b-4{grid-column:span 4}}
+.tile{position:relative;border:1px solid var(--line);border-radius:20px;padding:26px;background:var(--ink-2);overflow:hidden;isolation:isolate;min-height:250px;display:flex;flex-direction:column}
+.tile::before{content:"";position:absolute;inset:0;z-index:-1;opacity:0;transition:opacity .4s;background:radial-gradient(420px circle at var(--mx,50%) var(--my,50%),rgba(124,134,232,.16),transparent 45%)}
+.tile:hover::before{opacity:1}
+.tile::after{content:"";position:absolute;inset:0;border-radius:20px;padding:1px;z-index:-1;background:radial-gradient(300px circle at var(--mx,50%) var(--my,50%),rgba(124,134,232,.6),transparent 50%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .4s}
+.tile:hover::after{opacity:1}
+.tile h3{font-size:20px;letter-spacing:-.03em;margin:0 0 6px}
+.tile p{margin:0;color:var(--muted);font-size:15px}
+.tile .art{margin-top:auto;padding-top:22px}
+.kbd{display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 8px;border-radius:8px;border:1px solid var(--line-2);border-bottom-width:3px;font:600 12.5px var(--mono);color:var(--fg);background:var(--ink-3);transition:transform .15s,border-color .15s,color .15s}
+.kbd.press{transform:translateY(2px);border-bottom-width:1px;border-color:var(--i400);color:var(--i200)}
+.decision{border:1px solid var(--line-2);border-radius:12px;padding:14px;background:var(--ink-3);font-size:13.5px}
+.decision .q{color:var(--fg);font-weight:500;margin-bottom:10px}
+.opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--muted);font-size:13px;border:1px solid transparent;transition:all .3s}
+.opt.rec{border-color:rgba(124,134,232,.45);background:rgba(94,106,210,.1);color:var(--fg)}
+.opt .b{margin-left:auto;font:500 10px var(--mono);color:var(--i400)}
+.term{border:1px solid var(--line-2);border-radius:12px;background:#07080b;font:12.5px/1.7 var(--mono);padding:14px;color:var(--muted);min-height:132px}
+.term .p{color:var(--i400)}.term .g{color:var(--ok)}.term .r{color:var(--bad)}
+.tree{font:12.5px/1.75 var(--mono);color:var(--muted)}
+.tree .b{color:var(--i200)}.tree .g{color:var(--ok)}
+.sync{display:flex;align-items:center;justify-content:center;gap:14px}
+.sync .lb{font:500 10.5px var(--mono);color:var(--dim);text-align:center;margin-bottom:4px}
+.sync .bx{width:64px;height:64px;border-radius:16px;border:1px solid var(--line-2);background:var(--ink-3);display:grid;place-items:center;font:700 13px var(--mono)}
+.sync .ar{height:2px;background:var(--line-2);position:relative;overflow:hidden}
+.sync .ar i{position:absolute;top:0;width:40%;height:100%;background:linear-gradient(90deg,transparent,var(--i400),transparent);animation:slide 1.8s linear infinite}
+.sync .ar.rev i{animation-direction:reverse}
+@keyframes slide{from{left:-40%}to{left:100%}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:500 12px var(--mono);padding:6px 10px;border-radius:8px;border:1px solid var(--line-2);color:var(--muted);background:var(--ink-3)}
+.chip.on{color:var(--fg);border-color:rgba(76,183,130,.5)}
+.chip.on::before{content:"● ";color:var(--ok)}
+.lock{display:grid;place-items:center;height:120px}
+.lock .ring{width:96px;height:96px;border-radius:50%;border:1px dashed var(--line-2);display:grid;place-items:center;animation:rot 18s linear infinite}
+.lock .core{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--i400),var(--i600));display:grid;place-items:center;box-shadow:0 10px 40px -8px var(--i500);animation:rot 18s linear infinite reverse}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* compare */
+.cmp{margin-top:48px;border:1px solid var(--line);border-radius:20px;overflow:hidden;background:var(--ink-2)}
+.cmp-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:640px}
+th,td{padding:15px 18px;text-align:left;border-bottom:1px solid var(--line)}
+th{font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-weight:600}
+td{color:var(--muted)}
+td:first-child{color:var(--fg)}
+tr:last-child td{border-bottom:0}
+.us{background:rgba(94,106,210,.08);color:var(--fg)!important}
+th.us{color:var(--i200)}
+.y{color:var(--ok)}.n{color:var(--dim)}
+
+/* install */
+.install{margin-top:48px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.install{grid-template-columns:1fr 1.25fr;align-items:start}}
+.tabs{display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:11px;width:max-content;background:var(--ink-2)}
+.tabs button{all:unset;cursor:pointer;padding:7px 14px;border-radius:8px;font:500 13px var(--mono);color:var(--muted)}
+.tabs button[aria-selected=true]{background:rgba(255,255,255,.07);color:var(--fg)}
+.codebox{position:relative;margin-top:12px;border:1px solid var(--line-2);border-radius:14px;background:#07080b;padding:20px;font:13.5px/1.85 var(--mono);color:var(--fg);overflow-x:auto}
+.codebox .c{color:var(--dim)}
+.codebox pre{margin:0;white-space:pre}
+.codebox[hidden]{display:none}
+.req{display:grid;gap:10px;margin-top:22px}
+.req div{position:relative;padding-left:34px;color:var(--muted)}
+.req div::before{content:"✓";position:absolute;left:0;top:1px;display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:rgba(76,183,130,.12);color:var(--ok);font-size:12px}
+
+/* faq */
+.faq{margin-top:40px;max-width:820px}
+details{border-bottom:1px solid var(--line)}
+summary{list-style:none;cursor:pointer;padding:22px 0;font-size:18px;font-weight:500;display:flex;justify-content:space-between;gap:16px;align-items:center}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font:400 24px var(--mono);color:var(--dim);transition:transform .3s var(--ease)}
+details[open] summary::after{transform:rotate(45deg);color:var(--i400)}
+details p{margin:0 0 22px;color:var(--muted);max-width:680px}
+
+/* final */
+.final{margin:128px 0 0;position:relative;border:1px solid var(--line-2);border-radius:28px;padding:80px 22px;text-align:center;overflow:hidden;background:radial-gradient(ellipse 60% 80% at 50% 120%,rgba(94,106,210,.55),transparent 70%),var(--ink-2)}
+.final h2{margin:0 auto 16px}
+.final .sub{margin:0 auto 32px}
+.final .mark{width:72px;height:72px;margin:0 auto 26px;animation:float 6s ease-in-out infinite;filter:drop-shadow(0 18px 30px rgba(94,106,210,.6))}
+@keyframes float{50%{transform:translateY(-10px) rotate(-4deg)}}
+
+footer{margin-top:80px;border-top:1px solid var(--line);padding:32px 0 48px;color:var(--dim);font-size:14px}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+footer a{color:var(--muted)}footer a:hover{color:var(--fg)}
+footer .l{display:flex;gap:22px;flex-wrap:wrap}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .reveal{opacity:1;transform:none}.app{transform:none}
+}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="blob a"></div><div class="blob b"></div><div class="blob c"></div><div class="grid"></div><div class="noise"></div><div id="stars"></div></div>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="logo-mark.svg" width="30" height="30" alt="">Zippy</a>
+    <div class="nav-links"><a href="#how">How it works</a><a href="#features">Features</a><a href="#compare">Compare</a><a href="#install">Install</a><a href="#faq">FAQ</a></div>
+    <a class="btn sm" href="https://github.com/s-azizkhan/zippy" aria-label="Star Zippy on GitHub">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      Star<span class="stars" data-stars hidden></span>
+    </a>
+  </div>
+</nav>
+
+<main>
+<header class="hero wrap">
+  <span class="pill fade" style="animation-delay:.05s"><b>MIT</b>Open source · runs on your Claude login</span>
+  <h1>
+    <span class="line"><span class="w" style="animation-delay:.12s">Tickets</span> <span class="w" style="animation-delay:.2s">in.</span></span>
+    <span class="line"><span class="w grad" style="animation-delay:.3s">Verified</span> <span class="w grad" style="animation-delay:.38s">work</span> <span class="w grad" style="animation-delay:.46s">out.</span></span>
+  </h1>
+  <p class="lede fade" style="animation-delay:.6s">Zippy is a local task board that hands your tickets to <b>Claude Code agents</b>, runs each one in its own <b>git worktree</b>, and brings back diffs, tests and screenshots for you to approve.</p>
+  <div class="cta fade" style="animation-delay:.72s">
+    <a class="btn primary" href="https://github.com/s-azizkhan/zippy">Get Zippy on GitHub<span class="stars" data-stars hidden></span></a>
+    <button class="copy" data-copy="git clone https://github.com/s-azizkhan/zippy.git" aria-label="Copy clone command"><span class="cmd"><span class="p">$</span> git clone github.com/s-azizkhan/zippy</span><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></span></button>
+  </div>
+  <p class="facts fade" style="animation-delay:.8s">MIT licensed · No API key · macOS app + web · Linear sync</p>
+
+  <div class="stage fade" style="animation-delay:.85s">
+    <div class="app" id="app" role="img" aria-label="Zippy board: a ticket moves from Todo to In progress while an agent works, then to In review with a passing diff, then Done.">
+      <div class="chrome"><i></i><i></i><i></i><span class="t">zippy.localhost</span></div>
+      <div class="app-body">
+        <aside class="side">
+          <div class="it">⌕ Search<span class="n">⌘K</span></div>
+          <div class="it">◫ Inbox<span class="n" id="inboxN">2</span></div>
+          <div class="it on">▤ Tickets</div>
+          <div class="it">◷ Running<span class="n" id="runN">1</span></div>
+          <div class="it">⌥ Terminals</div>
+          <div class="h">Agents</div>
+          <div class="it"><span class="dot" style="background:var(--ok)"></span>@planner</div>
+          <div class="it"><span class="dot" style="background:var(--i400)"></span>@executor</div>
+          <div class="it"><span class="dot" style="background:var(--warn)"></span>@reviewer</div>
+          <div class="h">Workspaces</div>
+          <div class="it">~/code/acme-web</div>
+          <div class="it">~/code/api</div>
+        </aside>
+        <div class="board" id="board">
+          <div class="col"><h4><span class="st todo"></span>Todo <span class="c"></span></h4><div class="list" data-col="0">
+            <div class="card" id="hot"><div class="id">ZIP-42</div><div class="tt">Fix login redirect loop after OAuth</div><div class="meta"><span class="tag">bug</span><span class="tag">web</span><span class="av">E</span></div><div class="working-l" style="margin-top:8px"><span class="pulse"></span>@executor working</div><div class="diff"><span class="p">+12</span><span class="m">−4</span><span class="ok">✓ 12 passed</span></div></div>
+            <div class="card"><div class="id">ZIP-47</div><div class="tt">Rate-limit the password reset endpoint</div><div class="meta"><span class="tag">api</span></div></div>
+          </div></div>
+          <div class="col"><h4><span class="st prog"></span>In progress <span class="c"></span></h4><div class="list" data-col="1">
+            <div class="card"><div class="id">ZIP-39</div><div class="tt">Dark mode for settings page</div><div class="meta"><span class="tag">ui</span><span class="av">P</span></div></div>
+          </div></div>
+          <div class="col"><h4><span class="st rev"></span>In review <span class="c"></span></h4><div class="list" data-col="2">
+            <div class="card"><div class="id">ZIP-35</div><div class="tt">Migrate cron jobs to queue</div><div class="meta"><span class="tag">infra</span><span class="av">R</span></div></div>
+          </div></div>
+          <div class="col"><h4><span class="st done"></span>Done <span class="c"></span></h4><div class="list" data-col="3">
+            <div class="card"><div class="id">ZIP-31</div><div class="tt">Flaky checkout test</div><div class="meta"><span class="tag">test</span></div></div>
+          </div></div>
+        </div>
+        <div class="stream" id="stream" aria-hidden="true">
+          <div class="hd"><span class="av">E</span>@executor <span class="tag" style="margin-left:auto">ZIP-42</span></div>
+          <div id="lines"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="logos" aria-label="Works with">
+  <div class="track">
+    <span>Claude Code</span><span>Agent Client Protocol</span><span>Linear</span><span>GitHub</span><span>git worktrees</span><span>MCP</span><span>Claude Desktop</span><span>PostgreSQL</span><span>Chromium</span><span>Tauri</span>
+    <span aria-hidden="true">Claude Code</span><span aria-hidden="true">Agent Client Protocol</span><span aria-hidden="true">Linear</span><span aria-hidden="true">GitHub</span><span aria-hidden="true">git worktrees</span><span aria-hidden="true">MCP</span><span aria-hidden="true">Claude Desktop</span><span aria-hidden="true">PostgreSQL</span><span aria-hidden="true">Chromium</span><span aria-hidden="true">Tauri</span>
+  </div>
+</div>
+
+<section id="how" class="wrap">
+  <div class="eyebrow reveal">How it works</div>
+  <h2 class="reveal d1">You write the ticket. <span class="soft">Agents do the work. You sign off.</span></h2>
+  <div class="steps">
+    <div class="step reveal d1">
+      <div class="num">01</div><h3>Declare intent</h3>
+      <p>Write a ticket, sync one from Linear, or file it from your terminal.</p>
+      <div class="vis"><div class="term" style="border:0;background:none;min-height:0;width:100%"><span class="p">$</span> <span data-type='zippy "fix login redirect"'></span></div></div>
+    </div>
+    <div class="step reveal d2">
+      <div class="num">02</div><h3>Agents work</h3>
+      <p>Claude Code runs over ACP in an isolated worktree. Pipelines hand off between roles.</p>
+      <div class="vis"><div class="tree"><span class="b">main</span><br>├─ <span class="b">zippy/zip-42</span> <span class="g">● agent</span><br>└─ <span class="b">zippy/zip-47</span> <span class="g">● agent</span></div></div>
+    </div>
+    <div class="step reveal d3">
+      <div class="num">03</div><h3>You verify</h3>
+      <p>Diffs, tests and screenshots land in your inbox. Approve, reject or reply.</p>
+      <div class="vis"><div style="display:flex;gap:8px" data-keys><span class="kbd">J</span><span class="kbd">K</span><span class="kbd">A</span><span class="kbd">R</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="eyebrow reveal">Pipelines</div>
+  <h2 class="reveal d1">A team of role agents, <span class="soft">wired like a real review process.</span></h2>
+  <p class="sub reveal d2">Each agent has its own prompt, model and permissions. Chain them with routing rules, or pull one in with an <code>@mention</code>.</p>
+  <div class="pipe reveal d2">
+    <div class="wire"><i></i></div>
+    <div class="nodes" id="nodes">
+      <div class="node"><div class="h">@validator</div><div class="r">Checks the ticket against the code</div><div class="s">○ waiting</div></div>
+      <div class="node"><div class="h">@planner</div><div class="r">Writes the implementation plan</div><div class="s">○ waiting</div></div>
+      <div class="node"><div class="h">@executor</div><div class="r">Makes the change, runs tests</div><div class="s">○ waiting</div></div>
+      <div class="node"><div class="h">@reviewer</div><div class="r">Reviews the diff like a peer</div><div class="s">○ waiting</div></div>
+      <div class="node"><div class="h">you</div><div class="r">Approve and open the PR</div><div class="s">○ waiting</div></div>
+    </div>
+    <div class="log" id="pipelog">&nbsp;</div>
+  </div>
+</section>
+
+<section id="features" class="wrap">
+  <div class="eyebrow reveal">Features</div>
+  <h2 class="reveal d1">Everything around the agent, <span class="soft">so you only do the judging.</span></h2>
+  <div class="bento">
+    <div class="tile b-4 reveal">
+      <h3>Review inbox</h3>
+      <p>Decision cards with a TL;DR and a recommended option. Clear it from the keyboard.</p>
+      <div class="art"><div class="decision"><div class="q">ZIP-42 · Session cookie or token refresh for the redirect fix?</div>
+        <div class="opt rec" data-opt>Refresh token in middleware<span class="b">recommended</span></div>
+        <div class="opt" data-opt>Set SameSite=None on the cookie</div>
+        <div class="opt" data-opt>Skip the redirect for API routes</div></div></div>
+    </div>
+    <div class="tile b-2 reveal d1">
+      <h3>Local first</h3>
+      <p>Your <code>claude</code> login. No API keys, no cloud sandbox, nothing to host.</p>
+      <div class="art lock"><div class="ring"><div class="core"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div></div></div>
+    </div>
+    <div class="tile b-2 reveal">
+      <h3>Quick capture</h3>
+      <p>File a ticket from any repo, or press ⌘⇧Z anywhere.</p>
+      <div class="art"><div class="term" id="capture"></div></div>
+    </div>
+    <div class="tile b-2 reveal d1">
+      <h3>Linear sync</h3>
+      <p>Issues mirror in. Status flows back.</p>
+      <div class="art"><div class="sync"><div class="bx" style="color:#a5abf5">LIN</div><div style="display:grid;gap:12px;flex:1;max-width:160px"><div><div class="lb">issues →</div><div class="ar"><i></i></div></div><div><div class="ar rev"><i></i></div><div class="lb" style="margin:4px 0 0">← status</div></div></div><div class="bx"><img src="logo-mark.svg" width="30" height="30" alt=""></div></div></div>
+    </div>
+    <div class="tile b-2 reveal d2">
+      <h3>Worktree per ticket</h3>
+      <p>Parallel agents never touch your checkout. <code>gh</code> opens the PR.</p>
+      <div class="art tree"><span class="b">~/code/acme-web</span> <span style="color:var(--dim)">(yours)</span><br>~/.zippy/worktrees/<br>├─ <span class="b">ZIP-42</span> <span class="g">+12 −4</span><br>└─ <span class="b">ZIP-47</span> <span class="g">+31 −9</span></div>
+    </div>
+    <div class="tile b-3 reveal">
+      <h3>Zippy Hub MCP</h3>
+      <p>One MCP server gives Claude Code and Claude Desktop your tickets, files and browser.</p>
+      <div class="art chips" id="mcp"><span class="chip">tickets.create</span><span class="chip">tickets.comment</span><span class="chip">files.read</span><span class="chip">browser_open</span><span class="chip">browser_console</span><span class="chip">browser_scroll</span><span class="chip">decision.ask</span></div>
+    </div>
+    <div class="tile b-3 reveal d1">
+      <h3>Terminals and browser built in</h3>
+      <p>Live Claude session status in every terminal. A headless Chromium with DevTools that agents can drive, behind approval cards.</p>
+      <div class="art chips"><span class="chip on">claude · ZIP-42</span><span class="chip on">pnpm dev</span><span class="chip">localhost:5199</span><span class="chip">DevTools</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="compare" class="wrap">
+  <div class="eyebrow reveal">Compare</div>
+  <h2 class="reveal d1">Built for reviewing, <span class="soft">not just running agents.</span></h2>
+  <div class="cmp reveal d2"><div class="cmp-scroll">
+    <table>
+      <thead><tr><th></th><th class="us">Zippy</th><th>Parallel runners<br><span style="text-transform:none;letter-spacing:0">Conductor, Claude Squad</span></th><th>Cloud agents<br><span style="text-transform:none;letter-spacing:0">Copilot, Codex, Devin</span></th></tr></thead>
+      <tbody>
+        <tr><td>Runs on your machine</td><td class="us"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="n">—</span></td></tr>
+        <tr><td>Uses your Claude login, no API key</td><td class="us"><span class="y">✓</span></td><td><span class="y">✓</span></td><td><span class="n">—</span></td></tr>
+        <tr><td>Ticket board and Linear sync</td><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td>Partial</td></tr>
+        <tr><td>Multi-agent pipelines</td><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td><span class="n">—</span></td></tr>
+        <tr><td>Review inbox with decision cards</td><td class="us"><span class="y">✓</span></td><td><span class="n">—</span></td><td>PR only</td></tr>
+        <tr><td>Built-in terminals and browser</td><td class="us"><span class="y">✓</span></td><td>Partial</td><td><span class="n">—</span></td></tr>
+        <tr><td>Open source</td><td class="us">MIT</td><td>Varies</td><td><span class="n">—</span></td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</section>
+
+<section id="install" class="wrap">
+  <div class="eyebrow reveal">Install</div>
+  <h2 class="reveal d1">Running in two minutes.</h2>
+  <div class="install">
+    <div class="reveal d1">
+      <p class="sub">Clone, install, open the board. Agents use the Claude Code account you're already signed in to.</p>
+      <div class="req"><div>Node 22+ and pnpm</div><div>PostgreSQL (the desktop app bundles one)</div><div><code>claude</code>, <code>git</code> and <code>gh</code> CLIs</div><div>macOS for the desktop app; web app runs anywhere</div></div>
+    </div>
+    <div class="reveal d2">
+      <div class="tabs" role="tablist"><button role="tab" aria-selected="true" data-tab="src">From source</button><button role="tab" aria-selected="false" data-tab="cap">Quick capture</button><button role="tab" aria-selected="false" data-tab="app">Desktop</button></div>
+      <div class="codebox" data-panel="src"><pre><span class="c"># clone and run</span>
+git clone https://github.com/s-azizkhan/zippy.git
+cd zippy && cp .env.example .env
+pnpm install
+pnpm db:push
+pnpm dev   <span class="c"># → http://localhost:5199</span></pre></div>
+      <div class="codebox" data-panel="cap" hidden><pre><span class="c"># once</span>
+pnpm link --global
+
+<span class="c"># from any repo</span>
+zippy "fix login redirect"
+pytest 2>&1 | zippy "fix failing tests"</pre></div>
+      <div class="codebox" data-panel="app" hidden><pre><span class="c"># needs Rust</span>
+pnpm desktop                       <span class="c"># dev</span>
+pnpm --filter @zippy/desktop build <span class="c"># .dmg, Apple Silicon</span></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="wrap">
+  <div class="eyebrow reveal">FAQ</div>
+  <h2 class="reveal d1">Questions</h2>
+  <div class="faq reveal d2">
+    <details><summary>Is Zippy free?</summary><p>Yes. Zippy is open source under the MIT license. If it saves you time, you can sponsor it on GitHub.</p></details>
+    <details><summary>Do I need an Anthropic API key?</summary><p>No. Zippy runs your local Claude Code CLI with the account you're already signed in to. Nothing is stored or sent anywhere else.</p></details>
+    <details><summary>How is it different from Vibe Kanban, Conductor or Claude Squad?</summary><p>Those focus on running agents in parallel. Zippy is built around tickets and review: Linear sync, multi-agent pipelines, a review inbox with decision cards, quick capture and an MCP hub, all on your machine.</p></details>
+    <details><summary>Will agents touch my working copy?</summary><p>No. Every ticket gets its own git worktree and branch. You review the diff before anything is merged or pushed.</p></details>
+    <details><summary>Which platforms are supported?</summary><p>The desktop app is macOS on Apple Silicon. The web app runs anywhere Node and Postgres run, and you can reach it from your phone over a private tunnel.</p></details>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="final reveal">
+    <img class="mark" src="logo-mark.svg" alt="">
+    <h2>Hire your first agent coworker.</h2>
+    <p class="sub">Free, open source, and running on your machine in minutes.</p>
+    <div class="cta"><a class="btn primary" href="https://github.com/s-azizkhan/zippy">Star on GitHub<span class="stars" data-stars hidden></span></a><a class="btn" href="https://github.com/sponsors/s-azizkhan">♥ Sponsor</a></div>
+  </div>
+</div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Zippy · MIT · Built by <a href="https://justaziz.com">S. Aziz Khan</a></span>
+    <span class="l"><a href="https://github.com/s-azizkhan/zippy">GitHub</a><a href="https://github.com/s-azizkhan/zippy/issues">Issues</a><a href="https://github.com/sponsors/s-azizkhan">Sponsor</a><a href="https://justaziz.com">justaziz.com</a></span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const wait = ms => new Promise(r => setTimeout(r, reduce ? 0 : ms));
+
+  // starfield
+  const sf = $("#stars");
+  for (let i = 0; i < 28; i++) { const d = document.createElement("i"); d.className = "star"; d.style.cssText = `left:${Math.random() * 100}%;top:${Math.random() * 70}%;animation-delay:${-Math.random() * 4}s;opacity:${(.15 + Math.random() * .45).toFixed(2)}`; sf.append(d); }
+
+  // nav
+  const nav = $("#nav");
+  const onScroll = () => {
+    nav.classList.toggle("scrolled", scrollY > 8);
+    // tilt the app mockup flat as it scrolls into view
+    const app = $("#app"), r = app.getBoundingClientRect(), p = Math.min(1, Math.max(0, 1 - (r.top - 80) / (innerHeight * .7)));
+    if (!reduce) { app.style.setProperty("--tilt", (18 * (1 - p)).toFixed(2) + "deg"); app.style.setProperty("--sc", (.94 + .06 * p).toFixed(3)); }
+  };
+  addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+  // reveal on scroll
+  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))), { rootMargin: "0px 0px -10% 0px" });
+  $$(".reveal").forEach(el => io.observe(el));
+
+  // run an animation loop only while its element is visible
+  const whenVisible = (el, loop) => {
+    let on = false, running = false;
+    new IntersectionObserver(([e]) => { on = e.isIntersecting; if (on && !running) { running = true; (async () => { while (on) await loop(); running = false; })(); } }).observe(el);
+  };
+
+  // spotlight on bento tiles
+  $$(".tile").forEach(t => t.addEventListener("pointermove", e => { const r = t.getBoundingClientRect(); t.style.setProperty("--mx", e.clientX - r.left + "px"); t.style.setProperty("--my", e.clientY - r.top + "px"); }));
+
+  // copy button
+  $$("[data-copy]").forEach(b => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); } catch {}
+    b.classList.add("ok"); setTimeout(() => b.classList.remove("ok"), 1400);
+  }));
+
+  // tabs
+  $$("[data-tab]").forEach(b => b.addEventListener("click", () => {
+    $$("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
+    $$("[data-panel]").forEach(p => p.hidden = p.dataset.panel !== b.dataset.tab);
+  }));
+
+  // github stars
+  fetch("https://api.github.com/repos/s-azizkhan/zippy").then(r => r.ok ? r.json() : null).then(d => {
+    if (!d || !d.stargazers_count) return;
+    const n = d.stargazers_count >= 1000 ? (d.stargazers_count / 1000).toFixed(1) + "k" : d.stargazers_count;
+    $$("[data-stars]").forEach(s => { s.textContent = "★ " + n; s.hidden = false; });
+  }).catch(() => {});
+
+  // board demo
+  const card = $("#hot"), lists = $$("[data-col]"), lines = $("#lines");
+  const counts = () => $$(".col").forEach(c => $(".c", c).textContent = $(".list", c).children.length);
+  const move = col => {
+    const first = card.getBoundingClientRect();
+    lists[col].prepend(card); counts();
+    const last = card.getBoundingClientRect();
+    if (!reduce) card.animate([{ transform: `translate(${first.left - last.left}px,${first.top - last.top}px) scale(1.04)` }, { transform: "none" }], { duration: 750, easing: "cubic-bezier(.2,.8,.2,1)" });
+  };
+  const say = (html, ms = 420) => { const d = document.createElement("div"); d.className = "ln"; d.innerHTML = html; lines.append(d); while (lines.children.length > 13) lines.firstChild.remove(); return wait(ms); };
+  counts();
+  whenVisible($("#app"), async () => {
+    lines.innerHTML = ""; card.className = "card"; lists[0].prepend(card); counts();
+    await wait(1100);
+    move(1); card.classList.add("hot", "working"); $("#runN").textContent = 2;
+    await say('<span class="d">worktree</span> zippy/zip-42 <span class="g">ready</span>');
+    await say('<span class="k">read</span> src/auth/callback.ts');
+    await say('<span class="k">read</span> src/middleware.ts');
+    await say('<span class="k">grep</span> "redirect_uri" <span class="d">· 6 hits</span>');
+    await say('<span class="d">plan:</span> refresh token before redirect', 600);
+    await say('<span class="k">edit</span> src/middleware.ts <span class="g">+9</span> <span style="color:var(--bad)">−3</span>');
+    await say('<span class="k">edit</span> src/auth/callback.ts <span class="g">+3</span> <span style="color:var(--bad)">−1</span>');
+    await say('<span class="k">run</span> pnpm test auth', 900);
+    await say('<span class="g">✓ 12 passed</span> <span class="d">· 1.8s</span>');
+    await say('<span class="k">screenshot</span> /login → /dashboard <span class="g">✓</span>', 700);
+    move(2); card.classList.remove("working"); card.classList.add("reviewed"); $("#runN").textContent = 1; $("#inboxN").textContent = 3;
+    await say('<span class="y">→ handed to you for review</span> <span class="caret"></span>', 2600);
+    move(3); card.classList.remove("hot"); $("#inboxN").textContent = 2;
+    await wait(2200);
+  });
+
+  // typed line in step 01
+  $$("[data-type]").forEach(el => whenVisible(el, async () => {
+    const t = el.dataset.type; el.textContent = "";
+    for (const ch of t) { el.textContent += ch; await wait(55); }
+    await wait(500); el.innerHTML = t + '<br><span style="color:var(--ok)">✓ ZIP-48 filed</span> <span style="color:var(--dim)">· acme-web</span>';
+    await wait(2600);
+  }));
+
+  // keys in step 03
+  const keys = $("[data-keys]");
+  whenVisible(keys, async () => {
+    for (const i of [0, 0, 1, 2, 0, 3]) { const k = keys.children[i]; k.classList.add("press"); await wait(180); k.classList.remove("press"); await wait(420); }
+    await wait(900);
+  });
+
+  // decision card cycles the recommended option highlight like J/K
+  const opts = $$("[data-opt]");
+  whenVisible(opts[0], async () => {
+    for (const i of [1, 2, 1, 0]) { opts.forEach((o, j) => o.classList.toggle("rec", j === i)); await wait(900); }
+    await wait(1600);
+  });
+
+  // pipeline
+  const nodes = $$("#nodes .node"), plog = $("#pipelog");
+  const msgs = ["@validator added 3 acceptance criteria", "@planner wrote a 4-step plan", "@executor changed 2 files · ✓ 12 passed", "@reviewer approved with 1 nit", "You approved · PR #128 opened"];
+  whenVisible($("#nodes"), async () => {
+    nodes.forEach(n => { n.className = "node"; $(".s", n).textContent = "○ waiting"; }); plog.innerHTML = "&nbsp;";
+    for (let i = 0; i < nodes.length; i++) {
+      nodes[i].classList.add("on"); $(".s", nodes[i]).innerHTML = '<span class="pulse"></span> working';
+      await wait(1300);
+      nodes[i].classList.replace("on", "ok"); $(".s", nodes[i]).textContent = "✓ done"; plog.textContent = msgs[i];
+      await wait(300);
+    }
+    await wait(2400);
+  });
+
+  // quick capture terminal
+  const cap = $("#capture");
+  whenVisible(cap, async () => {
+    cap.innerHTML = '<span class="p">$</span> <span id="ct"></span>';
+    const ct = $("#ct", cap), cmd = 'pytest 2>&1 | zippy "fix tests"';
+    for (const ch of cmd) { ct.textContent += ch; await wait(45); }
+    await wait(400); cap.insertAdjacentHTML("beforeend", '<br><span class="r">✗ 2 failed</span>, 40 passed');
+    await wait(500); cap.insertAdjacentHTML("beforeend", '<br><span class="g">✓ ZIP-49 filed</span> with log attached');
+    await wait(3000);
+  });
+
+  // MCP chips light up in turn
+  const chips = $$("#mcp .chip");
+  whenVisible($("#mcp"), async () => {
+    for (const c of chips) { c.classList.add("on"); await wait(380); }
+    await wait(1800); chips.forEach(c => c.classList.remove("on")); await wait(400);
+  });
+})();
+</script>
+</body>
+</html>

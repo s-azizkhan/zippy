@@ -132,7 +132,7 @@ export function Onboarding({ onCancel }: { onCancel?: () => void }) {
               {s.id === "org" && (
                 <div className="grid gap-5">
                   <Field label="Organization name" error={errors.name}>
-                    {(p) => <Input {...p} value={form.name} onChange={set("name")} placeholder="Fanbasis" autoFocus className="h-11 text-base" />}
+                    {(p) => <Input {...p} value={form.name} onChange={set("name")} placeholder="Acme" autoFocus className="h-11 text-base" />}
                   </Field>
                   <Field label="Ticket key" hint="Prefix for ticket IDs." error={errors.key}>
                     {(p) => <Input {...p} value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value.toUpperCase() })} placeholder="FB" maxLength={6} className="h-11 font-mono text-base" />}
