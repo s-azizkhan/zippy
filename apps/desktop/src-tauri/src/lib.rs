@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use postgresql_embedded::{PostgreSQL, Settings};
+use postgresql_embedded::{PostgreSQL, Settings, VersionReq};
 use tauri::{
     menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem},
     tray::TrayIconBuilder,
@@ -95,6 +95,8 @@ async fn embedded_url(st: &Shared, data: &Path) -> Result<String, postgresql_emb
             password_file: pgpass.clone(),
             port: PG_PORT,
             temporary: false,
+            // Pinned: the 18.6.1 build ships share/timezone without UTC, so every connect fails.
+            version: VersionReq::parse("=18.6.0").unwrap(),
             ..Default::default()
         };
         // The cluster keeps the password it was created with; a fresh random one would be rejected.
